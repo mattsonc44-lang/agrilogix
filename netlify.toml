@@ -1,0 +1,3 @@
+[build]
+  command   = "npm install && echo \"window.__STRIPE_KEY__='${STRIPE_KEY}';window.__ANTHROPIC_KEY__='${ANTHROPIC_KEY}';\" > public/config.js && npm run build"
+  publish   = "public"
