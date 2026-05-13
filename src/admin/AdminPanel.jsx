@@ -10,7 +10,8 @@ export default function AdminPanel({ user, token, onBack }) {
   const [view,    setView]    = useState("tenants"); // "tenants" | "tenant"
   const [selTenant, setSelTenant] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [inviteTarget, setInviteTarget] = useState(null); // { tenantId, tenantName }
+  const [inviteTarget, setInviteTarget] = useState(null);
+  const [showNew, setShowNew] = useState(false);
 
   // New tenant form
   const [newName, setNewName] = useState("");
