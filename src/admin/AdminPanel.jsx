@@ -3,13 +3,14 @@ import { T, S, mkBtn } from "../core/theme.js";
 import { dbRead, dbWrite } from "../core/firebase.js";
 import { MODULES, ROLES } from "../core/config.js";
 import { genId, fmtDate, slugify } from "../core/helpers.js";
+import InviteModal from "./InviteModal.jsx";
 
 export default function AdminPanel({ user, token, onBack }) {
   const [tenants, setTenants] = useState({});
   const [view,    setView]    = useState("tenants"); // "tenants" | "tenant"
   const [selTenant, setSelTenant] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showNew, setShowNew] = useState(false);
+  const [inviteTarget, setInviteTarget] = useState(null); // { tenantId, tenantName }
 
   // New tenant form
   const [newName, setNewName] = useState("");
@@ -181,6 +182,7 @@ export default function AdminPanel({ user, token, onBack }) {
                 </div>
               </div>
               <div style={{ display:"flex", gap:"8px", alignItems:"center", flexShrink:0 }}>
+                <button style={{...mkBtn("ghost"),padding:"5px 10px",fontSize:"12px",color:T.brand,borderColor:T.brand+"40"}} onClick={()=>setInviteTarget({tenantId:p.id,tenantName:p.name})}>+ Invite User</button>
                 <div style={{ textAlign:"center" }}>
                   <div style={{ fontSize:"11px", color:T.muted }}>Active</div>
                   <Switch on={p.active} onChange={()=>toggleActive(p.id)}/>
@@ -193,6 +195,16 @@ export default function AdminPanel({ user, token, onBack }) {
           </div>
         ))}
       </div>
+
+      {inviteTarget && (
+        <InviteModal
+          tenantId={inviteTarget.tenantId}
+          tenantName={inviteTarget.tenantName}
+          sentBy={user.localId}
+          token_auth={token}
+          onClose={()=>setInviteTarget(null)}
+        />
+      )}
     </div>
   );
 }

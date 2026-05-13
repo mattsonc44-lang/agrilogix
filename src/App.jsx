@@ -6,6 +6,7 @@ import { authRefreshToken } from "./core/firebase.js";
 import { obj2arr, genId, nowLocal, fmtDate } from "./core/helpers.js";
 import AuthScreen  from "./auth/AuthScreen.jsx";
 import AdminPanel  from "./admin/AdminPanel.jsx";
+import OrgPanel    from "./admin/OrgPanel.jsx";
 
 // ── Lazy module imports ───────────────────────────────────────────
 // (Each module is a separate file, loaded as needed)
@@ -34,7 +35,7 @@ const clearSession = () => {
 };
 
 // ── ADMIN UID — your Firebase UID goes here ───────────────────────
-const ADMIN_UID = "Kya4wOKb5naH6ngRwoaKNuntJdw2";
+const ADMIN_UID = "YOUR-ADMIN-UID";
 
 export default function App() {
   const [session,  setSession]  = useState(null);     // { idToken, localId, email, refreshToken }
@@ -44,6 +45,7 @@ export default function App() {
   const [loading,  setLoading]  = useState(true);
   const [authErr,  setAuthErr]  = useState("");
   const [showAdmin,setShowAdmin]= useState(false);
+  const [showOrg,  setShowOrg]  = useState(false);
   const [syncStatus,setSyncStatus]=useState("idle");
   const refreshTimer = useRef(null);
 
@@ -231,6 +233,10 @@ export default function App() {
           {isAdmin && (
             <button style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={()=>setShowAdmin(true)}>Admin</button>
           )}
+          {/* Org settings — owners and managers */}
+          {(profile?.role==="owner"||profile?.role==="manager") && (
+            <button style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={()=>setShowOrg(true)}>⚙️ Org</button>
+          )}
           {/* User menu */}
           <button style={{ ...mkBtn("ghost"), padding:"4px 10px", fontSize:"12px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={signOut}>Sign out</button>
         </div>
@@ -243,7 +249,9 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Module content ── */}
+      {showOrg && (
+        <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>
+      )}
       <div>
         {module === "fieldlog"   && <FieldLogModule  tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
         {module === "agriScale"  && <ComingSoon module={MODULES.agriScale}/>}
