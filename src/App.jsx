@@ -10,7 +10,8 @@ import OrgPanel    from "./admin/OrgPanel.jsx";
 
 // ── Lazy module imports ───────────────────────────────────────────
 // (Each module is a separate file, loaded as needed)
-import FieldLogModule  from "./modules/fieldlog/index.jsx";
+import FieldLogModule   from "./modules/fieldlog/index.jsx";
+import ServiceLogModule from "./modules/serviceLog/index.jsx";
 
 // Placeholder components for modules not yet built
 const ComingSoon = ({ module }) => (
@@ -35,7 +36,7 @@ const clearSession = () => {
 };
 
 // ── ADMIN UID — your Firebase UID goes here ───────────────────────
-const ADMIN_UID = "Kya4wOKb5naH6ngRwoaKNuntJdw2";
+const ADMIN_UID = "YOUR-ADMIN-UID";
 
 export default function App() {
   const [session,  setSession]  = useState(null);     // { idToken, localId, email, refreshToken }
@@ -253,9 +254,9 @@ export default function App() {
         <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>
       )}
       <div>
-        {module === "fieldlog"   && <FieldLogModule  tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
+        {module === "fieldlog"   && <FieldLogModule   tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
         {module === "agriScale"  && <ComingSoon module={MODULES.agriScale}/>}
-        {module === "serviceLog" && <ComingSoon module={MODULES.serviceLog}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={profile.tenantId} token={token} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
