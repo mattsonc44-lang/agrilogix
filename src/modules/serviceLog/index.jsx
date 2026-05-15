@@ -253,14 +253,14 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   },[tenantId,token]);
 
   const migrate = (d) => ({
-    vehicles: d.vehicles||[],
-    records:  d.records||[],
-    customers:d.customers||[{id:"cust_default",name:"Default",notes:""}],
-    invoices: d.invoices||[],
-    partsToOrder: d.partsToOrder||[],
-    partsInventory: d.partsInventory||[],
-    vendors:  d.vendors||[],
-    orderHistory: d.orderHistory||[],
+    vehicles: obj2arr(d.vehicles||{}),
+    records:  obj2arr(d.records||{}),
+    customers:obj2arr(d.customers||{})||[{id:"cust_default",name:"Default",notes:""}],
+    invoices: obj2arr(d.invoices||{}),
+    partsToOrder: obj2arr(d.partsToOrder||{}),
+    partsInventory: obj2arr(d.partsInventory||{}),
+    vendors:  obj2arr(d.vendors||{}),
+    orderHistory: obj2arr(d.orderHistory||{}),
     settings: { businessName:"", features:{invoicing:true,partsInventory:true,orderParts:true}, qb:{mode:""}, ...(d.settings||{}) },
   });
 
