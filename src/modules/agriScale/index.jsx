@@ -10,14 +10,14 @@ const PERMS = {
 };
 
 // ── Constants ─────────────────────────────────────────────────────
-const FALLBACK_GRAIN = { name:"WHEAT", bushel_lbs:60, color:"#D4A820" };
+const FALLBACK_GRAIN = { name:"WHEAT", bushel_lbs:60, color:"#c0b8ac" };
 const TRUCK_COLORS = [
-  { label:"WHITE",  value:"white",  hex:"#F0F0F0", border:"#AAA", text:"#333" },
-  { label:"RED",    value:"red",    hex:"#DC2626", border:"#991B1B", text:"#FFF" },
-  { label:"GREEN",  value:"green",  hex:"#16A34A", border:"#15803D", text:"#FFF" },
-  { label:"BLUE",   value:"blue",   hex:"#2563EB", border:"#1D4ED8", text:"#FFF" },
-  { label:"BLACK",  value:"black",  hex:"#1F2937", border:"#111827", text:"#FFF" },
-  { label:"YELLOW", value:"yellow", hex:"#EAB308", border:"#CA8A04", text:"#333" },
+  { label:"WHITE",  value:"white",  hex:"#f0f0f0", border:"#aaa",    text:"#333" },
+  { label:"RED",    value:"red",    hex:"#e74c3c", border:"#c0392b", text:"#fff" },
+  { label:"GREEN",  value:"green",  hex:"#27ae60", border:"#219653", text:"#fff" },
+  { label:"BLUE",   value:"blue",   hex:"#2980b9", border:"#1a6895", text:"#fff" },
+  { label:"BLACK",  value:"black",  hex:"#2c3e50", border:"#1a252f", text:"#fff" },
+  { label:"YELLOW", value:"yellow", hex:"#f1c40f", border:"#d4ac0d", text:"#333" },
 ];
 const UNITS = ["LBS","TONS","BU"];
 const DEFAULT_FIELDS = [
@@ -26,6 +26,7 @@ const DEFAULT_FIELDS = [
 const DEFAULT_BINS = [
   { id:101, name:"BIN 1", capacityBu:50000, storedLbs:0, grainName:"WHEAT" },
 ];
+const GRAIN_COLORS = ["#c8a060","#7ab870","#a0c8e0","#e8c070","#c0a8e0","#80c8a8"];
 
 // ── Helpers ───────────────────────────────────────────────────────
 const fmtWt = (lbs, unit, bushelLbs=60) => {
@@ -34,529 +35,564 @@ const fmtWt = (lbs, unit, bushelLbs=60) => {
   return { value:lbs.toLocaleString("en-US",{maximumFractionDigits:0}), label:"LBS" };
 };
 
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+  .as-wrap { font-family: 'Share Tech Mono', monospace; }
+  .as-wrap * { box-sizing: border-box; }
+  @keyframes as-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(45,122,31,0.25)} 50%{box-shadow:0 0 0 4px rgba(45,122,31,0)} }
+  .as-record-btn:not(:disabled):hover { filter: brightness(1.08); }
+  .as-record-btn:not(:disabled):active { transform: translateY(1px); }
+  .as-numkey:active { transform: translateY(1px); box-shadow: none !important; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #ede9e4; }
+  ::-webkit-scrollbar-thumb { background: #9a8a72; border-radius: 2px; }
+`;
+
+// ── BinGauge SVG (matches original exactly) ───────────────────────
+function BinGauge({ bin, grains, small }) {
+  const grain = grains.find(g=>g.name===bin.grainName) || FALLBACK_GRAIN;
+  const storedBu = bin.storedLbs / (grain.bushel_lbs||60);
+  const pct = bin.capacityBu > 0 ? Math.min(100, storedBu / bin.capacityBu * 100) : 0;
+  const remaining = Math.max(0, bin.capacityBu - storedBu);
+  const fillColor = pct >= 95 ? "#e74c3c" : pct >= 80 ? "#c47d0a" : "#4a5568";
+  const fillGlow  = fillColor;
+
+  const binH = small ? 100 : 160;
+  const binW = small ? 60  : 90;
+  const roofH = small ? 18  : 28;
+  const neckW = small ? 18  : 28;
+  const fillH = pct / 100 * binH;
+  const fillY = roofH + binH - fillH;
+  const svgW = binW + 20;
+  const svgH = roofH + binH + (small ? 10 : 20);
+
+  const bodyPts = `${10+neckW/2},${roofH} ${10+binW-neckW/2},${roofH} ${10+binW},${roofH+binH} ${10},${roofH+binH}`;
+  const roofPts = `${10+binW/2},4 ${10+neckW/2},${roofH} ${10+binW-neckW/2},${roofH}`;
+
+  return (
+    <div style={{background:"#ede9e4",border:"2px solid #b0c8a0",borderRadius:"8px",padding:small?"10px 12px 8px":"16px 20px 12px",boxShadow:"inset 0 2px 8px rgba(0,0,0,.05)"}}>
+      <div style={{display:"flex",gap:small?"10px":"16px",alignItems:"center"}}>
+        <div style={{flexShrink:0}}>
+          <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}>
+            <defs>
+              <linearGradient id={`fg-${bin.id}`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={fillColor} stopOpacity="0.5"/>
+                <stop offset="50%" stopColor={fillColor} stopOpacity="0.8"/>
+                <stop offset="100%" stopColor={fillColor} stopOpacity="0.5"/>
+              </linearGradient>
+              <clipPath id={`bc-${bin.id}`}>
+                <polygon points={bodyPts}/>
+              </clipPath>
+            </defs>
+            {/* Body outline */}
+            <polygon points={bodyPts} fill="none" stroke="#6a7280" strokeWidth="2"/>
+            {/* Roof */}
+            <polygon points={roofPts} fill="#e0eed8" stroke="#6a7280" strokeWidth="1.5"/>
+            {/* Fill */}
+            {pct > 0 && <rect x={0} y={fillY} width={binW+20} height={fillH+binH} fill={`url(#fg-${bin.id})`} clipPath={`url(#bc-${bin.id})`}/>}
+            {/* Glow outline */}
+            <polygon points={bodyPts} fill="none" stroke={fillColor} strokeWidth="1.5" style={{filter:pct>0?`drop-shadow(0 0 4px ${fillGlow})`:"none"}}/>
+            {/* Pct label */}
+            {pct > 12 && <text x={10+binW/2} y={fillY+fillH/2+5} textAnchor="middle" fontFamily="Share Tech Mono, monospace" fontSize={small?"10":"13"} fontWeight="bold" fill="#fff" style={{filter:`drop-shadow(0 0 4px ${fillGlow})`}}>{pct.toFixed(1)}%</text>}
+            {/* Tick marks */}
+            {[25,50,75].map(t=>{
+              const ty=roofH+binH-t/100*binH;
+              const x0=10+(binW-neckW)*(1-t/100)*0.5+neckW/2-2;
+              return <line key={t} x1={x0} y1={ty} x2={x0-6} y2={ty} stroke="#c0b8ac" strokeWidth="1"/>;
+            })}
+          </svg>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'Orbitron',monospace",fontSize:small?"11px":"13px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"4px"}}>{bin.name}</div>
+          <div style={{fontSize:small?"9px":"10px",color:"#6a7280",letterSpacing:"0.06em",lineHeight:1.7}}>
+            <div><span style={{color:fillColor,fontWeight:"bold"}}>{pct.toFixed(1)}%</span> FULL</div>
+            <div>{storedBu.toFixed(0)} / {bin.capacityBu.toLocaleString()} BU</div>
+            <div>{remaining.toFixed(0)} BU REMAINING</div>
+            <div>{(bin.storedLbs/2000).toFixed(1)} TONS</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main module ───────────────────────────────────────────────────
 export default function AgriScaleModule({ tenantId, token, userProfile, persist }) {
   const BASE = `tenants/${tenantId}/agriScale`;
   const role = userProfile?.role || "operator";
   const perms = PERMS[role] || PERMS.operator;
-  const operatorName = userProfile?.name || "OPERATOR";
+  const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
 
   // Data
   const [fields, setFields] = useState(DEFAULT_FIELDS);
   const [bins,   setBins]   = useState(DEFAULT_BINS);
   const [grains, setGrains] = useState([FALLBACK_GRAIN]);
   const [loading, setLoading] = useState(true);
-  const [sync, setSync]     = useState("idle");
+  const [syncStatus, setSyncStatus] = useState("init");
 
-  // Scale UI
+  // Scale
   const [rawInput, setRawInput] = useState("0");
-  const [tare, setTare]   = useState(0);
-  const [unit, setUnit]   = useState("LBS");
+  const [tare, setTare]         = useState(0);
+  const [unit, setUnit]         = useState("LBS");
   const [grainIdx, setGrainIdx] = useState(0);
-  const [activeFieldId, setActiveFieldId] = useState(null);
-  const [activeBinId,   setActiveBinId]   = useState(null);
+  const [activeFieldId, setAFId] = useState(null);
+  const [activeBinId,   setABId] = useState(null);
   const [truckColor, setTruckColor] = useState("white");
 
-  // Tabs & modals
-  const [tab, setTab]         = useState("SCALE");
-  const [showReport, setShowReport] = useState(false);
-  const [editField,  setEditField]  = useState(null);
-  const [editBin,    setEditBin]    = useState(null);
-  const [editGrain,  setEditGrain]  = useState(null);
-  const [showAddGrain, setShowAddGrain] = useState(false);
-  const [editLoad,   setEditLoad]   = useState(null);
-  const [logFieldId, setLogFieldId] = useState(null);
+  // UI
+  const [tab, setTab]           = useState("SCALE");
+  const [logFieldId, setLogFId] = useState(null);
+  const [editField,  setEF]     = useState(null);
+  const [editBin,    setEB]     = useState(null);
+  const [editGrain,  setEG]     = useState(null);
+  const [addGrain,   setAG]     = useState(false);
+  const [editLoad,   setEL]     = useState(null);
 
   const skipRef = useRef(false);
   const nextId  = useRef(Date.now());
 
-  // ── Load data ──────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────
   useEffect(()=>{
     if(!tenantId) return;
-    dbRead(BASE, token).then(d=>{
+    dbRead(BASE,token).then(d=>{
       if(d){
-        const fl = obj2arr(d.fields||{});
-        const bl = obj2arr(d.bins||{});
-        const gl = obj2arr(d.customGrains||{});
-        if(fl.length) setFields(fl);
-        if(bl.length) setBins(bl);
-        if(gl.length) setGrains(gl);
-        setActiveFieldId(fl[0]?.id || DEFAULT_FIELDS[0].id);
-        setActiveBinId(bl[0]?.id || DEFAULT_BINS[0].id);
-        if(gl.length) setGrainIdx(0);
+        const fl=obj2arr(d.fields||{});
+        const bl=obj2arr(d.bins||{});
+        const gl=obj2arr(d.customGrains||{});
+        if(fl.length){ setFields(fl); setAFId(fl[0].id); }
+        if(bl.length){ setBins(bl);   setABId(bl[0].id); }
+        if(gl.length)  setGrains(gl);
+      } else {
+        setAFId(DEFAULT_FIELDS[0].id);
+        setABId(DEFAULT_BINS[0].id);
       }
-    }).catch(()=>{}).finally(()=>setLoading(false));
+      setSyncStatus("live");
+    }).catch(()=>setSyncStatus("error")).finally(()=>setLoading(false));
   },[tenantId,token]);
 
   useEffect(()=>{
     if(loading||!tenantId) return;
-    return dbListen(BASE, token, ({data:d})=>{
+    return dbListen(BASE,token,({data:d})=>{
       if(skipRef.current||!d) return;
-      if(d.fields)      setFields(obj2arr(d.fields));
-      if(d.bins)        setBins(obj2arr(d.bins));
+      if(d.fields)       setFields(obj2arr(d.fields));
+      if(d.bins)         setBins(obj2arr(d.bins));
       if(d.customGrains) setGrains(obj2arr(d.customGrains));
     });
   },[loading,tenantId,token]);
 
-  const save = useCallback((newFields, newBins, newGrains) => {
-    skipRef.current = true;
-    setSync("saving");
-    persist("agriScale", {
-      fields:      Object.fromEntries((newFields||fields).map(f=>[f.id,f])),
-      bins:        Object.fromEntries((newBins||bins).map(b=>[b.id,b])),
-      customGrains:Object.fromEntries((newGrains||grains).map((g,i)=>[i,g])),
+  const save = useCallback((nf,nb,ng)=>{
+    skipRef.current=true;
+    setSyncStatus("pushing");
+    persist("agriScale",{
+      fields:      Object.fromEntries((nf||fields).map(f=>[f.id,f])),
+      bins:        Object.fromEntries((nb||bins).map(b=>[b.id,b])),
+      customGrains:Object.fromEntries((ng||grains).map((g,i)=>[i,g])),
     });
-    setSync("saved");
-    setTimeout(()=>{ skipRef.current=false; setSync("idle"); }, 1500);
+    setSyncStatus("live");
+    setTimeout(()=>{ skipRef.current=false; },1500);
   },[fields,bins,grains,persist]);
 
-  // ── Scale computed ─────────────────────────────────────────────
-  const grain = grains[grainIdx] || FALLBACK_GRAIN;
-  const rawLbs = Math.min(99999, Math.max(0, parseInt(rawInput.replace(/^0+(?=\d)/,""))||0));
-  const netLbs = Math.max(0, rawLbs - tare);
-  const activeField = fields.find(f=>f.id===activeFieldId) || fields[0];
-  const activeBin   = bins.find(b=>b.id===activeBinId)     || bins[0];
+  // ── Scale computed ────────────────────────────────────────────
+  const grain     = grains[grainIdx] || FALLBACK_GRAIN;
+  const rawLbs    = Math.min(99999,Math.max(0,parseInt(rawInput.replace(/^0+(?=\d)/,""))||0));
+  const netLbs    = Math.max(0,rawLbs-tare);
+  const canRecord = netLbs >= 100;
+  const activeField = fields.find(f=>f.id===activeFieldId)||fields[0];
+  const activeBin   = bins.find(b=>b.id===activeBinId)||bins[0];
 
-  // ── Numpad ─────────────────────────────────────────────────────
-  const numpad = (k) => {
-    if(k==="C") { setRawInput("0"); return; }
-    if(k==="⌫") { setRawInput(p=>p.length>1?p.slice(0,-1):"0"); return; }
+  // ── Numpad ────────────────────────────────────────────────────
+  const onKey = k => {
+    if(k==="CLR"||k==="C") { setRawInput("0"); return; }
+    if(k==="⌫")  { setRawInput(p=>p.length>1?p.slice(0,-1):"0"); return; }
     setRawInput(p=>{ const n=p==="0"?String(k):p+k; return n.length>5?p:n; });
   };
 
-  // ── Record load ────────────────────────────────────────────────
+  // ── Record load ───────────────────────────────────────────────
   const recordLoad = () => {
-    if(netLbs < 100) return;
+    if(!canRecord) return;
     const now = new Date();
     const load = {
-      id: nextId.current++,
-      net: netLbs, ts: now.getTime(),
-      date: now.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),
-      timeOnly: now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
-      time: now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
-      grainName: grain.name, grainBushelLbs: grain.bushel_lbs,
-      binId: activeBinId, truckColor, operator: operatorName,
+      id:nextId.current++, net:netLbs, ts:now.getTime(),
+      date:now.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),
+      timeOnly:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
+      time:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
+      grainName:grain.name, grainBushelLbs:grain.bushel_lbs,
+      binId:activeBinId, truckColor, operator:operatorName,
     };
-    const updBin = bins.map(b=>b.id===activeBinId?{...b, storedLbs:b.storedLbs+netLbs}:b);
-    const updFields = fields.map(f=>f.id===activeFieldId?{...f,loads:[...f.loads,load]}:f);
-    setFields(updFields); setBins(updBin);
-    save(updFields, updBin, grains);
+    const nf = fields.map(f=>f.id===activeFieldId?{...f,loads:[...f.loads,load]}:f);
+    const nb = bins.map(b=>b.id===activeBinId?{...b,storedLbs:b.storedLbs+netLbs}:b);
+    setFields(nf); setBins(nb); save(nf,nb,grains);
     setRawInput("0"); setTare(0);
   };
 
-  const setTareNow = () => setTare(rawLbs);
   const totalLoads = fields.reduce((s,f)=>s+f.loads.length,0);
-  const syncColor = {idle:"#D8CEBC",saving:"#C07010",saved:"#2A5E2A",error:"#841A18"}[sync]||"#D8CEBC";
+  const syncLabel = syncStatus==="live"?"● LIVE":syncStatus==="pushing"?"SAVING...":syncStatus==="error"?"ERROR":"INIT";
+  const syncColor = syncStatus==="live"?"#4a5568":syncStatus==="error"?"#c03030":"#aaa";
+  const btnBase = {cursor:"pointer",fontFamily:"'Share Tech Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
 
-  if(loading) return <div style={{textAlign:"center",padding:"60px",color:"#7a6645"}}><div style={{fontSize:"32px",marginBottom:"8px"}}>⚖️</div>Loading AgriScale…</div>;
+  const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
 
-  const tabs = [
-    ["SCALE","⚖️"],
-    ["LOG","📋"],
-    ["BINS","🏗️"],
-    ["FIELDS","🌾"],
-    ["COMM","🌿"],
-    ...(perms.canReport?[["REPORT","📊"]]:[]),
-  ];
+  if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'Share Tech Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
 
   return (
-    <div style={{background:"#F4EFE6",minHeight:"calc(100vh - 50px)",fontFamily:"'Barlow',sans-serif",color:"#1E1408"}}>
-      {/* Header */}
-      <div style={{background:"#1A2E1A",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",fontWeight:700,color:"#FFFFFF"}}>⚖️ AgriScale</div>
-          <div style={{fontSize:"11px",color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"1.5px"}}>{totalLoads} loads</div>
-          <div style={{width:"8px",height:"8px",borderRadius:"50%",background:syncColor}}/>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-          <div style={{fontSize:"11px",color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"1px"}}>{role} · {operatorName}</div>
-        </div>
-      </div>
+    <>
+      <style>{CSS}</style>
+      <div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:"#f0eeea",backgroundImage:"radial-gradient(ellipse at 30% 20%, #e8f2dc 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, #f5eed8 0%, transparent 60%)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'Share Tech Mono',monospace"}}>
+        <div style={{width:"100%",maxWidth:"520px"}}>
 
-      {/* Nav */}
-      <div style={{display:"flex",background:"#FFFFFF",borderBottom:"1px solid #D8CEBC",overflowX:"auto"}}>
-        {tabs.map(([id,icon])=>(
-          <button key={id} onClick={()=>setTab(id)} style={{padding:"10px 18px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#C07010":"transparent"}`,color:tab===id?"#C07010":"#7A6645",fontWeight:tab===id?700:400,cursor:"pointer",fontSize:"12px",fontFamily:"'Barlow',sans-serif",whiteSpace:"nowrap",transition:"all .15s"}}>
-            {icon} {id}
-          </button>
-        ))}
-      </div>
-
-      <div style={{padding:"20px",maxWidth:"900px",margin:"0 auto"}}>
-
-        {/* ── SCALE TAB ── */}
-        {tab==="SCALE"&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"16px"}}>
-            {/* Left: Weight display + numpad */}
-            <div>
-              {/* Weight display */}
-              <div style={{background:"#EDE9E4",border:"3px solid #B0C8A0",borderRadius:"8px",padding:"20px 24px 16px",marginBottom:"12px",boxShadow:"inset 0 2px 8px rgba(0,0,0,.06)"}}>
-                <div style={{textAlign:"center",marginBottom:"8px"}}>
-                  {/* NET */}
-                  <div style={{fontSize:"11px",letterSpacing:"2px",color:"#6A8060",textTransform:"uppercase",marginBottom:"2px"}}>NET WEIGHT</div>
-                  <div style={{fontFamily:"'Share Tech Mono',monospace,monospace",fontSize:"52px",fontWeight:700,color:"#2A4820",lineHeight:1,letterSpacing:"2px"}}>
-                    {fmtWt(netLbs,unit,grain.bushel_lbs).value}
-                  </div>
-                  <div style={{fontSize:"14px",color:"#6A8060",letterSpacing:"3px",marginTop:"2px"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</div>
-                </div>
-                {/* GROSS / TARE */}
-                <div style={{display:"flex",gap:"16px",justifyContent:"center",fontSize:"12px",color:"#7A7060",borderTop:"1px solid #C0B8A8",paddingTop:"8px",marginTop:"8px"}}>
-                  <div><span style={{opacity:.7}}>GROSS: </span><strong>{fmtWt(rawLbs,unit,grain.bushel_lbs).value}</strong></div>
-                  <div><span style={{opacity:.7}}>TARE: </span><strong>{fmtWt(tare,unit,grain.bushel_lbs).value}</strong></div>
-                </div>
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"20px",fontWeight:700,color:"#4a5568",letterSpacing:"0.08em"}}>
+              AGRI<span style={{color:"#4a7535"}}>SCALE</span>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{color:"#4a5568",fontSize:"11px",letterSpacing:"0.08em",textShadow:"0 0 6px #4a5568"}}>{activeField?.name}</div>
+              <div style={{color:"#4a7535",fontSize:"10px",letterSpacing:"0.06em"}}>→ {activeBin?.name}</div>
+              <div style={{display:"flex",gap:"5px",justifyContent:"flex-end",alignItems:"center",marginTop:"3px",flexWrap:"wrap"}}>
+                <span style={{fontSize:"8px",color:"#fff",background:"#5a6878",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em"}}>{operatorName}</span>
+                <span style={{fontSize:"8px",fontFamily:"monospace",letterSpacing:"0.08em",color:syncColor,background:syncStatus==="live"?"#e8e2d8":"#f0f0f0",border:`1px solid ${syncStatus==="live"?"#b0a08a":"#ddd"}`,borderRadius:"3px",padding:"1px 6px"}}>{syncLabel}</span>
+                <span style={{fontSize:"8px",color:"#9a8a72",background:"#ede9e4",border:"1px solid #c0b8ac",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em",textTransform:"uppercase"}}>{role}</span>
               </div>
+            </div>
+          </div>
 
-              {/* Unit selector */}
-              <div style={{display:"flex",gap:"4px",marginBottom:"10px"}}>
-                {UNITS.map(u=>(
-                  <button key={u} onClick={()=>setUnit(u)} style={{flex:1,padding:"7px",background:unit===u?"#2A4820":"#E8E0D4",color:unit===u?"#FFF":"#5A4A30",border:"none",borderRadius:"5px",fontWeight:700,fontSize:"12px",cursor:"pointer",letterSpacing:"1px",fontFamily:"'Barlow',sans-serif"}}>
-                    {u}
-                  </button>
-                ))}
-                <button onClick={setTareNow} style={{flex:1,padding:"7px",background:"#8B6914",color:"#FFF",border:"none",borderRadius:"5px",fontWeight:700,fontSize:"11px",cursor:"pointer",letterSpacing:"0.5px",fontFamily:"'Barlow',sans-serif"}}>
-                  SET TARE
-                </button>
-              </div>
+          {/* Tabs */}
+          <div style={{display:"flex",gap:"4px",marginBottom:"12px",background:"#e8e2d8",borderRadius:"6px",padding:"3px"}}>
+            {TABS.map(t=>(
+              <button key={t} onClick={()=>setTab(t)} style={{...btnBase,flex:1,padding:"8px 4px",fontSize:"10px",letterSpacing:"0.12em",background:tab===t?"#fafaf6":"transparent",color:tab===t?"#4a5568":"#9a8a72",border:tab===t?"1px solid #ccc4b8":"1px solid transparent",boxShadow:tab===t?"0 1px 3px rgba(0,0,0,.1)":"none"}}>
+                {t}
+              </button>
+            ))}
+          </div>
 
-              {/* Numpad */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px"}}>
-                {[7,8,9,4,5,6,1,2,3,"C",0,"⌫"].map(k=>(
-                  <button key={k} onClick={()=>numpad(k)} style={{padding:"18px 10px",fontSize:k==="⌫"?"18px":"22px",fontWeight:700,background:k==="C"?"#C07010":k==="⌫"?"#8B5A2A":"#FFFFFF",color:k==="C"||k==="⌫"?"#FFF":"#1A0E04",border:"1px solid #D8CEBC",borderRadius:"6px",cursor:"pointer",fontFamily:"'Barlow',sans-serif",transition:"background .1s"}}>
-                    {k}
-                  </button>
-                ))}
+          {/* ── SCALE TAB ── */}
+          {tab==="SCALE"&&(<>
+            {/* Active bin gauge */}
+            {activeBin&&<div style={{marginBottom:"8px"}}><BinGauge bin={activeBin} grains={grains}/></div>}
+
+            {/* Bin selector */}
+            <div style={{marginTop:"8px",background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px",marginBottom:"8px"}}>
+              <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>DESTINATION BIN</div>
+              <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                {bins.map(b=>{
+                  const g=grains.find(x=>x.name===b.grainName)||FALLBACK_GRAIN;
+                  const pct=b.capacityBu>0?Math.min(100,b.storedLbs/(g.bushel_lbs||60)/b.capacityBu*100):0;
+                  const fc=pct>=95?"#e74c3c":pct>=80?"#c47d0a":"#4a5568";
+                  const isActive=b.id===activeBinId;
+                  return(<button key={b.id} onClick={()=>setABId(b.id)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:isActive?"#e8e2d8":"transparent",border:isActive?`1px solid ${fc}`:"1px solid #ccc4b8",color:isActive?fc:"#6a7280",boxShadow:isActive?`0 0 8px ${fc}40`:"none"}}>
+                    {b.name} <span style={{fontSize:"8px",marginLeft:"3px"}}>{pct.toFixed(0)}%</span>
+                  </button>);
+                })}
               </div>
             </div>
 
-            {/* Right: Selectors + Record */}
-            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+            {/* Status bar */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",background:"#ffffff",border:"1px solid #ddd8d0",borderRadius:"4px",fontSize:"10px",letterSpacing:"0.12em",marginBottom:"8px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                <div style={{width:"7px",height:"7px",borderRadius:"50%",background:"#c0b8ac"}}/>
+                <span style={{color:"#6a7280"}}>STANDBY</span>
+              </div>
+              <div style={{color:"#5a6878"}}>{grain.name} · {grain.bushel_lbs} LBS/BU</div>
+            </div>
+
+            {/* Display unit + grain + field + truck */}
+            <div style={{display:"flex",flexDirection:"column",gap:"7px",marginBottom:"8px"}}>
+              {/* Unit */}
+              <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
+                <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>DISPLAY UNIT</div>
+                <div style={{display:"flex",gap:"6px"}}>
+                  {UNITS.map(u=>(
+                    <button key={u} onClick={()=>setUnit(u)} style={{...btnBase,flex:1,padding:"5px 0",fontSize:"10px",background:unit===u?"#e8e2d8":"transparent",border:unit===u?"1px solid #9a8a72":"1px solid #ccc4b8",color:unit===u?"#4a5568":"#6a7280",boxShadow:unit===u?"inset 0 1px 3px rgba(0,0,0,.1)":"none"}}>
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {/* Grain */}
-              <div style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"8px",padding:"12px"}}>
-                <div style={{fontSize:"10px",letterSpacing:"1.5px",color:"#7A6645",textTransform:"uppercase",fontWeight:700,marginBottom:"6px"}}>Commodity</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+              <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
+                <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>COMMODITY</div>
+                <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
                   {grains.map((g,i)=>(
-                    <button key={i} onClick={()=>setGrainIdx(i)} style={{padding:"6px 10px",background:grainIdx===i?g.color||"#C07010":"transparent",color:grainIdx===i?"#FFF":"#5A4A30",border:`1px solid ${g.color||"#C07010"}`,borderRadius:"4px",fontSize:"11px",fontWeight:700,cursor:"pointer",letterSpacing:"0.5px",fontFamily:"'Barlow',sans-serif"}}>
+                    <button key={i} onClick={()=>setGrainIdx(i)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:grainIdx===i?"#e8e2d8":"transparent",border:grainIdx===i?`1px solid ${g.color||"#9a8a72"}`:"1px solid #ccc4b8",color:grainIdx===i?"#4a5568":"#6a7280"}}>
                       {g.name}
                     </button>
                   ))}
                 </div>
               </div>
-
               {/* Field */}
-              <div style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"8px",padding:"12px"}}>
-                <div style={{fontSize:"10px",letterSpacing:"1.5px",color:"#7A6645",textTransform:"uppercase",fontWeight:700,marginBottom:"6px"}}>Field</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
-                  {fields.map(f=>(
-                    <button key={f.id} onClick={()=>setActiveFieldId(f.id)} style={{padding:"6px 10px",background:activeFieldId===f.id?"#2A5E2A":"transparent",color:activeFieldId===f.id?"#FFF":"#5A4A30",border:"1px solid #2A5E2A",borderRadius:"4px",fontSize:"11px",fontWeight:700,cursor:"pointer",letterSpacing:"0.5px",fontFamily:"'Barlow',sans-serif"}}>
-                      {f.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Bin */}
-              <div style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"8px",padding:"12px"}}>
-                <div style={{fontSize:"10px",letterSpacing:"1.5px",color:"#7A6645",textTransform:"uppercase",fontWeight:700,marginBottom:"6px"}}>Destination Bin</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
-                  {bins.map(b=>{
-                    const bg = activeBinId===b.id?"#1E5078":"transparent";
-                    return(<button key={b.id} onClick={()=>setActiveBinId(b.id)} style={{padding:"6px 10px",background:bg,color:activeBinId===b.id?"#FFF":"#5A4A30",border:"1px solid #1E5078",borderRadius:"4px",fontSize:"11px",fontWeight:700,cursor:"pointer",letterSpacing:"0.5px",fontFamily:"'Barlow',sans-serif"}}>
-                      {b.name}
+              <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
+                <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>FIELD</div>
+                <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                  {fields.map(f=>{
+                    const isActive=f.id===activeFieldId;
+                    return(<button key={f.id} onClick={()=>setAFId(f.id)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:isActive?"#e8e2d8":"transparent",border:isActive?"1px solid #6a8a60":"1px solid #ccc4b8",color:isActive?"#4a6a40":"#6a7280"}}>
+                      {f.name} <span style={{fontSize:"8px",color:"#8a9a80",marginLeft:"3px"}}>{f.loads.length}</span>
                     </button>);
                   })}
                 </div>
               </div>
-
-              {/* Truck color */}
-              <div style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"8px",padding:"12px"}}>
-                <div style={{fontSize:"10px",letterSpacing:"1.5px",color:"#7A6645",textTransform:"uppercase",fontWeight:700,marginBottom:"6px"}}>Truck</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+              {/* Truck */}
+              <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
+                <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>TRUCK</div>
+                <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
                   {TRUCK_COLORS.map(c=>(
-                    <button key={c.value} onClick={()=>setTruckColor(c.value)} style={{padding:"5px 8px",background:c.hex,color:c.text,border:`2px solid ${truckColor===c.value?"#C07010":c.border}`,borderRadius:"4px",fontSize:"10px",fontWeight:700,cursor:"pointer",letterSpacing:"0.5px",fontFamily:"'Barlow',sans-serif",boxShadow:truckColor===c.value?"0 0 0 2px #C07010 inset":"none"}}>
+                    <button key={c.value} onClick={()=>setTruckColor(c.value)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:c.hex,color:c.text,border:truckColor===c.value?`2px solid #4a5568`:`1px solid ${c.border}`,boxShadow:truckColor===c.value?"0 0 6px rgba(74,85,104,.4)":"none"}}>
                       {c.label}
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* Field/Load summary */}
-              {activeField&&(
-                <div style={{background:"#F0F8F0",border:"1px solid #A0C8A0",borderRadius:"8px",padding:"10px 12px",fontSize:"12px"}}>
-                  <div style={{fontWeight:700,marginBottom:"3px",color:"#2A5E2A"}}>{activeField.name}</div>
-                  <div style={{color:"#5A6A50"}}>{activeField.loads.length} loads · {(activeField.loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0)).toFixed(0)} bu total</div>
-                </div>
-              )}
-
-              {/* Record button */}
-              <button onClick={recordLoad} disabled={netLbs<100} style={{padding:"20px",background:netLbs>=100?"#2A5E2A":"#C8C0B0",color:"#FFFFFF",border:"none",borderRadius:"8px",fontSize:"18px",fontWeight:700,cursor:netLbs>=100?"pointer":"not-allowed",letterSpacing:"1px",fontFamily:"'Barlow',sans-serif",transition:"background .15s",boxShadow:netLbs>=100?"0 2px 8px rgba(42,94,42,.3)":"none"}}>
-                ✓ RECORD LOAD
-              </button>
             </div>
-          </div>
-        )}
 
-        {/* ── LOG TAB ── */}
-        {tab==="LOG"&&(
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",fontWeight:700}}>Load Log</div>
-              <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
-                <button onClick={()=>setLogFieldId(null)} style={{padding:"4px 10px",background:!logFieldId?"#C07010":"transparent",color:!logFieldId?"#FFF":"#7A6645",border:"1px solid #C07010",borderRadius:"4px",fontSize:"11px",fontWeight:700,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>ALL</button>
-                {fields.map(f=>(
-                  <button key={f.id} onClick={()=>setLogFieldId(f.id)} style={{padding:"4px 10px",background:logFieldId===f.id?"#2A5E2A":"transparent",color:logFieldId===f.id?"#FFF":"#7A6645",border:"1px solid #2A5E2A",borderRadius:"4px",fontSize:"11px",fontWeight:700,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>
-                    {f.name} ({f.loads.length})
-                  </button>
+            {/* Weight display */}
+            <div style={{background:"#ede9e4",border:"3px solid #b0c8a0",borderRadius:"8px",padding:"20px 28px 16px",boxShadow:"inset 0 2px 8px rgba(0,0,0,.06), 0 0 0 1px #9a8a72",marginBottom:"10px",position:"relative",overflow:"hidden"}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontSize:"9px",color:"#6a8060",letterSpacing:"0.2em",marginBottom:"4px"}}>NET WEIGHT</div>
+                <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"54px",fontWeight:700,color:"#4a5568",textShadow:"0 0 10px #4a5568, 0 0 20px #4a5568",letterSpacing:"0.05em",lineHeight:1}}>
+                  {fmtWt(netLbs,unit,grain.bushel_lbs).value}
+                </div>
+                <div style={{fontSize:"18px",color:"#5a6878",marginLeft:"10px",letterSpacing:"0.1em"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</div>
+              </div>
+              <div style={{display:"flex",gap:"32px",marginTop:"14px",paddingTop:"10px",borderTop:"1px solid #ccc4b8",justifyContent:"center"}}>
+                {[{label:"GROSS",lbs:rawLbs},{label:"TARE",lbs:tare}].map(({label,lbs})=>(
+                  <div key={label} style={{fontFamily:"monospace",textAlign:"center"}}>
+                    <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em"}}>{label}</div>
+                    <div style={{fontSize:"18px",color:"#4a5568",textShadow:"0 0 6px #4a5568"}}>{fmtWt(lbs,unit,grain.bushel_lbs).value} <span style={{fontSize:"10px",color:"#5a6878"}}>{fmtWt(lbs,unit,grain.bushel_lbs).label}</span></div>
+                  </div>
                 ))}
               </div>
             </div>
-            {fields.filter(f=>!logFieldId||f.id===logFieldId).map(f=>{
-              const loads=[...f.loads].reverse();
-              if(!loads.length) return null;
-              return(<div key={f.id} style={{marginBottom:"20px"}}>
-                <div style={{fontWeight:700,fontSize:"14px",color:"#C07010",marginBottom:"8px",paddingBottom:"5px",borderBottom:"2px solid #D8CEBC"}}>
-                  🌾 {f.name} — {loads.length} loads · {(loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0)).toFixed(0)} bu
+
+            {/* Tare button */}
+            <button onClick={()=>setTare(rawLbs)} style={{...btnBase,width:"100%",padding:"8px",fontSize:"10px",letterSpacing:"0.12em",background:"#f5f3ef",color:"#6a7280",boxShadow:"0 2px 0 #c8ccc0",marginBottom:"6px"}}>
+              SET TARE ({fmtWt(rawLbs,unit,grain.bushel_lbs).value} {fmtWt(rawLbs,unit,grain.bushel_lbs).label})
+            </button>
+
+            {/* Numpad */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"8px"}}>
+              {["7","8","9","4","5","6","1","2","3","⌫","0","CLR"].map(k=>(
+                <button key={k} className="as-numkey" onClick={()=>onKey(k)} style={{...btnBase,padding:"14px 0",fontSize:"16px",background:k==="CLR"?"#fff0f0":k==="⌫"?"#fef8e8":"#fafaf6",color:k==="CLR"?"#e74c3c":k==="⌫"?"#c47d0a":"#4a5568",border:k==="CLR"?"1px solid #e0c0c0":k==="⌫"?"1px solid #e8d8a8":"1px solid #c0b8ac",boxShadow:"0 2px 0 #c8ccc0"}}>
+                  {k}
+                </button>
+              ))}
+            </div>
+
+            {/* Record button */}
+            <button className="as-record-btn" onClick={recordLoad} disabled={!canRecord} style={{width:"100%",padding:"16px",fontFamily:"'Orbitron',monospace",fontSize:"14px",fontWeight:700,letterSpacing:"0.15em",background:canRecord?"#4a7535":"#c0b8ac",color:canRecord?"#fff":"#8a8278",border:"none",borderRadius:"6px",cursor:canRecord?"pointer":"not-allowed",transition:"all .15s",boxShadow:canRecord?"0 3px 0 #2d5520, 0 0 20px rgba(74,117,53,.3)":"0 2px 0 #a0a898",animation:canRecord?"as-pulse 2s infinite":"none"}}>
+              ✓ RECORD LOAD
+            </button>
+
+            {/* Recent loads for active field */}
+            {activeField?.loads.length > 0 && (
+              <div style={{marginTop:"10px",background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"8px"}}>
+                <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>RECENT LOADS — {activeField.name}</div>
+                <div style={{maxHeight:"160px",overflowY:"auto"}}>
+                  {[...activeField.loads].reverse().slice(0,10).map(l=>{
+                    const f=fmtWt(l.net,unit,l.grainBushelLbs||60);
+                    const tc=TRUCK_COLORS.find(t=>t.value===l.truckColor)||TRUCK_COLORS[0];
+                    const bn=bins.find(b=>b.id===l.binId);
+                    return(<div key={l.id} style={{borderBottom:"1px solid #ddd8d0",padding:"4px 2px",fontSize:"9px",color:"#4a5568",display:"flex",gap:"6px",alignItems:"center"}}>
+                      <div style={{width:"8px",height:"8px",borderRadius:"50%",background:tc.hex,border:`1px solid ${tc.border}`,flexShrink:0}}/>
+                      <span style={{flex:1}}><strong>{f.value}</strong> {f.label}</span>
+                      <span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
+                      <span style={{color:"#9a8a72"}}>{l.timeOnly}</span>
+                    </div>);
+                  })}
                 </div>
-                {loads.map(l=>{
-                  const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
-                  const bin=bins.find(b=>b.id===l.binId);
-                  const tc=TRUCK_COLORS.find(c=>c.value===l.truckColor)||TRUCK_COLORS[0];
-                  return(<div key={l.id} style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"6px",padding:"8px 12px",marginBottom:"5px",display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
-                    <div style={{width:"12px",height:"12px",borderRadius:"50%",background:tc.hex,border:`1px solid ${tc.border}`,flexShrink:0}}/>
-                    <div style={{flex:1,minWidth:"120px"}}>
-                      <div style={{fontWeight:700,fontSize:"13px"}}>{l.grainName} · {bu} bu <span style={{color:"#7A6645",fontWeight:400,fontSize:"11px"}}>({l.net.toLocaleString()} lbs)</span></div>
-                      <div style={{fontSize:"11px",color:"#7A6645"}}>{l.date} {l.timeOnly} · {bin?.name||`Bin ${l.binId}`} · {l.operator}</div>
-                    </div>
-                    {perms.canEditFields&&(
-                      <button onClick={()=>setEditLoad({load:l,fieldId:f.id})} style={{padding:"3px 8px",background:"transparent",color:"#7A6645",border:"1px solid #D8CEBC",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Edit</button>
-                    )}
-                    {perms.canEditFields&&(
-                      <button onClick={()=>{
-                        if(!confirm("Delete this load?")) return;
-                        const nf=fields.map(ff=>ff.id===f.id?{...ff,loads:ff.loads.filter(ll=>ll.id!==l.id)}:ff);
-                        const removedLbs=l.net;
-                        const nb=bins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-removedLbs)}:b);
-                        setFields(nf); setBins(nb); save(nf,nb,grains);
-                      }} style={{padding:"3px 8px",background:"#FDF0EE",color:"#841A18",border:"1px solid rgba(132,26,24,.2)",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✕</button>
-                    )}
-                  </div>);
-                })}
-              </div>);
-            })}
-          </div>
-        )}
+                <div style={{marginTop:"5px",fontSize:"9px",color:"#4a7535",letterSpacing:"0.08em"}}>
+                  TOTAL: {fmtWt(activeField.loads.reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).value} {fmtWt(activeField.loads.reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).label}
+                </div>
+              </div>
+            )}
+          </>)}
 
-        {/* ── BINS TAB ── */}
-        {tab==="BINS"&&(
-          <div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"16px",flexWrap:"wrap",gap:"8px"}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",fontWeight:700}}>Bin Storage</div>
-              {perms.canEditBins&&<button onClick={()=>{setBins(b=>{const nb=[...b,{id:Date.now(),name:`BIN ${b.length+1}`,capacityBu:50000,storedLbs:0,grainName:"WHEAT"}];save(fields,nb,grains);return nb;})}} style={{padding:"7px 14px",background:"#C07010",color:"#FFF",border:"none",borderRadius:"6px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Bin</button>}
+          {/* ── BINS TAB ── */}
+          {tab==="BINS"&&(<>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>BIN STORAGE</div>
+              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT"}];setBins(nb);save(fields,nb,grains);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"14px"}}>
-              {bins.map(b=>{
-                const g=grains.find(gg=>gg.name===b.grainName)||FALLBACK_GRAIN;
-                const storedBu=b.storedLbs/(g.bushel_lbs||60);
-                const pct=b.capacityBu>0?Math.min(100,storedBu/b.capacityBu*100):0;
-                const fillColor=pct>=95?"#DC2626":pct>=80?"#D97706":"#2A5E2A";
-                return(<div key={b.id} style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"10px",padding:"16px",textAlign:"center"}}>
-                  {/* SVG bin gauge */}
-                  <svg width="90" height="200" viewBox="0 0 90 200" style={{margin:"0 auto 8px",display:"block"}}>
-                    <polygon points="45,2 88,30 88,170 2,170 2,30" fill="#E8E0D0" stroke="#B0A890" strokeWidth="2"/>
-                    {pct>0&&<clipPath id={`clip-${b.id}`}><polygon points="45,2 88,30 88,170 2,170 2,30"/></clipPath>}
-                    {pct>0&&<rect x="2" y={30+(140*(100-pct)/100)} width="86" height={140*(pct/100)} fill={fillColor} opacity="0.7" clipPath={`url(#clip-${b.id})`}/>}
-                    <polygon points="45,2 88,30 88,170 2,170 2,30" fill="none" stroke="#8A7A60" strokeWidth="2"/>
-                    <text x="45" y="105" textAnchor="middle" fill="#2A2010" fontSize="14" fontWeight="bold">{pct.toFixed(0)}%</text>
-                    <text x="45" y="120" textAnchor="middle" fill="#5A4A30" fontSize="9">{storedBu.toFixed(0)} BU</text>
-                  </svg>
-                  <div style={{fontWeight:700,fontSize:"14px",marginBottom:"2px"}}>{b.name}</div>
-                  <div style={{fontSize:"11px",color:"#7A6645",marginBottom:"8px"}}>{b.grainName} · cap: {b.capacityBu.toLocaleString()} bu</div>
-                  <div style={{fontSize:"11px",color:"#7A6645",marginBottom:"8px"}}>{(b.storedLbs/2000).toFixed(1)} tons stored</div>
-                  {perms.canEditBins&&(
-                    <button onClick={()=>setEditBin(b)} style={{padding:"4px 10px",background:"transparent",color:"#7A6645",border:"1px solid #D8CEBC",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Edit</button>
-                  )}
-                </div>);
-              })}
-            </div>
-          </div>
-        )}
+            {bins.map(b=>(
+              <div key={b.id} style={{marginBottom:"10px"}}>
+                <BinGauge bin={b} grains={grains}/>
+                {perms.canEditBins&&<button onClick={()=>setEB(b)} style={{...btnBase,width:"100%",padding:"5px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#6a7280",boxShadow:"0 1px 0 #c8ccc0",marginTop:"4px"}}>EDIT {b.name}</button>}
+              </div>
+            ))}
+          </>)}
 
-        {/* ── FIELDS TAB ── */}
-        {tab==="FIELDS"&&(
-          <div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"16px",flexWrap:"wrap",gap:"8px"}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",fontWeight:700}}>Fields</div>
-              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${fields.length+1}`,loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains);}} style={{padding:"7px 14px",background:"#C07010",color:"#FFF",border:"none",borderRadius:"6px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>}
+          {/* ── FIELDS TAB ── */}
+          {tab==="FIELDS"&&(<>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>FIELDS</div>
+              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${fields.length+1}`,loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
             </div>
             {fields.map(f=>{
               const totalBu=f.loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
-              return(<div key={f.id} style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"10px",padding:"14px 16px",marginBottom:"10px"}}>
-                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"10px",flexWrap:"wrap"}}>
+              return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"6px",padding:"10px 12px",marginBottom:"8px"}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
                   <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:"16px",marginBottom:"3px"}}>{f.name}</div>
-                    <div style={{fontSize:"12px",color:"#7A6645",display:"flex",gap:"12px",flexWrap:"wrap"}}>
-                      {f.acres&&<span>Acres: {f.acres}</span>}
-                      <span>Loads: {f.loads.length}</span>
-                      <span>Total: {totalBu.toFixed(0)} bu</span>
-                      {f.grainPrice&&perms.canViewCosts&&<span style={{color:"#2A5E2A",fontWeight:600}}>Revenue: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</span>}
-                      {f.landlord&&perms.canViewCropShare&&<span>Landlord: {f.landlord}</span>}
+                    <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"4px"}}>{f.name}</div>
+                    <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",lineHeight:1.8}}>
+                      {f.acres?<div>ACRES: {f.acres}</div>:null}
+                      <div>LOADS: {f.loads.length} · TOTAL: {totalBu.toFixed(0)} BU</div>
+                      {f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
+                      {f.landlord&&perms.canViewCropShare&&<div>LANDLORD: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
+                      {perms.canViewInsurance&&f.insType&&<div style={{color:"#5a6a90"}}>INS: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} BU/AC GUAR.`:""}</div>}
                     </div>
-                    {perms.canViewInsurance&&f.insType&&(
-                      <div style={{fontSize:"11px",color:"#5A4A70",marginTop:"4px"}}>Insurance: {f.insType} · {f.insCoverageLevel}% · {f.insGuaranteedYield} bu/ac guaranteed</div>
-                    )}
                   </div>
                   {perms.canEditFields&&(
-                    <div style={{display:"flex",gap:"6px"}}>
-                      <button onClick={()=>setEditField(f)} style={{padding:"4px 10px",background:"transparent",color:"#7A6645",border:"1px solid #D8CEBC",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Edit</button>
-                      {fields.length>1&&<button onClick={()=>{if(!confirm("Delete this field?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains);}} style={{padding:"4px 10px",background:"#FDF0EE",color:"#841A18",border:"1px solid rgba(132,26,24,.2)",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✕</button>}
+                    <div style={{display:"flex",gap:"4px",flexShrink:0}}>
+                      <button onClick={()=>setEF(f)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+                      {fields.length>1&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains);}} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
                     </div>
                   )}
                 </div>
-              </div>);
-            })}
-          </div>
-        )}
-
-        {/* ── COMM TAB ── */}
-        {tab==="COMM"&&(
-          <div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"16px",flexWrap:"wrap",gap:"8px"}}>
-              <div style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",fontWeight:700}}>Commodities</div>
-              {perms.canEditComm&&<button onClick={()=>setShowAddGrain(true)} style={{padding:"7px 14px",background:"#C07010",color:"#FFF",border:"none",borderRadius:"6px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Commodity</button>}
-            </div>
-            {grains.map((g,i)=>(
-              <div key={i} style={{background:"#FFFFFF",border:`1px solid ${g.color||"#D8CEBC"}`,borderLeft:`4px solid ${g.color||"#C07010"}`,borderRadius:"8px",padding:"12px 16px",marginBottom:"8px",display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:"15px"}}>{g.name}</div>
-                  <div style={{fontSize:"12px",color:"#7A6645"}}>{g.bushel_lbs} lbs/bu</div>
-                </div>
-                {perms.canEditComm&&(
-                  <div style={{display:"flex",gap:"5px"}}>
-                    <button onClick={()=>setEditGrain({...g,idx:i})} style={{padding:"4px 9px",background:"transparent",color:"#7A6645",border:"1px solid #D8CEBC",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Edit</button>
-                    {grains.length>1&&<button onClick={()=>{const ng=grains.filter((_,ii)=>ii!==i);setGrains(ng);if(grainIdx>=ng.length)setGrainIdx(0);save(fields,bins,ng);}} style={{padding:"4px 9px",background:"#FDF0EE",color:"#841A18",border:"1px solid rgba(132,26,24,.2)",borderRadius:"4px",fontSize:"11px",cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✕</button>}
+                {/* Mini load log */}
+                {f.loads.length>0&&(
+                  <div style={{marginTop:"8px",borderTop:"1px solid #ddd8d0",paddingTop:"6px",maxHeight:"120px",overflowY:"auto"}}>
+                    {[...f.loads].reverse().map(l=>{
+                      const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
+                      const tc=TRUCK_COLORS.find(c=>c.value===l.truckColor)||TRUCK_COLORS[0];
+                      const bn=bins.find(b=>b.id===l.binId);
+                      return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",fontSize:"9px",color:"#6a7280",padding:"2px 0",borderBottom:"1px solid #e8e4dc"}}>
+                        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:tc.hex,border:`1px solid ${tc.border}`,flexShrink:0}}/>
+                        <span style={{color:"#4a5568",fontWeight:"bold"}}>{bu} BU</span>
+                        <span>{l.grainName}</span>
+                        <span>{bn?.name||"?"}</span>
+                        <span style={{marginLeft:"auto"}}>{l.date} {l.timeOnly}</span>
+                        {perms.canEditFields&&<button onClick={()=>setEL({load:l,fieldId:f.id})} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#ede9e4",color:"#4a5568",boxShadow:"none",border:"1px solid #ccc4b8"}}>EDIT</button>}
+                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.map(ff=>ff.id===f.id?{...ff,loads:ff.loads.filter(ll=>ll.id!==l.id)}:ff);const nb=bins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-l.net)}:b);setFields(nf);setBins(nb);save(nf,nb,grains);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
+                      </div>);
+                    })}
                   </div>
                 )}
+              </div>);
+            })}
+          </>)}
+
+          {/* ── COMM TAB ── */}
+          {tab==="COMM"&&(<>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>COMMODITIES</div>
+              {perms.canEditComm&&<button onClick={()=>setAG(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD</button>}
+            </div>
+            {grains.map((g,i)=>(
+              <div key={i} style={{background:"#f5f3ef",border:`1px solid ${g.color||"#ccc4b8"}`,borderLeft:`4px solid ${g.color||"#9a8a72"}`,borderRadius:"4px",padding:"8px 12px",marginBottom:"6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em"}}>{g.name}</div>
+                  <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",marginTop:"2px"}}>{g.bushel_lbs} LBS/BU</div>
+                </div>
+                {perms.canEditComm&&<div style={{display:"flex",gap:"4px"}}>
+                  <button onClick={()=>setEG({...g,idx:i})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+                  {grains.length>1&&<button onClick={()=>{const ng=grains.filter((_,ii)=>ii!==i);setGrains(ng);if(grainIdx>=ng.length)setGrainIdx(0);save(fields,bins,ng);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+                </div>}
               </div>
             ))}
-          </div>
-        )}
+          </>)}
 
-        {/* ── REPORT TAB ── */}
-        {tab==="REPORT"&&perms.canReport&&(
-          <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",fontWeight:700,marginBottom:"16px"}}>Harvest Report</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"10px",marginBottom:"16px"}}>
+          {/* ── REPORT TAB ── */}
+          {tab==="REPORT"&&perms.canReport&&(<>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"12px"}}>HARVEST REPORT</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
               {[
-                ["Total Loads",totalLoads],
-                ["Total Fields",fields.length],
-                ["Total Bushels",fields.reduce((s,f)=>s+f.loads.reduce((ss,l)=>ss+(l.net/(l.grainBushelLbs||60)),0),0).toFixed(0)],
-                ["Total Tons",(fields.reduce((s,f)=>s+f.loads.reduce((ss,l)=>ss+l.net,0),0)/2000).toFixed(1)],
+                ["TOTAL LOADS",totalLoads],
+                ["TOTAL FIELDS",fields.length],
+                ["TOTAL BUSHELS",fields.reduce((s,f)=>s+f.loads.reduce((ss,l)=>ss+(l.net/(l.grainBushelLbs||60)),0),0).toFixed(0)],
+                ["TOTAL TONS",(fields.reduce((s,f)=>s+f.loads.reduce((ss,l)=>ss+l.net,0),0)/2000).toFixed(1)],
               ].map(([l,v])=>(
-                <div key={l} style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"8px",padding:"12px",textAlign:"center"}}>
-                  <div style={{fontSize:"22px",fontWeight:700,color:"#C07010"}}>{v}</div>
-                  <div style={{fontSize:"10px",color:"#7A6645",textTransform:"uppercase",letterSpacing:"1px",marginTop:"2px"}}>{l}</div>
+                <div key={l} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",textAlign:"center"}}>
+                  <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"24px",color:"#4a7535",textShadow:"0 0 8px #4a7535"}}>{v}</div>
+                  <div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginTop:"2px"}}>{l}</div>
                 </div>
               ))}
             </div>
             {fields.map(f=>{
               const totalBu=f.loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
-              const revenue=f.grainPrice?totalBu*parseFloat(f.grainPrice||0):null;
               if(!f.loads.length) return null;
-              return(<div key={f.id} style={{background:"#FFFFFF",border:"1px solid #D8CEBC",borderRadius:"8px",padding:"14px",marginBottom:"10px"}}>
-                <div style={{fontWeight:700,fontSize:"15px",color:"#C07010",marginBottom:"8px"}}>{f.name}</div>
-                <div style={{display:"flex",gap:"16px",flexWrap:"wrap",fontSize:"13px"}}>
-                  <div><span style={{color:"#7A6645"}}>Loads: </span><strong>{f.loads.length}</strong></div>
-                  <div><span style={{color:"#7A6645"}}>Bushels: </span><strong>{totalBu.toFixed(0)}</strong></div>
-                  <div><span style={{color:"#7A6645"}}>Tons: </span><strong>{(f.loads.reduce((s,l)=>s+l.net,0)/2000).toFixed(1)}</strong></div>
-                  {f.acres&&<div><span style={{color:"#7A6645"}}>Bu/Ac: </span><strong>{(totalBu/f.acres).toFixed(1)}</strong></div>}
-                  {revenue&&perms.canViewCosts&&<div style={{color:"#2A5E2A"}}><span>Revenue: </span><strong>${revenue.toFixed(0)}</strong></div>}
+              return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+                <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a7535",letterSpacing:"0.08em",marginBottom:"6px"}}>{f.name}</div>
+                <div style={{fontSize:"9px",color:"#4a5568",letterSpacing:"0.08em",lineHeight:1.8}}>
+                  <div>LOADS: {f.loads.length}</div>
+                  <div>BUSHELS: {totalBu.toFixed(0)} BU</div>
+                  <div>TONS: {(f.loads.reduce((s,l)=>s+l.net,0)/2000).toFixed(1)}</div>
+                  {f.acres>0&&<div>YIELD: {(totalBu/f.acres).toFixed(1)} BU/AC</div>}
+                  {f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
                 </div>
-                {/* By grain breakdown */}
-                {[...new Set(f.loads.map(l=>l.grainName))].map(gn=>{
-                  const gLoads=f.loads.filter(l=>l.grainName===gn);
-                  const gBu=gLoads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
-                  return(<div key={gn} style={{fontSize:"12px",color:"#7A6645",marginTop:"4px"}}>{gn}: {gBu.toFixed(0)} bu ({gLoads.length} loads)</div>);
-                })}
               </div>);
             })}
-          </div>
-        )}
+          </>)}
 
+        </div>
       </div>
 
       {/* ── Modals ── */}
-      {editBin&&<BinModal bin={editBin} grains={grains} onSave={f=>{const nb=bins.map(b=>b.id===editBin.id?{...editBin,...f}:b);setBins(nb);save(fields,nb,grains);setEditBin(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains);setEditBin(null);}} onClose={()=>setEditBin(null)} canDelete={bins.length>1}/>}
-      {editField&&<FieldModal field={editField} perms={perms} onSave={f=>{const nf=fields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains);setEditField(null);}} onClose={()=>setEditField(null)}/>}
-      {(showAddGrain||editGrain)&&<GrainModal grain={editGrain} onSave={f=>{
-        let ng;
-        if(editGrain){ng=grains.map((g,i)=>i===editGrain.idx?{name:f.name.toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color:g.color}:g);}
-        else{ng=[...grains,{name:f.name.toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color:"#C07010"}];}
-        setGrains(ng);save(fields,bins,ng);setShowAddGrain(false);setEditGrain(null);
-      }} onClose={()=>{setShowAddGrain(false);setEditGrain(null);}}/>}
-      {editLoad&&<EditLoadModal load={editLoad.load} bins={bins} onSave={f=>{const nf=fields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:ff.loads.map(l=>l.id===editLoad.load.id?{...l,...f}:l)}:ff);setFields(nf);save(nf,bins,grains);setEditLoad(null);}} onClose={()=>setEditLoad(null)}/>}
-    </div>
+      {editBin&&<BinMo bin={editBin} grains={grains} onSave={f=>{const nb=bins.map(b=>b.id===editBin.id?{...editBin,...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)}:b);setBins(nb);save(fields,nb,grains);setEB(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains);setEB(null);}} onClose={()=>setEB(null)} canDelete={bins.length>1}/>}
+      {editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=fields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains);setEF(null);}} onClose={()=>setEF(null)}/>}
+      {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=grains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
+      {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=fields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:ff.loads.map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains);setEL(null);}} onClose={()=>setEL(null)}/>}
+    </>
   );
 }
 
-// ── Modals ────────────────────────────────────────────────────────
-function Mo({title,onClose,onSave,saveLabel,children}){
-  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}} onClick={onClose}>
-    <div style={{background:"#FDFAF4",border:"1px solid #C4A468",borderRadius:"12px",width:"100%",maxWidth:"480px",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-      <div style={{padding:"16px 20px 12px",borderBottom:"1px solid #D8CEBC",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:"18px",fontWeight:700}}>{title}</div>
-        <button style={{background:"none",border:"none",color:"#7A6645",cursor:"pointer",fontSize:"17px"}} onClick={onClose}>✕</button>
-      </div>
-      <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:"12px"}}>{children}</div>
-      <div style={{padding:"12px 20px",borderTop:"1px solid #D8CEBC",display:"flex",justifyContent:"flex-end",gap:"8px"}}>
-        <button style={{padding:"7px 14px",background:"transparent",color:"#7A6645",border:"1px solid #D8CEBC",borderRadius:"6px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} onClick={onClose}>Cancel</button>
-        <button style={{padding:"7px 14px",background:"#C07010",color:"#FFF",border:"none",borderRadius:"6px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} onClick={onSave}>{saveLabel||"Save"}</button>
-      </div>
-    </div>
-  </div>);
-}
-function Fg({label,children}){return(<div style={{display:"flex",flexDirection:"column",gap:"4px"}}><label style={{fontSize:"10px",letterSpacing:"1px",textTransform:"uppercase",color:"#7A6645",fontWeight:700}}>{label}</label>{children}</div>);}
-function Fi(props){return(<input style={{background:"#FFF",border:"1px solid #C4A468",borderRadius:"6px",padding:"7px 10px",color:"#1E1408",fontFamily:"'Barlow',sans-serif",fontSize:"13px",outline:"none",width:"100%"}} {...props}/>);}
-function Fs({children,...props}){return(<select style={{background:"#FFF",border:"1px solid #C4A468",borderRadius:"6px",padding:"7px 10px",color:"#1E1408",fontFamily:"'Barlow',sans-serif",fontSize:"13px",outline:"none",width:"100%"}} {...props}>{children}</select>);}
+// ── Modal helpers ─────────────────────────────────────────────────
+const moStyle = {position:"fixed",inset:0,background:"rgba(20,30,10,.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"};
+const cardStyle = {background:"#fff",border:"2px solid #b0a08a",borderRadius:"8px",padding:"24px",width:"100%",maxWidth:"340px",fontFamily:"'Share Tech Mono',monospace"};
+const lblStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px",textAlign:"left"};
+const inStyle = {width:"100%",padding:"10px",fontFamily:"'Share Tech Mono',monospace",fontSize:"13px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
+const seStyle = {...inStyle,cursor:"pointer"};
+const MoBtn = ({children,onClick,variant="ghost"})=><button onClick={onClick} style={{flex:1,padding:"10px",fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:"pointer"}}>{children}</button>;
+const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
 
-function BinModal({bin,grains,onSave,onDelete,onClose,canDelete}){
+function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
   const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  return(<Mo title="Edit Bin" onClose={onClose} onSave={()=>onSave({...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)})} saveLabel="Save Bin">
-    <Fg label="Bin Name"><Fi value={f.name} onChange={e=>s("name",e.target.value)}/></Fg>
-    <Fg label="Capacity (bu)"><Fi type="number" value={f.capacityBu} onChange={e=>s("capacityBu",e.target.value)}/></Fg>
-    <Fg label="Stored (lbs)"><Fi type="number" value={f.storedLbs} onChange={e=>s("storedLbs",e.target.value)}/></Fg>
-    <Fg label="Grain Type"><Fs value={f.grainName} onChange={e=>s("grainName",e.target.value)}>{grains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</Fs></Fg>
-    {canDelete&&<button onClick={onDelete} style={{padding:"7px",background:"#FDF0EE",color:"#841A18",border:"1px solid rgba(132,26,24,.2)",borderRadius:"6px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Delete Bin</button>}
-  </Mo>);
+  return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+    <div style={hdrStyle}>EDIT {bin.name}</div>
+    <div style={lblStyle}>BIN NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/>
+    <div style={lblStyle}>CAPACITY (BU)</div><input style={inStyle} type="number" value={f.capacityBu} onChange={e=>setF(p=>({...p,capacityBu:e.target.value}))}/>
+    <div style={lblStyle}>STORED (LBS)</div><input style={inStyle} type="number" value={f.storedLbs} onChange={e=>setF(p=>({...p,storedLbs:e.target.value}))}/>
+    <div style={lblStyle}>GRAIN TYPE</div><select style={seStyle} value={f.grainName} onChange={e=>setF(p=>({...p,grainName:e.target.value}))}>{grains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</select>
+    <div style={{display:"flex",gap:"8px"}}>
+      {canDelete&&<MoBtn variant="danger" onClick={onDelete}>DELETE</MoBtn>}
+      <MoBtn onClick={onClose}>CANCEL</MoBtn>
+      <MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn>
+    </div>
+  </div></div>);
 }
 
-function FieldModal({field,perms,onSave,onClose}){
+function FieldMo({field,perms,onSave,onClose}){
   const[f,setF]=useState({name:field.name,acres:field.acres||"",grainPrice:field.grainPrice||"",landlord:field.landlord||"",cropShare:field.cropShare||"",insCoverageLevel:field.insCoverageLevel||"",insGuaranteedYield:field.insGuaranteedYield||"",insPriceElection:field.insPriceElection||"",insType:field.insType||"",insInsuredAcres:field.insInsuredAcres||""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  return(<Mo title={`Edit ${field.name}`} onClose={onClose} onSave={()=>onSave(f)} saveLabel="Save Field">
-    <Fg label="Field Name"><Fi value={f.name} onChange={e=>s("name",e.target.value)}/></Fg>
-    <Fg label="Acres"><Fi type="number" value={f.acres} onChange={e=>s("acres",e.target.value)}/></Fg>
-    {perms.canViewCosts&&<Fg label="Grain Price ($/bu)"><Fi type="number" step="0.01" value={f.grainPrice} onChange={e=>s("grainPrice",e.target.value)} placeholder="e.g. 7.25"/></Fg>}
-    {perms.canViewCropShare&&<><Fg label="Landlord"><Fi value={f.landlord} onChange={e=>s("landlord",e.target.value)}/></Fg><Fg label="Crop Share %"><Fi type="number" value={f.cropShare} onChange={e=>s("cropShare",e.target.value)}/></Fg></>}
-    {perms.canViewInsurance&&<><Fg label="Insurance Type"><Fi value={f.insType} onChange={e=>s("insType",e.target.value)} placeholder="RP, YP, APH…"/></Fg><Fg label="Coverage Level %"><Fi type="number" value={f.insCoverageLevel} onChange={e=>s("insCoverageLevel",e.target.value)}/></Fg><Fg label="Guaranteed Yield (bu/ac)"><Fi type="number" value={f.insGuaranteedYield} onChange={e=>s("insGuaranteedYield",e.target.value)}/></Fg><Fg label="Price Election ($/bu)"><Fi type="number" step="0.01" value={f.insPriceElection} onChange={e=>s("insPriceElection",e.target.value)}/></Fg><Fg label="Insured Acres"><Fi type="number" value={f.insInsuredAcres} onChange={e=>s("insInsuredAcres",e.target.value)}/></Fg></>}
-  </Mo>);
+  return(<div style={moStyle} onClick={onClose}><div style={{...cardStyle,maxWidth:"380px",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+    <div style={hdrStyle}>EDIT FIELD</div>
+    <div style={lblStyle}>FIELD NAME</div><input style={inStyle} value={f.name} onChange={e=>s("name",e.target.value)}/>
+    <div style={lblStyle}>ACRES</div><input style={inStyle} type="number" value={f.acres} onChange={e=>s("acres",e.target.value)}/>
+    {perms.canViewCosts&&<><div style={lblStyle}>GRAIN PRICE ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.grainPrice} onChange={e=>s("grainPrice",e.target.value)} placeholder="e.g. 7.25"/></>}
+    {perms.canViewCropShare&&<><div style={lblStyle}>LANDLORD</div><input style={inStyle} value={f.landlord} onChange={e=>s("landlord",e.target.value)}/><div style={lblStyle}>CROP SHARE %</div><input style={inStyle} type="number" value={f.cropShare} onChange={e=>s("cropShare",e.target.value)}/></>}
+    {perms.canViewInsurance&&<><div style={lblStyle}>INSURANCE TYPE</div><input style={inStyle} value={f.insType} onChange={e=>s("insType",e.target.value)} placeholder="RP, YP, APH..."/><div style={lblStyle}>COVERAGE LEVEL %</div><input style={inStyle} type="number" value={f.insCoverageLevel} onChange={e=>s("insCoverageLevel",e.target.value)}/><div style={lblStyle}>GUARANTEED YIELD (BU/AC)</div><input style={inStyle} type="number" value={f.insGuaranteedYield} onChange={e=>s("insGuaranteedYield",e.target.value)}/><div style={lblStyle}>PRICE ELECTION ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.insPriceElection} onChange={e=>s("insPriceElection",e.target.value)}/><div style={lblStyle}>INSURED ACRES</div><input style={inStyle} type="number" value={f.insInsuredAcres} onChange={e=>s("insInsuredAcres",e.target.value)}/></>}
+    <div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn></div>
+  </div></div>);
 }
 
-function GrainModal({grain,onSave,onClose}){
+function GrainMo({grain,onSave,onClose}){
   const[f,setF]=useState({name:grain?.name||"",bushel_lbs:grain?.bushel_lbs||60});
-  return(<Mo title={grain?"Edit Commodity":"Add Commodity"} onClose={onClose} onSave={()=>{if(!f.name.trim())return alert("Name required.");onSave(f);}} saveLabel={grain?"Save":"Add"}>
-    <Fg label="Commodity Name"><Fi value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} placeholder="e.g. WHEAT, CANOLA, BARLEY"/></Fg>
-    <Fg label="Pounds per Bushel"><Fi type="number" value={f.bushel_lbs} onChange={e=>setF(p=>({...p,bushel_lbs:e.target.value}))} placeholder="60"/></Fg>
-  </Mo>);
+  return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+    <div style={hdrStyle}>{grain?"EDIT":"ADD"} COMMODITY</div>
+    <div style={lblStyle}>NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} placeholder="e.g. WHEAT"/>
+    <div style={lblStyle}>LBS / BUSHEL</div><input style={inStyle} type="number" value={f.bushel_lbs} onChange={e=>setF(p=>({...p,bushel_lbs:e.target.value}))}/>
+    <div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>{if(!f.name.trim())return alert("Name required");onSave(f);}}>SAVE</MoBtn></div>
+  </div></div>);
 }
 
-function EditLoadModal({load,bins,onSave,onClose}){
+function LoadMo({load,bins,onSave,onClose}){
   const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  return(<Mo title="Edit Load" onClose={onClose} onSave={()=>onSave({...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)})} saveLabel="Save">
-    <Fg label="Grain"><Fi value={f.grainName} onChange={e=>s("grainName",e.target.value)}/></Fg>
-    <Fg label="lbs/bu"><Fi type="number" value={f.grainBushelLbs} onChange={e=>s("grainBushelLbs",e.target.value)}/></Fg>
-    <Fg label="Net Weight (lbs)"><Fi type="number" value={f.net} onChange={e=>s("net",e.target.value)}/></Fg>
-    <Fg label="Bin"><Fs value={f.binId} onChange={e=>s("binId",Number(e.target.value))}>{bins.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</Fs></Fg>
-    <Fg label="Operator"><Fi value={f.operator} onChange={e=>s("operator",e.target.value)}/></Fg>
-  </Mo>);
+  return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+    <div style={hdrStyle}>EDIT LOAD</div>
+    <div style={lblStyle}>GRAIN</div><input style={inStyle} value={f.grainName} onChange={e=>s("grainName",e.target.value)}/>
+    <div style={lblStyle}>LBS/BU</div><input style={inStyle} type="number" value={f.grainBushelLbs} onChange={e=>s("grainBushelLbs",e.target.value)}/>
+    <div style={lblStyle}>NET WEIGHT (LBS)</div><input style={inStyle} type="number" value={f.net} onChange={e=>s("net",e.target.value)}/>
+    <div style={lblStyle}>BIN</div><select style={seStyle} value={f.binId} onChange={e=>s("binId",Number(e.target.value))}>{bins.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
+    <div style={lblStyle}>OPERATOR</div><input style={inStyle} value={f.operator} onChange={e=>s("operator",e.target.value)}/>
+    <div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn></div>
+  </div></div>);
 }
