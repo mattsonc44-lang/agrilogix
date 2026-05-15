@@ -380,8 +380,8 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
               <div className="sidebar-hdr"><span className="sidebar-lbl">Customers</span><span style={{fontSize:11,color:"var(--text-dim)"}}>{D.customers.length}</span></div>
               <div className="sidebar-search"><input placeholder="Search equipment…" value={sbSearch} onChange={e=>setSbSearch(e.target.value)}/></div>
               <div className="sidebar-list">
-                {D.customers.map(c=>{
-                  const cvs=fVehicles.filter(v=>v.customerId===c.id);
+                {[...D.customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{
+                  const cvs=[...fVehicles.filter(v=>v.customerId===c.id)].sort((a,b)=>a.name.localeCompare(b.name));
                   const isOpen=selCustId===c.id||cvs.some(v=>v.id===selVehId);
                   return(<div key={c.id}>
                     <div className={`si ${selCustId===c.id&&!selVehId?"active":""}`} onClick={()=>{setSelCust(c.id);setSelVeh(null);}}>
@@ -449,7 +449,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
         <div className="summary-stat"><div className="summary-stat-val">${sumCost(D.records).toLocaleString()}</div><div className="summary-stat-lbl">Total Spent</div></div>
       </div>
       <div className="fleet-grid">
-        {D.customers.map(c=>{const cvs=D.vehicles.filter(v=>v.customerId===c.id);const cr=D.records.filter(r=>cvs.some(v=>v.id===r.vehicleId));return(<div key={c.id} className="vehicle-card" onClick={()=>{setSelCust(c.id);setSelVeh(null);}}>
+        {[...D.customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const cvs=D.vehicles.filter(v=>v.customerId===c.id);const cr=D.records.filter(r=>cvs.some(v=>v.id===r.vehicleId));return(<div key={c.id} className="vehicle-card" onClick={()=>{setSelCust(c.id);setSelVeh(null);}}>
           <div className="vc-type">🏢 Customer</div><div className="vc-name">{c.name}</div>
           {c.notes&&<div className="vc-sub">{c.notes}</div>}
           <div className="vc-meta"><div><div className="vc-stat-lbl">Equipment</div><div className="vc-stat-val">{cvs.length}</div></div><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{cr.length}</div></div><div><div className="vc-stat-lbl">Total Cost</div><div className="vc-stat-val">${sumCost(cr).toLocaleString()}</div></div></div>
@@ -459,7 +459,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
   );
 
   if(selCust&&!selVeh){
-    const cvs=D.vehicles.filter(v=>v.customerId===selCust.id);
+    const cvs=[...D.vehicles.filter(v=>v.customerId===selCust.id)].sort((a,b)=>a.name.localeCompare(b.name));
     return(<div>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
         <div><div className="overview-title">{selCust.name}</div><div className="overview-sub">{cvs.length} equipment</div></div>
