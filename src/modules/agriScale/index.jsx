@@ -637,7 +637,7 @@ function TruckMo({truck,onSave,onClose}){
   </div></div>);
 }
 
-({load,bins,onSave,onClose}){
+function LoadMo({load,bins,onSave,onClose}){
   const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
