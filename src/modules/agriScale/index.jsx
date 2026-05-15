@@ -232,13 +232,13 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       grainName:grain.name, grainBushelLbs:grain.bushel_lbs,
       binId:activeBinId, truckId:truckColor, truckColor:activeTruck.hex, truckName:activeTruck.name, operator:operatorName,
     };
-    const nf = safeFields.map(f=>f.id===activeFieldId?{...f,loads:[...f.loads,load]}:f);
+    const nf = safeFields.map(f=>f.id===activeFieldId?{...f,loads:[...(f.loads||[]),load]}:f);
     const nb = safeBins.map(b=>b.id===activeBinId?{...b,storedLbs:b.storedLbs+netLbs}:b);
     setFields(nf); setBins(nb); save(nf,nb,grains);
     setRawInput("0"); setTare(0);
   };
 
-  const totalLoads = safeFields.reduce((s,f)=>s+f.loads.length,0);
+  const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
   const syncLabel = syncStatus==="live"?"● LIVE":syncStatus==="pushing"?"SAVING...":syncStatus==="error"?"ERROR":"INIT";
   const syncColor = syncStatus==="live"?"#4a5568":syncStatus==="error"?"#c03030":"#aaa";
   const btnBase = {cursor:"pointer",fontFamily:"'Share Tech Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
@@ -339,7 +339,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                   {safeFields.map(f=>{
                     const isActive=f.id===activeFieldId;
                     return(<button key={f.id} onClick={()=>setAFId(f.id)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:isActive?"#e8e2d8":"transparent",border:isActive?"1px solid #6a8a60":"1px solid #ccc4b8",color:isActive?"#4a6a40":"#6a7280"}}>
-                      {f.name} <span style={{fontSize:"8px",color:"#8a9a80",marginLeft:"3px"}}>{f.loads.length}</span>
+                      {f.name} <span style={{fontSize:"8px",color:"#8a9a80",marginLeft:"3px"}}>{(f.loads||[]).length}</span>
                     </button>);
                   })}
                 </div>
@@ -396,11 +396,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
             </button>
 
             {/* Recent loads for active field */}
-            {activeField?.loads.length > 0 && (
+            {(activeField?.loads||[]).length > 0 && (
               <div style={{marginTop:"10px",background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"8px"}}>
                 <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>RECENT LOADS — {activeField.name}</div>
                 <div style={{maxHeight:"160px",overflowY:"auto"}}>
-                  {[...activeField.loads].reverse().slice(0,10).map(l=>{
+                  {[...(activeField?.loads||[])].reverse().slice(0,10).map(l=>{
                     const f=fmtWt(l.net,unit,l.grainBushelLbs||60);
                     const tHex=l.truckColor||"#f0f0f0";
                     const bn=bins.find(b=>b.id===l.binId);
@@ -413,7 +413,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                   })}
                 </div>
                 <div style={{marginTop:"5px",fontSize:"9px",color:"#4a7535",letterSpacing:"0.08em"}}>
-                  TOTAL: {fmtWt(activeField.loads.reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).value} {fmtWt(activeField.loads.reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).label}
+                  TOTAL: {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).value} {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).label}
                 </div>
               </div>
             )}
@@ -439,14 +439,14 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
               {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
             </div>
             {safeFields.map(f=>{
-              const totalBu=f.loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
+              const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
               return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"6px",padding:"10px 12px",marginBottom:"8px"}}>
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
                   <div style={{flex:1}}>
                     <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"4px"}}>{f.name}</div>
                     <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",lineHeight:1.8}}>
                       {f.acres?<div>ACRES: {f.acres}</div>:null}
-                      <div>LOADS: {f.loads.length} · TOTAL: {totalBu.toFixed(0)} BU</div>
+                      <div>LOADS: {(f.loads||[]).length} · TOTAL: {totalBu.toFixed(0)} BU</div>
                       {f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
                       {f.landlord&&perms.canViewCropShare&&<div>LANDLORD: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
                       {perms.canViewInsurance&&f.insType&&<div style={{color:"#5a6a90"}}>INS: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} BU/AC GUAR.`:""}</div>}
@@ -460,9 +460,9 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                   )}
                 </div>
                 {/* Mini load log */}
-                {f.loads.length>0&&(
+                {(f.loads||[]).length>0&&(
                   <div style={{marginTop:"8px",borderTop:"1px solid #ddd8d0",paddingTop:"6px",maxHeight:"120px",overflowY:"auto"}}>
-                    {[...f.loads].reverse().map(l=>{
+                    {[...(f.loads||[])].reverse().map(l=>{
                       const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
                       const tHex=l.truckColor||"#f0f0f0";
                       const bn=bins.find(b=>b.id===l.binId);
@@ -473,7 +473,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                         <span>{bn?.name||"?"}</span>
                         <span style={{marginLeft:"auto"}}>{l.date} {l.timeOnly}</span>
                         {perms.canEditFields&&<button onClick={()=>setEL({load:l,fieldId:f.id})} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#ede9e4",color:"#4a5568",boxShadow:"none",border:"1px solid #ccc4b8"}}>EDIT</button>}
-                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=safeFields.map(ff=>ff.id===f.id?{...ff,loads:ff.loads.filter(ll=>ll.id!==l.id)}:ff);const nb=safeBins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-l.net)}:b);setFields(nf);setBins(nb);save(nf,nb,grains,trucks);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
+                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=safeFields.map(ff=>ff.id===f.id?{...ff,loads:f(f.loads||[]).filter(ll=>ll.id!==l.id)}:ff);const nb=safeBins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-l.net)}:b);setFields(nf);setBins(nb);save(nf,nb,grains,trucks);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
                       </div>);
                     })}
                   </div>
@@ -530,8 +530,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
               {[
                 ["TOTAL LOADS",totalLoads],
                 ["TOTAL FIELDS",safeFields.length],
-                ["TOTAL BUSHELS",safeFields.reduce((s,f)=>s+f.loads.reduce((ss,l)=>ss+(l.net/(l.grainBushelLbs||60)),0),0).toFixed(0)],
-                ["TOTAL TONS",(safeFields.reduce((s,f)=>s+f.loads.reduce((ss,l)=>ss+l.net,0),0)/2000).toFixed(1)],
+                ["TOTAL BUSHELS",safeFields.reduce((s,f)=>s+(f.loads||[]).reduce((ss,l)=>ss+(l.net/(l.grainBushelLbs||60)),0),0).toFixed(0)],
+                ["TOTAL TONS",(safeFields.reduce((s,f)=>s+(f.loads||[]).reduce((ss,l)=>ss+l.net,0),0)/2000).toFixed(1)],
               ].map(([l,v])=>(
                 <div key={l} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",textAlign:"center"}}>
                   <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"24px",color:"#4a7535",textShadow:"0 0 8px #4a7535"}}>{v}</div>
@@ -540,14 +540,14 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
               ))}
             </div>
             {safeFields.map(f=>{
-              const totalBu=f.loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
-              if(!f.loads.length) return null;
+              const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
+              if(!(f.loads||[]).length) return null;
               return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
                 <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a7535",letterSpacing:"0.08em",marginBottom:"6px"}}>{f.name}</div>
                 <div style={{fontSize:"9px",color:"#4a5568",letterSpacing:"0.08em",lineHeight:1.8}}>
-                  <div>LOADS: {f.loads.length}</div>
+                  <div>LOADS: {(f.loads||[]).length}</div>
                   <div>BUSHELS: {totalBu.toFixed(0)} BU</div>
-                  <div>TONS: {(f.loads.reduce((s,l)=>s+l.net,0)/2000).toFixed(1)}</div>
+                  <div>TONS: {((f.loads||[]).reduce((s,l)=>s+l.net,0)/2000).toFixed(1)}</div>
                   {f.acres>0&&<div>YIELD: {(totalBu/f.acres).toFixed(1)} BU/AC</div>}
                   {f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
                 </div>
@@ -563,7 +563,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       {editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains,trucks);setEF(null);}} onClose={()=>setEF(null)}/>}
       {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
       {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
-      {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:ff.loads.map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains,trucks);setEL(null);}} onClose={()=>setEL(null)}/>}
+      {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:f(f.loads||[]).map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains,trucks);setEL(null);}} onClose={()=>setEL(null)}/>}
     </>
   );
 }
