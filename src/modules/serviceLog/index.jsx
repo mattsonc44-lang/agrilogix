@@ -665,7 +665,7 @@ function InvoicesView({D,updateInvStatus,deleteInvoice,custName}){
         </div>
       </div>
     </div>);})}
-  </div>);
+  </div></div>);
 }
 
 // ── Order Parts View (TABLE layout matching standalone) ────────────
