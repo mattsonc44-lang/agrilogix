@@ -414,7 +414,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
               {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal}/>}
               {tab==="vendors"&&<VendorsView D={D} deleteVendor={deleteVendor} setEdit={setEdit} setModal={setModal}/>}
               {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName}/>}
-              {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal}/>}
+              {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal} setTab={setTab} setSelVeh={setSelVeh} setSelCust={setSelCust}/>}
               {tab==="search"&&<SearchView D={D} gsQuery={gsQuery} setGsQ={setGsQ} setSelVeh={setSelVeh} setSelCust={setSelCust} setTab={setTab}/>}
               {tab==="admin"&&<AdminView D={D} toggleFeature={toggleFeature}/>}
 
@@ -838,18 +838,31 @@ function HistoryView({D,vehName}){
 }
 
 // ── Todos ──────────────────────────────────────────────────────────
-function TodosView({D,toggleTodo,deleteTodo,setEdit,setModal}){
+function TodosView({D,toggleTodo,deleteTodo,setEdit,setModal,setTab,setSelVeh,setSelCust}){
   const items=D.vehicles.flatMap(v=>(v.todos||[]).map(t=>({t,v})));
   const open=items.filter(i=>!i.t.done).sort((a,b)=>({high:0,medium:1,low:2}[a.t.priority||"medium"]||1)-({high:0,medium:1,low:2}[b.t.priority||"medium"]||1)||a.v.name.localeCompare(b.v.name));
   const done=items.filter(i=>i.t.done);
+
+  const logServiceFromTodo=(v,t)=>{
+    setSelVeh(v.id);
+    setSelCust(v.customerId||null);
+    setEdit({prefill:{notes:t.text,type:""}});
+    setTab("fleet");
+    setTimeout(()=>setModal("record"),50);
+  };
+
   return(<div>
     <div className="overview-title">To-Do</div><div className="overview-sub">{open.length} open · {done.length} done</div>
     {items.length===0&&<div className="empty"><div className="empty-icon">☑️</div><div className="empty-title">No To-Do Items</div><div style={{fontSize:"13px"}}>Add to-do items on vehicles in the Fleet tab.</div></div>}
     {[...open,...done].map(({t,v})=>(
       <div key={t.id} className={`todo-item ${t.done?"done":""} pri-${t.priority||"medium"}`}>
         <input type="checkbox" checked={t.done} onChange={()=>toggleTodo(v.id,t.id)} style={{width:"16px",height:"16px",cursor:"pointer",accentColor:"#16a34a",marginTop:"2px",flexShrink:0}}/>
-        <div style={{flex:1}}><div style={{fontSize:"14px",fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--text-dim)":"var(--text-bright)"}}>{t.text}</div><div style={{fontSize:"12px",color:"var(--text-dim)",marginTop:"2px"}}>{v.name}{t.dueDate&&` · Due: ${t.dueDate}`}</div></div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:"14px",fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--text-dim)":"var(--text-bright)"}}>{t.text}</div>
+          <div style={{fontSize:"12px",color:"var(--text-dim)",marginTop:"2px"}}>{v.name}{t.dueDate&&` · Due: ${t.dueDate}`}</div>
+        </div>
         <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",letterSpacing:"1px",padding:"1px 6px",borderRadius:"3px",background:`${PRI_COLOR[t.priority||"medium"]}18`,color:PRI_COLOR[t.priority||"medium"],flexShrink:0}}>{t.priority||"medium"}</span>
+        {!t.done&&<button className="btn btn-ghost btn-xs" style={{color:"#2563eb",borderColor:"rgba(37,99,235,.3)",whiteSpace:"nowrap"}} onClick={()=>logServiceFromTodo(v,t)}>→ Log Service</button>}
         <button className="btn btn-danger btn-xs" onClick={()=>deleteTodo(v.id,t.id)}>✕</button>
       </div>
     ))}
@@ -931,7 +944,8 @@ function VehicleMo({initial,customers,onSave,onClose}){
 }
 
 function RecordMo({initial,vehicleId,partsToOrder,onSave,onClose}){
-  const[f,setF]=useState({date:initial?.date||today(),type:initial?.type||"Oil Change",notes:initial?.notes||"",cost:initial?.cost||"",hours:initial?.hours||"",tech:initial?.tech||"",parts:initial?.parts||[]});
+  const prefill=initial?.prefill||{};
+  const[f,setF]=useState({date:initial?.date||today(),type:initial?.type||prefill.type||"Oil Change",notes:initial?.notes||prefill.notes||"",cost:initial?.cost||"",hours:initial?.hours||"",tech:initial?.tech||"",parts:initial?.parts||[]});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const addP=()=>setF(p=>({...p,parts:[...p.parts,{id:genId(),desc:"",num:"",qty:"1"}]}));
   const updP=(i,k,v)=>setF(p=>({...p,parts:p.parts.map((pp,ii)=>ii===i?{...pp,[k]:v}:pp)}));
