@@ -82,17 +82,14 @@ export default function App() {
   const loadUserProfile = async (sess) => {
     setLoading(true);
     try {
-      // Load user profile from db
       const userProfile = await dbRead(`users/${sess.localId}`, sess.idToken);
       if (userProfile?.tenantId) {
         setProfile(userProfile);
         const tenantData = await dbRead(`tenants/${userProfile.tenantId}`, sess.idToken);
         setTenant(tenantData);
-        // Default to first available module
         const mods = tenantData?.profile?.modules || [];
         if (mods.length) setModule(mods[0]);
       } else {
-        // New user — no tenant assigned yet (pending admin setup)
         setProfile({ email: sess.email, pendingSetup: true });
       }
     } catch(e) {
@@ -101,6 +98,15 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  // Live listener on tenant profile — picks up module changes from admin immediately
+  useEffect(() => {
+    if (!profile?.tenantId || !session?.idToken) return;
+    return dbListen(`tenants/${profile.tenantId}/profile`, session.idToken, ({ data }) => {
+      if (!data) return;
+      setTenant(t => ({ ...t, profile: data }));
+    });
+  }, [profile?.tenantId, session?.idToken]);
 
   const handleAuth = async (authData, extra) => {
     setLoading(true);
