@@ -11,13 +11,13 @@ const PERMS = {
 
 // ── Constants ─────────────────────────────────────────────────────
 const FALLBACK_GRAIN = { name:"WHEAT", bushel_lbs:60, color:"#c0b8ac" };
-const TRUCK_COLORS = [
-  { label:"WHITE",  value:"white",  hex:"#f0f0f0", border:"#aaa",    text:"#333" },
-  { label:"RED",    value:"red",    hex:"#e74c3c", border:"#c0392b", text:"#fff" },
-  { label:"GREEN",  value:"green",  hex:"#27ae60", border:"#219653", text:"#fff" },
-  { label:"BLUE",   value:"blue",   hex:"#2980b9", border:"#1a6895", text:"#fff" },
-  { label:"BLACK",  value:"black",  hex:"#2c3e50", border:"#1a252f", text:"#fff" },
-  { label:"YELLOW", value:"yellow", hex:"#f1c40f", border:"#d4ac0d", text:"#333" },
+const DEFAULT_TRUCKS = [
+  { id:"t1", name:"WHITE",  hex:"#f0f0f0", border:"#aaa",    text:"#333" },
+  { id:"t2", name:"RED",    hex:"#e74c3c", border:"#c0392b", text:"#fff" },
+  { id:"t3", name:"GREEN",  hex:"#27ae60", border:"#219653", text:"#fff" },
+  { id:"t4", name:"BLUE",   hex:"#2980b9", border:"#1a6895", text:"#fff" },
+  { id:"t5", name:"BLACK",  hex:"#2c3e50", border:"#1a252f", text:"#fff" },
+  { id:"t6", name:"YELLOW", hex:"#f1c40f", border:"#d4ac0d", text:"#333" },
 ];
 const UNITS = ["LBS","TONS","BU"];
 const DEFAULT_FIELDS = [
@@ -127,6 +127,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
   const [fields, setFields] = useState(DEFAULT_FIELDS);
   const [bins,   setBins]   = useState(DEFAULT_BINS);
   const [grains, setGrains] = useState([FALLBACK_GRAIN]);
+  const [trucks, setTrucks] = useState(DEFAULT_TRUCKS);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState("init");
 
@@ -146,6 +147,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
   const [editBin,    setEB]     = useState(null);
   const [editGrain,  setEG]     = useState(null);
   const [addGrain,   setAG]     = useState(false);
+  const [editTruck,  setET]     = useState(null);
+  const [addTruck,   setAT]     = useState(false);
   const [editLoad,   setEL]     = useState(null);
 
   const skipRef = useRef(false);
@@ -159,9 +162,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
         const fl=obj2arr(d.fields||{});
         const bl=obj2arr(d.bins||{});
         const gl=obj2arr(d.customGrains||{});
+        const tl=obj2arr(d.trucks||{});
         if(fl.length){ setFields(fl); setAFId(fl[0].id); }
         if(bl.length){ setBins(bl);   setABId(bl[0].id); }
         if(gl.length)  setGrains(gl);
+        if(tl.length)  setTrucks(tl);
       } else {
         setAFId(DEFAULT_FIELDS[0].id);
         setABId(DEFAULT_BINS[0].id);
@@ -177,20 +182,22 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       if(d.fields)       setFields(obj2arr(d.fields));
       if(d.bins)         setBins(obj2arr(d.bins));
       if(d.customGrains) setGrains(obj2arr(d.customGrains));
+      if(d.trucks)       setTrucks(obj2arr(d.trucks));
     });
   },[loading,tenantId,token]);
 
-  const save = useCallback((nf,nb,ng)=>{
+  const save = useCallback((nf,nb,ng,nt)=>{
     skipRef.current=true;
     setSyncStatus("pushing");
     persist("agriScale",{
       fields:      Object.fromEntries((nf||fields).map(f=>[f.id,f])),
       bins:        Object.fromEntries((nb||bins).map(b=>[b.id,b])),
       customGrains:Object.fromEntries((ng||grains).map((g,i)=>[i,g])),
+      trucks:      Object.fromEntries((nt||trucks).map((t,i)=>[i,t])),
     });
     setSyncStatus("live");
     setTimeout(()=>{ skipRef.current=false; },1500);
-  },[fields,bins,grains,persist]);
+  },[fields,bins,grains,trucks,persist]);
 
   // ── Scale computed ────────────────────────────────────────────
   const grain     = grains[grainIdx] || FALLBACK_GRAIN;
@@ -207,6 +214,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     setRawInput(p=>{ const n=p==="0"?String(k):p+k; return n.length>5?p:n; });
   };
 
+  const activeTruck = trucks.find(t=>t.id===truckColor) || trucks[0] || DEFAULT_TRUCKS[0];
+
   // ── Record load ───────────────────────────────────────────────
   const recordLoad = () => {
     if(!canRecord) return;
@@ -217,7 +226,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       timeOnly:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
       time:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
       grainName:grain.name, grainBushelLbs:grain.bushel_lbs,
-      binId:activeBinId, truckColor, operator:operatorName,
+      binId:activeBinId, truckId:truckColor, truckColor:activeTruck.hex, truckName:activeTruck.name, operator:operatorName,
     };
     const nf = fields.map(f=>f.id===activeFieldId?{...f,loads:[...f.loads,load]}:f);
     const nb = bins.map(b=>b.id===activeBinId?{...b,storedLbs:b.storedLbs+netLbs}:b);
@@ -335,9 +344,9 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
               <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
                 <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>TRUCK</div>
                 <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                  {TRUCK_COLORS.map(c=>(
-                    <button key={c.value} onClick={()=>setTruckColor(c.value)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:c.hex,color:c.text,border:truckColor===c.value?`2px solid #4a5568`:`1px solid ${c.border}`,boxShadow:truckColor===c.value?"0 0 6px rgba(74,85,104,.4)":"none"}}>
-                      {c.label}
+                  {trucks.map(t=>(
+                    <button key={t.id} onClick={()=>setTruckColor(t.id)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:t.hex,color:t.text,border:truckColor===t.id?`2px solid #4a5568`:`1px solid ${t.border||"#aaa"}`,boxShadow:truckColor===t.id?"0 0 6px rgba(74,85,104,.4)":"none"}}>
+                      {t.name}
                     </button>
                   ))}
                 </div>
@@ -389,10 +398,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                 <div style={{maxHeight:"160px",overflowY:"auto"}}>
                   {[...activeField.loads].reverse().slice(0,10).map(l=>{
                     const f=fmtWt(l.net,unit,l.grainBushelLbs||60);
-                    const tc=TRUCK_COLORS.find(t=>t.value===l.truckColor)||TRUCK_COLORS[0];
+                    const tHex=l.truckColor||"#f0f0f0";
                     const bn=bins.find(b=>b.id===l.binId);
                     return(<div key={l.id} style={{borderBottom:"1px solid #ddd8d0",padding:"4px 2px",fontSize:"9px",color:"#4a5568",display:"flex",gap:"6px",alignItems:"center"}}>
-                      <div style={{width:"8px",height:"8px",borderRadius:"50%",background:tc.hex,border:`1px solid ${tc.border}`,flexShrink:0}}/>
+                      <div style={{width:"8px",height:"8px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
                       <span style={{flex:1}}><strong>{f.value}</strong> {f.label}</span>
                       <span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
                       <span style={{color:"#9a8a72"}}>{l.timeOnly}</span>
@@ -410,13 +419,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
           {tab==="BINS"&&(<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>BIN STORAGE</div>
-              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT"}];setBins(nb);save(fields,nb,grains);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
+              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT"}];setBins(nb);save(fields,nb,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
             </div>
             {bins.map(b=>(
               <div key={b.id} style={{marginBottom:"10px"}}>
                 <BinGauge bin={b} grains={grains}/>
-                {perms.canEditBins&&<button onClick={()=>setEB(b)} style={{...btnBase,width:"100%",padding:"5px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#6a7280",boxShadow:"0 1px 0 #c8ccc0",marginTop:"4px"}}>EDIT {b.name}</button>}
-              </div>
+                {perms.canEditBins&&<button onClick={()=>setEB(b)} style={{...btnBase,width:"100%",padding:"5px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#6a7280",boxShadow:"0 1px 0 #c8ccc0",marginTop:"4px"}}>EDIT {b.name}</button>}              </div>
             ))}
           </>)}
 
@@ -424,7 +432,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
           {tab==="FIELDS"&&(<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>FIELDS</div>
-              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${fields.length+1}`,loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
+              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${fields.length+1}`,loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
             </div>
             {fields.map(f=>{
               const totalBu=f.loads.reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
@@ -443,7 +451,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                   {perms.canEditFields&&(
                     <div style={{display:"flex",gap:"4px",flexShrink:0}}>
                       <button onClick={()=>setEF(f)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
-                      {fields.length>1&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains);}} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+                      {fields.length>1&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
                     </div>
                   )}
                 </div>
@@ -452,16 +460,16 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                   <div style={{marginTop:"8px",borderTop:"1px solid #ddd8d0",paddingTop:"6px",maxHeight:"120px",overflowY:"auto"}}>
                     {[...f.loads].reverse().map(l=>{
                       const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
-                      const tc=TRUCK_COLORS.find(c=>c.value===l.truckColor)||TRUCK_COLORS[0];
+                      const tHex=l.truckColor||"#f0f0f0";
                       const bn=bins.find(b=>b.id===l.binId);
                       return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",fontSize:"9px",color:"#6a7280",padding:"2px 0",borderBottom:"1px solid #e8e4dc"}}>
-                        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:tc.hex,border:`1px solid ${tc.border}`,flexShrink:0}}/>
+                        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
                         <span style={{color:"#4a5568",fontWeight:"bold"}}>{bu} BU</span>
                         <span>{l.grainName}</span>
                         <span>{bn?.name||"?"}</span>
                         <span style={{marginLeft:"auto"}}>{l.date} {l.timeOnly}</span>
                         {perms.canEditFields&&<button onClick={()=>setEL({load:l,fieldId:f.id})} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#ede9e4",color:"#4a5568",boxShadow:"none",border:"1px solid #ccc4b8"}}>EDIT</button>}
-                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.map(ff=>ff.id===f.id?{...ff,loads:ff.loads.filter(ll=>ll.id!==l.id)}:ff);const nb=bins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-l.net)}:b);setFields(nf);setBins(nb);save(nf,nb,grains);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
+                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.map(ff=>ff.id===f.id?{...ff,loads:ff.loads.filter(ll=>ll.id!==l.id)}:ff);const nb=bins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-l.net)}:b);setFields(nf);setBins(nb);save(nf,nb,grains,trucks);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
                       </div>);
                     })}
                   </div>
@@ -484,7 +492,28 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
                 </div>
                 {perms.canEditComm&&<div style={{display:"flex",gap:"4px"}}>
                   <button onClick={()=>setEG({...g,idx:i})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
-                  {grains.length>1&&<button onClick={()=>{const ng=grains.filter((_,ii)=>ii!==i);setGrains(ng);if(grainIdx>=ng.length)setGrainIdx(0);save(fields,bins,ng);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+                  {grains.length>1&&<button onClick={()=>{const ng=grains.filter((_,ii)=>ii!==i);setGrains(ng);if(grainIdx>=ng.length)setGrainIdx(0);save(fields,bins,ng,trucks);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+                </div>}
+              </div>
+            ))}
+
+            {/* Trucks */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px",marginTop:"20px"}}>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>TRUCKS</div>
+              {perms.canEditComm&&<button onClick={()=>setAT(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD</button>}
+            </div>
+            {trucks.map((t,i)=>(
+              <div key={t.id||i} style={{background:"#f5f3ef",borderLeft:`4px solid ${t.hex}`,border:`1px solid ${t.border||"#ccc4b8"}`,borderRadius:"4px",padding:"8px 12px",marginBottom:"6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                  <div style={{width:"24px",height:"24px",borderRadius:"4px",background:t.hex,border:`1px solid ${t.border||"#aaa"}`,flexShrink:0}}/>
+                  <div>
+                    <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em"}}>{t.name}</div>
+                    <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",marginTop:"1px"}}>{t.hex}</div>
+                  </div>
+                </div>
+                {perms.canEditComm&&<div style={{display:"flex",gap:"4px"}}>
+                  <button onClick={()=>setET({...t,idx:i})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+                  {trucks.length>1&&<button onClick={()=>{const nt=trucks.filter((_,ii)=>ii!==i);setTrucks(nt);save(fields,bins,grains,nt);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
                 </div>}
               </div>
             ))}
@@ -526,10 +555,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       </div>
 
       {/* ── Modals ── */}
-      {editBin&&<BinMo bin={editBin} grains={grains} onSave={f=>{const nb=bins.map(b=>b.id===editBin.id?{...editBin,...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)}:b);setBins(nb);save(fields,nb,grains);setEB(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains);setEB(null);}} onClose={()=>setEB(null)} canDelete={bins.length>1}/>}
-      {editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=fields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains);setEF(null);}} onClose={()=>setEF(null)}/>}
-      {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=grains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
-      {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=fields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:ff.loads.map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains);setEL(null);}} onClose={()=>setEL(null)}/>}
+      {editBin&&<BinMo bin={editBin} grains={grains} onSave={f=>{const nb=bins.map(b=>b.id===editBin.id?{...editBin,...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)}:b);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onClose={()=>setEB(null)} canDelete={bins.length>1}/>}
+      {editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=fields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains,trucks);setEF(null);}} onClose={()=>setEF(null)}/>}
+      {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=grains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
+      {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=trucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
+      {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=fields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:ff.loads.map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains,trucks);setEL(null);}} onClose={()=>setEL(null)}/>}
     </>
   );
 }
@@ -583,7 +613,31 @@ function GrainMo({grain,onSave,onClose}){
   </div></div>);
 }
 
-function LoadMo({load,bins,onSave,onClose}){
+function TruckMo({truck,onSave,onClose}){
+  const[f,setF]=useState({name:truck?.name||"",hex:truck?.hex||"#cccccc",text:truck?.text||"#333"});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const isLight=(hex)=>{ try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return(r*299+g*587+b*114)/1000>128;}catch{return true;} };
+  return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+    <div style={hdrStyle}>{truck?"EDIT":"ADD"} TRUCK</div>
+    <div style={lblStyle}>TRUCK NAME</div><input style={inStyle} value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. KENWORTH, RED TRUCK"/>
+    <div style={lblStyle}>COLOR</div>
+    <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px"}}>
+      <input type="color" value={f.hex} onChange={e=>{const hex=e.target.value;s("hex",hex);s("text",isLight(hex)?"#333":"#fff");}} style={{width:"48px",height:"36px",border:"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer",padding:"2px"}}/>
+      <div style={{flex:1,padding:"8px 12px",background:f.hex,borderRadius:"4px",border:"1px solid #b0a08a",fontFamily:"'Share Tech Mono',monospace",fontSize:"12px",color:f.text,letterSpacing:"0.08em",textAlign:"center"}}>{f.name||"PREVIEW"}</div>
+    </div>
+    <div style={lblStyle}>TEXT COLOR</div>
+    <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+      {["#333333","#ffffff"].map(c=>(
+        <button key={c} onClick={()=>s("text",c)} style={{flex:1,padding:"7px",fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",letterSpacing:"0.1em",background:f.hex,color:c,border:f.text===c?"2px solid #4a5568":"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer"}}>
+          {c==="#333333"?"DARK TEXT":"LIGHT TEXT"}
+        </button>
+      ))}
+    </div>
+    <div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>{if(!f.name.trim())return alert("Name required");onSave(f);}}>SAVE</MoBtn></div>
+  </div></div>);
+}
+
+({load,bins,onSave,onClose}){
   const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
