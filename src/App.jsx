@@ -12,6 +12,7 @@ import OrgPanel    from "./admin/OrgPanel.jsx";
 // (Each module is a separate file, loaded as needed)
 import FieldLogModule   from "./modules/fieldlog/index.jsx";
 import ServiceLogModule from "./modules/serviceLog/index.jsx";
+import AgriScaleModule  from "./modules/agriScale/index.jsx";
 
 // Placeholder components for modules not yet built
 const ComingSoon = ({ module }) => (
@@ -261,7 +262,7 @@ export default function App() {
       )}
       <div>
         {module === "fieldlog"   && <FieldLogModule   tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
-        {module === "agriScale"  && <ComingSoon module={MODULES.agriScale}/>}
+        {module === "agriScale"  && <AgriScaleModule  tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
         {module === "serviceLog" && <ServiceLogModule tenantId={profile.tenantId} token={token} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
