@@ -138,7 +138,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
   const [grainIdx, setGrainIdx] = useState(0);
   const [activeFieldId, setAFId] = useState(null);
   const [activeBinId,   setABId] = useState(null);
-  const [truckColor, setTruckColor] = useState("white");
+  const [truckColor, setTruckColor] = useState(DEFAULT_TRUCKS[0].id);
 
   // UI
   const [tab, setTab]           = useState("SCALE");
@@ -166,7 +166,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
         if(fl.length){ setFields(fl); setAFId(fl[0].id); }
         if(bl.length){ setBins(bl);   setABId(bl[0].id); }
         if(gl.length)  setGrains(gl);
-        if(tl.length)  setTrucks(tl);
+        if(tl.length) setTrucks(tl.filter(Boolean)); else setTrucks(DEFAULT_TRUCKS);
       } else {
         setAFId(DEFAULT_FIELDS[0].id);
         setABId(DEFAULT_BINS[0].id);
@@ -182,7 +182,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       if(d.fields)       setFields(obj2arr(d.fields));
       if(d.bins)         setBins(obj2arr(d.bins));
       if(d.customGrains) setGrains(obj2arr(d.customGrains));
-      if(d.trucks)       setTrucks(obj2arr(d.trucks));
+      if(d.trucks)       setTrucks(obj2arr(d.trucks).filter(Boolean));
     });
   },[loading,tenantId,token]);
 
@@ -214,7 +214,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     setRawInput(p=>{ const n=p==="0"?String(k):p+k; return n.length>5?p:n; });
   };
 
-  const activeTruck = trucks.find(t=>t.id===truckColor) || trucks[0] || DEFAULT_TRUCKS[0];
+  const safeTrucks = trucks.filter(Boolean);
+  const activeTruck = safeTrucks.find(t=>t.id===truckColor) || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
   // ── Record load ───────────────────────────────────────────────
   const recordLoad = () => {
