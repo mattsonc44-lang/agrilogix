@@ -36,7 +36,7 @@ const clearSession = () => {
 };
 
 // ── ADMIN UID — your Firebase UID goes here ───────────────────────
-const ADMIN_UID = "YOUR-ADMIN-UID";
+const ADMIN_UID = (typeof window !== "undefined" && window.__ADMIN_UID__) || "";
 
 export default function App() {
   const [session,  setSession]  = useState(null);     // { idToken, localId, email, refreshToken }
