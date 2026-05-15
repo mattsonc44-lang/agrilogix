@@ -50,7 +50,7 @@ const CSS = `
 
 // ── BinGauge SVG (matches original exactly) ───────────────────────
 function BinGauge({ bin, grains, small }) {
-  const grain = grains.find(g=>g.name===bin.grainName) || FALLBACK_GRAIN;
+  const grain = (grains||[]).filter(Boolean).find(g=>g.name===bin.grainName) || FALLBACK_GRAIN;
   const storedBu = bin.storedLbs / (grain.bushel_lbs||60);
   const pct = bin.capacityBu > 0 ? Math.min(100, storedBu / bin.capacityBu * 100) : 0;
   const remaining = Math.max(0, bin.capacityBu - storedBu);
@@ -199,13 +199,19 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     setTimeout(()=>{ skipRef.current=false; },1500);
   },[fields,bins,grains,trucks,persist]);
 
-  // ── Scale computed ────────────────────────────────────────────
-  const grain     = grains[grainIdx] || FALLBACK_GRAIN;
-  const rawLbs    = Math.min(99999,Math.max(0,parseInt(rawInput.replace(/^0+(?=\d)/,""))||0));
-  const netLbs    = Math.max(0,rawLbs-tare);
-  const canRecord = netLbs >= 100;
-  const activeField = fields.find(f=>f.id===activeFieldId)||fields[0];
-  const activeBin   = bins.find(b=>b.id===activeBinId)||bins[0];
+  // ── Scale computed (null-safe) ────────────────────────────────
+  const safeArr    = a => (Array.isArray(a)?a:[]).filter(Boolean);
+  const safeFields = safeArr(fields);
+  const safeBins   = safeArr(bins);
+  const safeGrains = safeArr(grains);
+  const safeTrucks = safeArr(trucks);
+  const grain       = safeGrains[grainIdx] || FALLBACK_GRAIN;
+  const rawLbs      = Math.min(99999,Math.max(0,parseInt(rawInput.replace(/^0+(?=\d)/,""))||0));
+  const netLbs      = Math.max(0,rawLbs-tare);
+  const canRecord   = netLbs >= 100;
+  const activeField = safeFields.find(f=>f.id===activeFieldId) || safeFields[0];
+  const activeBin   = safeBins.find(b=>b.id===activeBinId)     || safeBins[0];
+  const activeTruck = safeTrucks.find(t=>t.id===truckColor)    || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
   // ── Numpad ────────────────────────────────────────────────────
   const onKey = k => {
@@ -213,9 +219,6 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     if(k==="⌫")  { setRawInput(p=>p.length>1?p.slice(0,-1):"0"); return; }
     setRawInput(p=>{ const n=p==="0"?String(k):p+k; return n.length>5?p:n; });
   };
-
-  const safeTrucks = trucks.filter(Boolean);
-  const activeTruck = safeTrucks.find(t=>t.id===truckColor) || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
   // ── Record load ───────────────────────────────────────────────
   const recordLoad = () => {
@@ -284,8 +287,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
             <div style={{marginTop:"8px",background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px",marginBottom:"8px"}}>
               <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>DESTINATION BIN</div>
               <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                {bins.map(b=>{
-                  const g=grains.find(x=>x.name===b.grainName)||FALLBACK_GRAIN;
+                {safeBins.map(b=>{
+                  const g=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
                   const pct=b.capacityBu>0?Math.min(100,b.storedLbs/(g.bushel_lbs||60)/b.capacityBu*100):0;
                   const fc=pct>=95?"#e74c3c":pct>=80?"#c47d0a":"#4a5568";
                   const isActive=b.id===activeBinId;
