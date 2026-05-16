@@ -34,8 +34,21 @@ export default function AdminPanel({ user, token, onBack }) {
     if (orgUsers[tenantId]) return;
     setUsersLoading(p => ({ ...p, [tenantId]: true }));
     try {
-      const data = await dbRead(`tenants/${tenantId}/users`, token);
-      setOrgUsers(p => ({ ...p, [tenantId]: obj2arr(data || {}).filter(Boolean) }));
+      // Load from tenant users (roles/modules) and root users (name/email)
+      const [tenantData, rootData] = await Promise.all([
+        dbRead(`tenants/${tenantId}/users`, token).catch(()=>({})),
+        dbRead(`users`, token).catch(()=>({})),
+      ]);
+      const tenantUsers = obj2arr(tenantData || {}).filter(Boolean);
+      const tenantUserIds = new Set(tenantUsers.map(u => u.uid));
+      // Also grab any users in root that belong to this tenant but missing from tenant node
+      const rootUsersForTenant = obj2arr(rootData || {}).filter(u => u && u.tenantId === tenantId && !tenantUserIds.has(u.uid));
+      // Merge name/email from root users profile
+      const merged = [...tenantUsers, ...rootUsersForTenant].map(u => {
+        const root = rootData?.[u.uid] || {};
+        return { ...root, ...u, name: u.name||root.name||"", email: u.email||root.email||"" };
+      });
+      setOrgUsers(p => ({ ...p, [tenantId]: merged }));
     } catch(e) {
       setOrgUsers(p => ({ ...p, [tenantId]: [] }));
     } finally {
