@@ -241,23 +241,45 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     dbRead(BASE,token).then(d=>{if(d)setD(migrate(d));}).catch(()=>{}).finally(()=>setLoading(false));
   },[tenantId,token]);
 
+  const skipRef = useRef(false);
+
   useEffect(()=>{
     if(!tenantId) return;
-    return dbListen(BASE,token,({data:d})=>{if(d)setD(migrate(d));});
+    return dbListen(BASE,token,({path,data:d})=>{
+      // Skip if we just saved (prevent our own write from overwriting optimistic state)
+      if(skipRef.current) return;
+      // Only process full-path updates, not partial sub-path updates
+      if(path && path !== "/") return;
+      if(d) setD(migrate(d));
+    });
   },[tenantId,token]);
 
-  // ── Retry queued saves on reconnect ───────────────────────────
+  // ── Retry queued saves ONLY on reconnect (never on mount — prevents stale overwrite) ──
   useEffect(()=>{
     const retry=async()=>{
       const q=slLoadQ();
       if(!q||!tenantId) return;
-      setSync("saving");
-      try{ await dbWrite(BASE,token,q.data); slClearQ(); setSync("saved"); }
-      catch(e){ setSync("queued"); }
+      // Safety: fetch current Firebase data first, only push if queue is newer
+      try{
+        const current = await dbRead(BASE,token).catch(()=>null);
+        // If queue has more records/vehicles than current, it's genuinely newer
+        const qVehicles = Object.keys(q.data.vehicles||{}).length;
+        const fVehicles = Object.keys(current?.vehicles||{}).length;
+        const qRecords  = Object.keys(q.data.records||{}).length;
+        const fRecords  = Object.keys(current?.records||{}).length;
+        // Only push queue if it has at least as much data as Firebase
+        if(qVehicles < fVehicles || qRecords < fRecords){
+          slClearQ(); // Queue is stale — discard it
+          return;
+        }
+        setSync("saving");
+        await dbWrite(BASE,q.data,token);
+        slClearQ(); setSync("saved");
+      }catch(e){ setSync("queued"); }
       setTimeout(()=>setSync("idle"),2000);
     };
     window.addEventListener("online",retry);
-    retry();
+    // Do NOT call retry() on mount — only on reconnect after going offline
     return ()=>window.removeEventListener("online",retry);
   },[tenantId,token]);
 
@@ -280,8 +302,12 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
   const save=(updates)=>{
     const next={...D,...updates};
+    // Safety guard: never write if we'd be wiping vehicles/records that exist in current D
+    if(D.vehicles.length > 0 && (next.vehicles||[]).length === 0) { console.warn("ServiceLog save blocked: would wipe vehicles"); return; }
+    if(D.records.length > 0 && (next.records||[]).length === 0) { console.warn("ServiceLog save blocked: would wipe records"); return; }
     setD(next);
     setSync("saving");
+    skipRef.current = true;
     const payload={
       vehicles:  Object.fromEntries((next.vehicles||[]).map(v=>[v.id,v])),
       records:   Object.fromEntries((next.records||[]).map(r=>[r.id,r])),
@@ -294,10 +320,10 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       settings:       next.settings,
     };
     slSaveQ(payload);
-    dbWrite(BASE, token, payload)
+    dbWrite(BASE, payload, token)
       .then(()=>{ slClearQ(); setSync("saved"); })
       .catch(()=>setSync("queued"))
-      .finally(()=>setTimeout(()=>setSync("idle"),2000));
+      .finally(()=>setTimeout(()=>{ skipRef.current=false; setSync("idle"); },2000));
   };
 
   // ── Mutations ──────────────────────────────────────────────────

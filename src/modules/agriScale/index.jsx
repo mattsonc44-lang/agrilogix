@@ -229,8 +229,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       }
     };
     window.addEventListener("online", retry);
-    // Also check on mount
-    retry();
+    // Do NOT call retry() on mount
     return ()=>window.removeEventListener("online", retry);
   },[tenantId,token]);
 
@@ -246,7 +245,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     skipRef.current = true;
     setSyncStatus("pushing");
     try {
-      await dbWrite(BASE, token, payload);
+      await dbWrite(BASE, payload, token);
       clearQueue();
       setSyncStatus("live");
     } catch(e) {

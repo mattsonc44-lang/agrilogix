@@ -2290,7 +2290,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       if(!q||!tenantId) return;
       setSync("saving");
       try{
-        await dbWrite(BASE,token,q.data);
+        await dbWrite(BASE,q.data,token);
         flClearQ();
         setSync("saved");
       }catch{
@@ -2300,7 +2300,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       }
     };
     window.addEventListener("online",retry);
-    retry();
+    // Do NOT call retry() on mount
     return ()=>window.removeEventListener("online",retry);
   },[tenantId,token]);
   const FL_QUEUE_KEY = `fl_queue_${tenantId}`;
@@ -2317,7 +2317,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     };
     flSaveQ(payload);
     try{
-      await dbWrite(BASE, token, payload);
+      await dbWrite(BASE, payload, token);
       flClearQ();
       setSync("saved");
     }catch{
