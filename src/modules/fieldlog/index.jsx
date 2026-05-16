@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import JSZip from "jszip";
-import { dbRead, dbWrite, dbListen } from "../../core/firebase.js";
+import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
 
 const ANTHROPIC_KEY = (typeof window !== "undefined" && window.__ANTHROPIC_KEY__) || "";
@@ -2290,7 +2290,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       if(!q||!tenantId) return;
       setSync("saving");
       try{
-        await dbWrite(BASE,q.data,token);
+        await dbSafeWrite(BASE,q.data,token);
         flClearQ();
         setSync("saved");
       }catch{
@@ -2317,7 +2317,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     };
     flSaveQ(payload);
     try{
-      await dbWrite(BASE, payload, token);
+      await dbSafeWrite(BASE, payload, token);
       flClearQ();
       setSync("saved");
     }catch{

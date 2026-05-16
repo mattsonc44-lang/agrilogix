@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { dbRead, dbWrite, dbListen } from "../../core/firebase.js";
+import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 
 // ── CSS matching standalone exactly ───────────────────────────────
@@ -273,7 +273,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
           return;
         }
         setSync("saving");
-        await dbWrite(BASE,q.data,token);
+        await dbSafeWrite(BASE,q.data,token);
         slClearQ(); setSync("saved");
       }catch(e){ setSync("queued"); }
       setTimeout(()=>setSync("idle"),2000);
@@ -320,9 +320,17 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       settings:       next.settings,
     };
     slSaveQ(payload);
-    dbWrite(BASE, payload, token)
+    dbSafeWrite(BASE, payload, token)
       .then(()=>{ slClearQ(); setSync("saved"); })
-      .catch(()=>setSync("queued"))
+      .catch(e=>{
+        console.error("ServiceLog save error:", e.message);
+        if(e.message.startsWith("BLOCKED")) {
+          alert("⚠️ Save blocked: " + e.message + "\n\nYour data has NOT been modified in the database. Please refresh the page.");
+          setSync("error");
+        } else {
+          setSync("queued");
+        }
+      })
       .finally(()=>setTimeout(()=>{ skipRef.current=false; setSync("idle"); },2000));
   };
 

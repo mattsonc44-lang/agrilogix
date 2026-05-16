@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { dbRead, dbWrite, dbListen } from "../../core/firebase.js";
+import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 
 // ── Permission mapping from Agri Logix roles ──────────────────────
@@ -217,7 +217,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
       try {
         const remote = await dbRead(BASE, token).catch(()=>null);
         const merged = remote ? mergeWithRemote(remote, q.data) : q.data;
-        await dbWrite(BASE, token, merged);
+        await dbSafeWrite(BASE, merged, token);
         if(merged.fields)       setFields(obj2arr(merged.fields).filter(Boolean));
         if(merged.bins)         setBins(obj2arr(merged.bins).filter(Boolean));
         if(merged.customGrains) setGrains(obj2arr(merged.customGrains).filter(Boolean));
@@ -245,7 +245,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     skipRef.current = true;
     setSyncStatus("pushing");
     try {
-      await dbWrite(BASE, payload, token);
+      await dbSafeWrite(BASE, payload, token);
       clearQueue();
       setSyncStatus("live");
     } catch(e) {

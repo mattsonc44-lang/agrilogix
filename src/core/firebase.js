@@ -21,6 +21,50 @@ export const dbWrite = async (path, data, token) => {
   return r.json();
 };
 
+// ── Safe write: validates payload, backs up, checks for data loss ─
+const countRecords = (data) => {
+  if (!data || typeof data !== "object") return 0;
+  return Object.values(data)
+    .filter(v => v && typeof v === "object")
+    .reduce((s, v) => s + (typeof v === "object" ? Object.keys(v).length : 0), 0);
+};
+
+export const dbSafeWrite = async (path, data, token) => {
+  // 1. Reject non-object payloads immediately
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error(`BLOCKED: payload is not an object (got ${typeof data})`);
+  }
+  // 2. Reject if payload looks like a JWT token (string starting with "ey")
+  const asStr = JSON.stringify(data);
+  if (asStr.startsWith('"ey')) {
+    throw new Error("BLOCKED: payload looks like an auth token, not data");
+  }
+
+  // 3. Read current Firebase data and compare record counts
+  let current = null;
+  try { current = await dbRead(path, token); } catch(e) { /* ignore read errors */ }
+
+  if (current && typeof current === "object") {
+    const currentCount = countRecords(current);
+    const newCount     = countRecords(data);
+    // Block if new payload would delete more than 50% of existing records
+    if (currentCount > 5 && newCount < currentCount * 0.5) {
+      throw new Error(`BLOCKED: write would reduce records from ${currentCount} to ${newCount} — possible data loss`);
+    }
+  }
+
+  // 4. Take a timestamped backup before writing
+  const backupKey = `backup_${new Date().toISOString().slice(0,16).replace(/:/g,"-")}`;
+  try {
+    if (current) {
+      await dbWrite(`${path}_backups/${backupKey}`, current, token);
+    }
+  } catch(e) { /* backup failure is non-fatal */ }
+
+  // 5. Write the actual data
+  return dbWrite(path, data, token);
+};
+
 export const dbPush = async (path, data, token) => {
   const url = token ? `${dbUrl(path)}?auth=${token}` : dbUrl(path);
   const r = await fetch(url, {
@@ -54,7 +98,8 @@ export const dbListen = (path, token, onChange) => {
 const AUTH_BASE = "https://identitytoolkit.googleapis.com/v1/accounts";
 
 // You'll need your Firebase Web API key here
-const WEB_API_KEY = window.__FIREBASE_API_KEY__ || "";
+const WEB_API_KEY = "YOUR-FIREBASE-WEB-API-KEY";
+
 export const authSignIn = async (email, password) => {
   const r = await fetch(`${AUTH_BASE}:signInWithPassword?key=${WEB_API_KEY}`, {
     method: "POST",
