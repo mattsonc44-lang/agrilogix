@@ -313,7 +313,26 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const savePart=f=>{let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...f}];}save({partsToOrder:np});setModal(null);setEdit(null);};
   const quickAddPart=()=>{if(!poNew.desc.trim())return;const np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...poNew}];save({partsToOrder:np});setPoNew({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});};
   const toggleOrdered=id=>{const np=D.partsToOrder.map(p=>p.id===id?{...p,ordered:!p.ordered||p.received,orderedDate:!p.ordered?today():p.orderedDate}:p);save({partsToOrder:np});};
-  const toggleReceived=id=>{const p=D.partsToOrder.find(pp=>pp.id===id);if(!p)return;if(p.received){save({partsToOrder:D.partsToOrder.map(pp=>pp.id===id?{...pp,received:false}:pp)});return;}const np=D.partsToOrder.filter(pp=>pp.id!==id);const nh=[...D.orderHistory,{id:genId(),desc:p.desc,num:p.num,vendor:p.vendor,qty:p.qty,unitCost:p.unitCost,vehicleId:p.vehicleId,receivedDate:today()}];save({partsToOrder:np,orderHistory:nh});};
+  const toggleReceived=id=>{const p=D.partsToOrder.find(pp=>pp.id===id);if(!p)return;if(p.received){save({partsToOrder:D.partsToOrder.map(pp=>pp.id===id?{...pp,received:false}:pp)});return;}setEdit(p);setModal("receive");};
+  const confirmReceive=(partId,f)=>{
+    const p=D.partsToOrder.find(pp=>pp.id===partId); if(!p) return;
+    const updatedPart={...p,received:true,ordered:true,unitCost:f.unitCost||p.unitCost,receivedLocation:f.location};
+    const np=D.partsToOrder.map(pp=>pp.id===partId?updatedPart:pp);
+    const nh=[...D.orderHistory,{id:genId(),desc:p.desc,num:p.num,vendor:p.vendor,qty:f.qty||p.qty||"1",unitCost:f.unitCost||p.unitCost,vehicleId:p.vehicleId,receivedDate:today(),location:f.location}];
+    // Update parts inventory if linked, or offer to add
+    let ni=D.partsInventory;
+    if(p.invPartId){
+      ni=ni.map(inv=>inv.id===p.invPartId?{...inv,qty:String((parseInt(inv.qty)||0)+(parseInt(f.qty)||1)),location:f.location||inv.location}:inv);
+      save({partsToOrder:np,orderHistory:nh,partsInventory:ni});
+    } else if(f.addToInventory){
+      const newInv={id:genId(),name:p.desc||"",qty:String(parseInt(f.qty)||1),minQty:"",location:f.location||"",notes:"",partNumbers:p.num?[{id:genId(),num:p.num,vendor:p.vendor||"",unitCost:f.unitCost||""}]:[]};
+      ni=[...ni,newInv];
+      save({partsToOrder:np,orderHistory:nh,partsInventory:ni});
+    } else {
+      save({partsToOrder:np,orderHistory:nh});
+    }
+    setModal(null); setEdit(null);
+  };
   const deletePart=id=>{save({partsToOrder:D.partsToOrder.filter(p=>p.id!==id)});};
   const archiveReceived=()=>{const rec=D.partsToOrder.filter(p=>p.received);if(!rec.length)return;const nh=[...D.orderHistory,...rec.map(p=>({id:genId(),desc:p.desc,num:p.num,vendor:p.vendor,qty:p.qty,unitCost:p.unitCost,vehicleId:p.vehicleId,receivedDate:today()}))];save({partsToOrder:D.partsToOrder.filter(p=>!p.received),orderHistory:nh});};
   const consolidateDupes=()=>{const map={};D.partsToOrder.forEach(p=>{const k=(p.desc||"").toLowerCase().trim()+"__"+(p.num||"").toLowerCase().trim();if(!map[k])map[k]=[];map[k].push(p);});const np=[];Object.values(map).forEach(group=>{if(group.length===1){np.push(group[0]);}else{const base={...group[0],qty:String(group.reduce((s,p)=>s+(parseInt(p.qty)||1),0))};np.push(base);}});save({partsToOrder:np});};
@@ -457,7 +476,8 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invItem"  &&<InvItemMo   initial={editTarget} vehicles={D.vehicles} onSave={saveInvItem} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="invoice"  &&<InvoiceMo   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
+      {modal==="receive"  &&<ReceiveMo      part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="priceSearch"&&<PriceSearchMo part={editTarget} partsInventory={D.partsInventory} orderHistory={D.orderHistory} onApply={cost=>{const np=D.partsToOrder.map(p=>p.id===editTarget.id?{...p,unitCost:cost}:p);save({partsToOrder:np});setModal(null);setEdit(null);}} onClose={()=>{setModal(null);setEdit(null);}}/>}   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
     </>
   );
 }
@@ -778,6 +798,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
                 </div>
               </td>
               <td><div style={{display:"flex",gap:"4px",flexWrap:"nowrap"}}>
+                <button className="btn btn-ghost btn-xs" style={{color:"#2563eb",borderColor:"rgba(37,99,235,.3)"}} title="Find best price" onClick={()=>{setEdit({...p,_priceSearch:true});setModal("priceSearch");}}>💲</button>
                 <button className="btn btn-ghost btn-xs" onClick={()=>{setEdit(p);setModal("part");}}>Edit</button>
                 <button className="btn btn-danger btn-xs" onClick={()=>deletePart(p.id)}>✕</button>
               </div></td>
@@ -1055,4 +1076,96 @@ function InvoiceMo({records,customers,settings,selCustId,vehicles,nextNum,onSave
     <Fr><Fg label="Labour Cost ($)"><Fi type="number" step="0.01" value={f.laborCost} onChange={e=>s("laborCost",e.target.value)} placeholder="0.00"/></Fg><Fg label="Labour Description"><Fi value={f.laborDesc} onChange={e=>s("laborDesc",e.target.value)} placeholder="e.g. Shop labour"/></Fg></Fr>
     <div style={{textAlign:"right",fontFamily:"'Share Tech Mono',monospace",fontSize:"17px",fontWeight:700}}>Total: ${total.toLocaleString(undefined,{minimumFractionDigits:2})}</div>
   </Mo>);
+}
+
+// ── Receive Part Modal ────────────────────────────────────────────
+function ReceiveMo({part,partsInventory,onSave,onClose}){
+  const existingLocs=[...new Set((partsInventory||[]).map(p=>p.location).filter(Boolean))].sort();
+  const[f,setF]=useState({unitCost:part?.unitCost||"",qty:part?.qty||"1",location:part?.receivedLocation||"",addToInventory:!part?.invPartId});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  return(<div className="sl"><div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-hdr"><div className="modal-title">Receive Part</div><button className="modal-close" onClick={onClose}>✕</button></div>
+    <div className="modal-body">
+      {/* Part summary */}
+      <div style={{padding:"10px 12px",background:"var(--bg3)",borderRadius:"4px",marginBottom:"4px"}}>
+        {part?.desc&&<div style={{fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:"16px"}}>{part.desc}</div>}
+        {part?.num&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"12px",color:"var(--amber-dim)"}}>{part.num}</div>}
+        {part?.vendor&&<div style={{fontSize:"13px",color:"var(--text-dim)"}}>{part.vendor}</div>}
+      </div>
+      <div className="form-row">
+        <Fg label="Unit Cost ($)"><Fi type="number" step="0.01" placeholder="$0.00" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg>
+        <Fg label="Qty Received"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg>
+      </div>
+      <Fg label="Storage Location" full>
+        <Fi list="recv-loc-list" placeholder="Select or type location…" value={f.location} onChange={e=>s("location",e.target.value)}/>
+        <datalist id="recv-loc-list">{existingLocs.map(l=><option key={l} value={l}/>)}</datalist>
+      </Fg>
+      {!part?.invPartId&&(
+        <label style={{display:"flex",alignItems:"center",gap:"8px",fontSize:"13px",cursor:"pointer",marginTop:"4px"}}>
+          <input type="checkbox" checked={f.addToInventory} onChange={e=>s("addToInventory",e.target.checked)} style={{accentColor:"var(--amber)",width:"15px",height:"15px"}}/>
+          Add to Parts Inventory
+        </label>
+      )}
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={()=>onSave(part.id,f)}>✓ Receive</button>
+    </div>
+  </div></div></div>);
+}
+
+// ── Price Search Modal ────────────────────────────────────────────
+function PriceSearchMo({part,partsInventory,orderHistory,onApply,onClose}){
+  const q=((part?.desc||"")+" "+(part?.num||"")).toLowerCase().trim();
+  // Search inventory part numbers
+  const invMatches=[];
+  (partsInventory||[]).forEach(inv=>{
+    (inv.partNumbers||[]).forEach(pn=>{
+      if(!pn.unitCost) return;
+      const match=(pn.num&&(part?.num||"").toLowerCase()&&pn.num.toLowerCase().includes((part?.num||"").toLowerCase()))||(inv.name&&q&&inv.name.toLowerCase().includes(q.split(" ")[0]));
+      if(match) invMatches.push({source:"Inventory",name:inv.name,num:pn.num,vendor:pn.vendor,cost:pn.unitCost});
+    });
+  });
+  // Search order history
+  const histMatches=[];
+  const seen=new Set();
+  [...(orderHistory||[])].sort((a,b)=>(b.receivedDate||"").localeCompare(a.receivedDate||"")).forEach(h=>{
+    const numMatch=part?.num&&h.num&&h.num.toLowerCase()===part.num.toLowerCase();
+    const descMatch=part?.desc&&h.desc&&h.desc.toLowerCase().includes(part.desc.toLowerCase().split(" ")[0]);
+    if((numMatch||descMatch)&&h.unitCost){
+      const key=`${h.num}__${h.vendor}__${h.unitCost}`;
+      if(!seen.has(key)){seen.add(key);histMatches.push({source:"Order History",name:h.desc,num:h.num,vendor:h.vendor,cost:h.unitCost,date:h.receivedDate});}
+    }
+  });
+  const results=[...invMatches,...histMatches].slice(0,10);
+  return(<div className="sl"><div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-hdr"><div className="modal-title">💲 Price Lookup</div><button className="modal-close" onClick={onClose}>✕</button></div>
+    <div className="modal-body">
+      <div style={{fontSize:"13px",color:"var(--text-dim)",marginBottom:"10px"}}>
+        Searching for: <strong>{part?.desc||""}{part?.num?" #"+part.num:""}</strong>
+      </div>
+      {results.length===0&&(
+        <div style={{textAlign:"center",padding:"24px",color:"var(--text-dim)"}}>
+          <div style={{fontSize:"28px",marginBottom:"8px"}}>🔍</div>
+          <div>No price history found for this part.</div>
+          <div style={{fontSize:"12px",marginTop:"4px"}}>Prices are tracked from received orders and inventory.</div>
+        </div>
+      )}
+      {results.map((r,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",border:"1px solid var(--border)",borderRadius:"6px",marginBottom:"6px",gap:"10px"}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:"13px"}}>{r.name||r.num||"Part"}</div>
+            <div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>
+              {r.source}{r.vendor&&` · ${r.vendor}`}{r.num&&` · #${r.num}`}{r.date&&` · ${r.date}`}
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"15px",fontWeight:700,color:"var(--green)"}}>${r.cost}</span>
+            <button className="btn btn-primary btn-sm" onClick={()=>onApply(r.cost)}>Apply</button>
+          </div>
+        </div>
+      ))}
+    </div>
+    <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
+  </div></div></div>);
 }
