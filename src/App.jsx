@@ -88,7 +88,12 @@ export default function App() {
         setProfile(userProfile);
         const tenantData = await dbRead(`tenants/${userProfile.tenantId}`, sess.idToken);
         setTenant(tenantData);
-        const mods = tenantData?.profile?.modules || [];
+        const tenantMods = tenantData?.profile?.modules || [];
+        // userProfile.modules: null/undefined = all tenant mods, array = restricted set
+        const userAllowlist = userProfile.modules;
+        const mods = userAllowlist != null
+          ? tenantMods.filter(m => userAllowlist.includes(m))
+          : tenantMods;
         if (mods.length) setModule(mods[0]);
       } else {
         setProfile({ email: sess.email, pendingSetup: true });
@@ -191,7 +196,11 @@ export default function App() {
   if (showAdmin && isAdmin) return <AdminPanel user={session} token={token} onBack={()=>setShowAdmin(false)}/>;
 
   const tenantProfile = tenant?.profile || {};
-  const enabledModules = tenantProfile.modules || [];
+  const tenantModules = tenantProfile.modules || [];
+  const userAllowlist = profile?.modules;
+  const enabledModules = userAllowlist != null
+    ? tenantModules.filter(m => userAllowlist.includes(m))
+    : tenantModules;
   const syncDot = { idle:"#D8CEBC", saving:T.gold, saved:T.green, error:T.danger }[syncStatus];
 
   return (
