@@ -308,7 +308,18 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const saveCustomer=f=>{let nc;if(editTarget){nc=D.customers.map(c=>c.id===editTarget.id?{...editTarget,...f}:c);}else{const x={id:genId(),...f};nc=[...D.customers,x];setSelCust(x.id);}save({customers:nc});setModal(null);setEdit(null);};
   const deleteCustomer=id=>{if(!confirm("Delete customer?"))return;save({customers:D.customers.filter(c=>c.id!==id),vehicles:D.vehicles.map(v=>v.customerId===id?{...v,customerId:""}:v)});if(selCustId===id)setSelCust(null);};
   const toggleTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).map(t=>t.id===tid?{...t,done:!t.done}:t)}:v)});
-  const addTodo=(vid,f)=>{save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:[...(v.todos||[]),{id:genId(),done:false,...f}]}:v)});setModal(null);setEdit(null);};
+  const saveTodo=(vid,f)=>{
+    const todos=(D.vehicles.find(v=>v.id===vid)?.todos)||[];
+    let newTodos;
+    if(editTarget?.id&&!editTarget?.vehicleId){
+      // editing existing todo
+      newTodos=todos.map(t=>t.id===editTarget.id?{...t,...f}:t);
+    } else {
+      newTodos=[...todos,{id:genId(),done:false,...f}];
+    }
+    save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:newTodos}:v)});
+    setModal(null);setEdit(null);
+  };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
   const savePart=f=>{let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...f}];}save({partsToOrder:np});setModal(null);setEdit(null);};
   const quickAddPart=()=>{if(!poNew.desc.trim())return;const np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...poNew}];save({partsToOrder:np});setPoNew({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});};
@@ -336,6 +347,37 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const deletePart=id=>{save({partsToOrder:D.partsToOrder.filter(p=>p.id!==id)});};
   const archiveReceived=()=>{const rec=D.partsToOrder.filter(p=>p.received);if(!rec.length)return;const nh=[...D.orderHistory,...rec.map(p=>({id:genId(),desc:p.desc,num:p.num,vendor:p.vendor,qty:p.qty,unitCost:p.unitCost,vehicleId:p.vehicleId,receivedDate:today()}))];save({partsToOrder:D.partsToOrder.filter(p=>!p.received),orderHistory:nh});};
   const consolidateDupes=()=>{const map={};D.partsToOrder.forEach(p=>{const k=(p.desc||"").toLowerCase().trim()+"__"+(p.num||"").toLowerCase().trim();if(!map[k])map[k]=[];map[k].push(p);});const np=[];Object.values(map).forEach(group=>{if(group.length===1){np.push(group[0]);}else{const base={...group[0],qty:String(group.reduce((s,p)=>s+(parseInt(p.qty)||1),0))};np.push(base);}});save({partsToOrder:np});};
+
+  const addPartsToService=(vehicleId,date,type,notes,tech,hours,partsArr)=>{
+    let nv=D.vehicles;
+    if(hours){const h=parseFloat(hours);const veh=D.vehicles.find(v=>v.id===vehicleId);if(veh&&h>(parseFloat(veh.hours)||0))nv=D.vehicles.map(v=>v.id===vehicleId?{...v,hours:String(h)}:v);}
+    const totalCost=partsArr.reduce((s,p)=>s+(parseFloat(p.unitCost)||0)*(parseInt(p.qty)||1),0);
+    const newRec={id:genId(),vehicleId,date,type:type||"Repair",notes,tech,hours,cost:String(totalCost.toFixed(2)),parts:partsArr.map(p=>({desc:p.desc||"",num:p.num||"",qty:p.qty||"1"}))};
+    let ni=D.partsInventory;
+    partsArr.forEach(p=>{if(p.invPartId){ni=ni.map(ip=>ip.id===p.invPartId?{...ip,qty:String(Math.max(0,(parseInt(ip.qty)||0)-(parseInt(p.qty)||1)))}:ip);}});
+    save({vehicles:nv,records:[...D.records,newRec],partsInventory:ni});
+    setModal(null);setEdit(null);
+  };
+
+  const invQtyAdj=(id,delta)=>{const ni=D.partsInventory.map(p=>p.id===id?{...p,qty:String(Math.max(0,(parseInt(p.qty)||0)+delta))}:p);save({partsInventory:ni});};
+
+  const printServiceHistory=(vid)=>{
+    const v=D.vehicles.find(vv=>vv.id===vid); if(!v) return;
+    const recs=D.records.filter(r=>r.vehicleId===vid).sort((a,b)=>b.date.localeCompare(a.date));
+    const cust=D.customers.find(c=>c.id===v.customerId);
+    const biz=D.settings?.businessName||"";
+    const total=recs.reduce((s,r)=>s+(parseFloat(r.cost)||0),0);
+    const w=window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Service History — ${v.name}</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;}h1{font-size:22px;margin-bottom:4px;}h2{font-size:14px;font-weight:normal;color:#666;margin:0 0 20px;}table{width:100%;border-collapse:collapse;margin-top:16px;}th{background:#f0f0f0;text-align:left;padding:8px 10px;font-size:12px;border-bottom:2px solid #ccc;}td{padding:8px 10px;border-bottom:1px solid #e0e0e0;font-size:13px;vertical-align:top;}.cost{text-align:right;color:#2a5e2a;font-weight:bold;}.total{font-weight:bold;background:#f8f8f8;}@media print{button{display:none;}}</style></head><body>`);
+    w.document.write(`<button onclick="window.print()" style="float:right;padding:6px 14px;background:#c07010;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">🖨 Print</button>`);
+    w.document.write(`<h1>${v.name}</h1><h2>${[v.year,v.make,v.model].filter(Boolean).join(" ")}${cust?" · "+cust.name:""}${biz?" — "+biz:""}</h2>`);
+    w.document.write(`<div style="display:flex;gap:24px;margin-bottom:16px;font-size:13px;"><span><b>Records:</b> ${recs.length}</span><span><b>Total Cost:</b> $${total.toLocaleString()}</span>${v.hours?`<span><b>Hours/Miles:</b> ${Number(v.hours).toLocaleString()}</span>`:""}</div>`);
+    w.document.write(`<table><thead><tr><th>Date</th><th>Service Type</th><th>Notes</th><th>Technician</th><th class="cost">Cost</th></tr></thead><tbody>`);
+    recs.forEach(r=>{w.document.write(`<tr><td>${r.date}</td><td>${r.type||""}</td><td>${r.notes||""}</td><td>${r.tech||""}</td><td class="cost">${r.cost?"$"+Number(r.cost).toLocaleString():""}</td></tr>`);});
+    w.document.write(`<tr class="total"><td colspan="4">Total</td><td class="cost">$${total.toLocaleString()}</td></tr>`);
+    w.document.write(`</tbody></table></body></html>`);
+    w.document.close();
+  };
   const saveInvItem=f=>{let ni;if(editTarget){ni=D.partsInventory.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{ni=[...D.partsInventory,{id:genId(),partNumbers:[],...f}];}save({partsInventory:ni});setModal(null);setEdit(null);};
   const deleteInvItem=id=>save({partsInventory:D.partsInventory.filter(p=>p.id!==id)});
   const saveVendor=f=>{let nv;if(editTarget){nv=D.vendors.map(v=>v.id===editTarget.id?{...editTarget,...f}:v);}else{nv=[...D.vendors,{id:genId(),...f}];}save({vendors:nv});setModal(null);setEdit(null);};
@@ -451,12 +493,12 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
             <div className="main-content">
 
               {/* ── FLEET ── */}
-              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS}/>}
+              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory}/>}
               {tab==="report"&&<ReportView D={D} reportFil={reportFil} setRepFil={setRepFil} custName={custName} vehName={vehName}/>}
               {tab==="costs"&&<CostView D={D} custName={custName}/>}
               {tab==="invoices"&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
               {tab==="order"&&<OrderView D={D} filteredPO={filteredPO} poFilters={poFilters} setPOF={setPOF} poNew={poNew} setPoNew={setPoNew} quickAddPart={quickAddPart} toggleOrdered={toggleOrdered} toggleReceived={toggleReceived} deletePart={deletePart} archiveReceived={archiveReceived} consolidateDupes={consolidateDupes} selPoIds={selPoIds} setSelPoIds={setSelPoIds} setEdit={setEdit} setModal={setModal} vehName={vehName}/>}
-              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal}/>}
+              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj}/>}
               {tab==="vendors"&&<VendorsView D={D} deleteVendor={deleteVendor} setEdit={setEdit} setModal={setModal}/>}
               {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName}/>}
               {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal} setTab={setTab} setSelVeh={setSelVeh} setSelCust={setSelCust}/>}
@@ -472,11 +514,11 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       {modal==="vehicle"  &&<VehicleMo   initial={editTarget} customers={D.customers} onSave={saveVehicle}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="record"   &&<RecordMo    initial={editTarget} vehicleId={selVehId} partsToOrder={D.partsToOrder} onSave={saveRecord}   onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="customer" &&<CustomerMo  initial={editTarget} onSave={saveCustomer} onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={addTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invItem"  &&<InvItemMo   initial={editTarget} vehicles={D.vehicles} onSave={saveInvItem} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="receive"  &&<ReceiveMo      part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="addToService"&&<AddToServiceMo parts={(editTarget||[]).map(id=>D.partsToOrder.find(p=>p.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={addPartsToService} onClose={()=>{setModal(null);setEdit(null);}}/>}      part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="priceSearch"&&<PriceSearchMo part={editTarget} partsInventory={D.partsInventory} orderHistory={D.orderHistory} onApply={cost=>{const np=D.partsToOrder.map(p=>p.id===editTarget.id?{...p,unitCost:cost}:p);save({partsToOrder:np});setModal(null);setEdit(null);}} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invoice"  &&<InvoiceMo   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
     </>
@@ -484,7 +526,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 }
 
 // ── Fleet View ────────────────────────────────────────────────────
-function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS}){
+function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory}){
   if(!selCustId&&!selVeh) return (
     <div>
       <div className="overview-title">Fleet Overview</div>
@@ -541,7 +583,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
       <div className="vic">
         <div className="vic-top">
           <div className="vic-identity"><div className="vic-icon">{ICONS[selVeh.type]||"🔧"}</div><div><div className="vic-vname">{selVeh.name}</div><span className="vic-badge">{selVeh.type}</span></div></div>
-          <div className="vic-actions"><button className="btn btn-ghost btn-sm" onClick={()=>{setEdit(selVeh);setModal("vehicle");}}>Edit</button><button className="btn btn-danger btn-sm" onClick={()=>deleteVehicle(selVeh.id)}>Delete</button></div>
+          <div className="vic-actions"><button className="btn btn-ghost btn-sm" onClick={()=>{setEdit(selVeh);setModal("vehicle");}}>Edit</button><button className="btn btn-ghost btn-sm" onClick={()=>printServiceHistory(selVeh.id)}>🖨 Print</button><button className="btn btn-danger btn-sm" onClick={()=>deleteVehicle(selVeh.id)}>Delete</button></div>
         </div>
         <div className="vic-specs">
           {selVeh.year&&<div className="vic-spec"><div className="vic-spec-lbl">Year</div><div className="vic-spec-val">{selVeh.year}</div></div>}
@@ -568,6 +610,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
           <input type="checkbox" checked={t.done} onChange={()=>toggleTodo(selVeh.id,t.id)} style={{width:"16px",height:"16px",cursor:"pointer",accentColor:"#16a34a",marginTop:"2px",flexShrink:0}}/>
           <div style={{flex:1}}><div style={{fontSize:"14px",fontWeight:600,textDecoration:t.done?"line-through":"none",color:t.done?"var(--text-dim)":"var(--text-bright)"}}>{t.text}</div>{t.dueDate&&<div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>Due: {t.dueDate}</div>}</div>
           <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",letterSpacing:"1px",padding:"1px 6px",borderRadius:"3px",background:`${PRI_COLOR[t.priority||"medium"]}18`,color:PRI_COLOR[t.priority||"medium"],flexShrink:0}}>{t.priority||"medium"}</span>
+          <button className="btn btn-ghost btn-sm" style={{padding:"2px 7px",fontSize:"11px"}} onClick={()=>{setEdit({...t,vehicleId:selVeh.id});setModal("todo");}}>Edit</button>
           <button className="btn btn-danger btn-xs" onClick={()=>deleteTodo(selVeh.id,t.id)}>✕</button>
         </div>
       ))}
@@ -734,7 +777,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
       <div><div className="overview-title">Order Parts</div><div className="overview-sub">{needed} needed · {ordered} on order · {received} received</div></div>
       <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
-        {selPoIds.size>0&&<><span style={{fontSize:"13px",color:"var(--text-dim)"}}>{selPoIds.size} selected</span><button className="btn btn-ghost btn-sm" onClick={()=>setSelPoIds(new Set())}>Clear</button></>}
+        {selPoIds.size>0&&<><span style={{fontSize:"13px",color:"var(--text-dim)"}}>{selPoIds.size} selected</span><button className="btn btn-ghost btn-sm" onClick={()=>setSelPoIds(new Set())}>Clear</button><button className="btn btn-ghost btn-sm" style={{color:"#2563eb",borderColor:"rgba(37,99,235,.3)"}} onClick={()=>{setEdit([...selPoIds]);setModal("addToService");}}>→ Add to Service</button></>}
         <button className="btn btn-ghost btn-sm" onClick={toggleAll}>Select All</button>
         <button className="btn btn-ghost btn-sm" onClick={consolidateDupes}>Consolidate Dupes</button>
         <button className="btn btn-ghost btn-sm" onClick={archiveReceived}>Archive Received</button>
@@ -812,7 +855,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
 }
 
 // ── Parts Inventory ────────────────────────────────────────────────
-function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal}){
+function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj}){
   const inv=D.partsInventory||[];
   const filtered=inv.filter(p=>{if(invFilters.q&&!(p.name+(p.notes||"")+(p.partNumbers||[]).map(n=>n.num+(n.vendor||"")).join("")).toLowerCase().includes(invFilters.q.toLowerCase()))return false;if(invFilters.location&&(p.location||"").toLowerCase()!==invFilters.location.toLowerCase())return false;return true;}).sort((a,b)=>a.name.localeCompare(b.name));
   const lowStock=inv.filter(p=>p.qty!==""&&p.minQty!==""&&Number(p.qty)<=Number(p.minQty));
@@ -829,7 +872,7 @@ function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal}){
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"10px"}}>
         <div style={{flex:1}}>
           <div className="inv-name">{p.name}{isLow&&<span className="inv-low" style={{marginLeft:"8px"}}>⚠ Low</span>}</div>
-          <div className="inv-meta">{p.qty!==""&&<span>Qty: <strong>{p.qty}</strong></span>}{p.minQty!==""&&<span>Min: {p.minQty}</span>}{p.location&&<span>📍 {p.location}</span>}</div>
+          <div className="inv-meta">{p.qty!==""&&<span style={{display:"flex",alignItems:"center",gap:"4px"}}>Qty: <button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,-1)}>−</button><strong>{p.qty}</strong><button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,1)}>+</button></span>}{p.minQty!==""&&<span>Min: {p.minQty}</span>}{p.location&&<span>📍 {p.location}</span>}</div>
           {(p.partNumbers||[]).map((n,i)=><div key={i} style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{n.unitCost&&` · $${n.unitCost}`}</div>)}
           {p.notes&&<div style={{fontSize:"12px",color:"var(--text-dim)",fontStyle:"italic",marginTop:"4px"}}>{p.notes}</div>}
         </div>
@@ -1168,5 +1211,51 @@ function PriceSearchMo({part,partsInventory,orderHistory,onApply,onClose}){
       ))}
     </div>
     <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
+  </div></div></div>);
+}
+
+// ── Add Parts to Service Modal ────────────────────────────────────
+function AddToServiceMo({parts,vehicles,onSave,onClose}){
+  const[f,setF]=useState({vehicleId:parts.find(p=>p.vehicleId&&p.vehicleId!=="__stock__")?.vehicleId||"",date:today(),type:"Repair",notes:"",tech:"",hours:""});
+  const[qtys,setQtys]=useState(Object.fromEntries(parts.map(p=>[p.id,p.qty||"1"])));
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const totalCost=parts.reduce((sum,p)=>{const q=parseInt(qtys[p.id])||1;return sum+(parseFloat(p.unitCost)||0)*q;},0);
+  return(<div className="sl"><div className="modal-overlay" onClick={onClose}><div className="modal" style={{maxWidth:"620px"}} onClick={e=>e.stopPropagation()}>
+    <div className="modal-hdr"><div className="modal-title">Add Parts to Service Record</div><button className="modal-close" onClick={onClose}>✕</button></div>
+    <div className="modal-body">
+      {/* Parts list */}
+      <div style={{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"4px",padding:"10px 12px",marginBottom:"4px"}}>
+        <div style={{fontWeight:700,fontSize:"12px",color:"var(--text-dim)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:"8px"}}>Parts</div>
+        {parts.map(p=>(
+          <div key={p.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"5px 0",borderBottom:"1px solid var(--border)"}}>
+            <div style={{flex:1}}>
+              <span style={{fontWeight:600,fontSize:"13px"}}>{p.desc||""}</span>
+              {p.num&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"var(--amber-dim)",marginLeft:"8px"}}>{p.num}</span>}
+              {p.vendor&&<span style={{fontSize:"11px",color:"var(--text-dim)",marginLeft:"6px"}}>{p.vendor}</span>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+              <span style={{fontSize:"11px",color:"var(--text-dim)"}}>Qty:</span>
+              <input type="number" min="1" value={qtys[p.id]||"1"} onChange={e=>setQtys(q=>({...q,[p.id]:e.target.value}))} style={{width:"55px",padding:"3px 6px",border:"1px solid var(--border2)",borderRadius:"4px",fontSize:"12px",fontFamily:"'Barlow',sans-serif"}}/>
+            </div>
+            {p.unitCost&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"12px",color:"var(--green)"}}>
+              ${((parseFloat(p.unitCost)||0)*(parseInt(qtys[p.id])||1)).toFixed(2)}
+            </span>}
+          </div>
+        ))}
+        {totalCost>0&&<div style={{textAlign:"right",fontWeight:700,fontSize:"13px",color:"var(--green)",marginTop:"6px"}}>Total: ${totalCost.toFixed(2)}</div>}
+      </div>
+      <Fg label="Vehicle *" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— Select vehicle —</option>{vehicles.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
+      <div className="form-row">
+        <Fg label="Date"><Fi type="date" value={f.date} onChange={e=>s("date",e.target.value)}/></Fg>
+        <Fg label="Service Type"><Fi list="svc-types-ats" value={f.type} onChange={e=>s("type",e.target.value)}/><datalist id="svc-types-ats">{["Oil Change","Filter Replacement","Tire Service","Brake Service","Hydraulic Service","Belt/Chain Replacement","Coolant Service","Fuel System","Battery/Electrical","Inspection","Repair","Other"].map(t=><option key={t} value={t}/>)}</datalist></Fg>
+        <Fg label="Technician"><Fi value={f.tech} onChange={e=>s("tech",e.target.value)} placeholder="Self, Dealer…"/></Fg>
+        <Fg label="Hrs/Miles"><Fi type="number" value={f.hours} onChange={e=>s("hours",e.target.value)}/></Fg>
+      </div>
+      <Fg label="Notes" full><textarea className="form-textarea" value={f.notes} onChange={e=>s("notes",e.target.value)} placeholder="Work done, observations…"/></Fg>
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={()=>{if(!f.vehicleId)return alert("Select a vehicle.");const partsArr=parts.map(p=>({...p,qty:qtys[p.id]||p.qty||"1"}));onSave(f.vehicleId,f.date,f.type,f.notes,f.tech,f.hours,partsArr);}}>Create Service Record</button>
+    </div>
   </div></div></div>);
 }
