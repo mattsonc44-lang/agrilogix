@@ -2283,22 +2283,49 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     });
   },[loading,tenantId,token]);
 
-  // ── Persist ───────────────────────────────────────────────
+  // ── Retry queued saves on reconnect ──────────────────────────
+  useEffect(()=>{
+    const retry=async()=>{
+      const q=flLoadQ();
+      if(!q||!tenantId) return;
+      setSync("saving");
+      try{
+        await dbWrite(BASE,token,q.data);
+        flClearQ();
+        setSync("saved");
+      }catch{
+        setSync("error");
+      }finally{
+        setTimeout(()=>setSync("idle"),1500);
+      }
+    };
+    window.addEventListener("online",retry);
+    retry();
+    return ()=>window.removeEventListener("online",retry);
+  },[tenantId,token]);
+  const FL_QUEUE_KEY = `fl_queue_${tenantId}`;
+  const flSaveQ  = d=>{ try{ localStorage.setItem(FL_QUEUE_KEY,JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
+  const flClearQ = ()=>{ try{ localStorage.removeItem(FL_QUEUE_KEY); }catch(e){} };
+  const flLoadQ  = ()=>{ try{ const r=localStorage.getItem(FL_QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
+
   const persist=useCallback(async(newFields,newActs)=>{
     setSync("saving");
     skipSSE.current=true;
+    const payload={
+      fields:    Object.fromEntries(newFields.map(f=>[f.id,f])),
+      activities:Object.fromEntries(newActs.map(a=>[a.id,a])),
+    };
+    flSaveQ(payload);
     try{
-      persistToAgriLogix("fieldlog", {
-        fields:    Object.fromEntries(newFields.map(f=>[f.id,f])),
-        activities:Object.fromEntries(newActs.map(a=>[a.id,a])),
-      });
+      await dbWrite(BASE, token, payload);
+      flClearQ();
       setSync("saved");
     }catch{
       setSync("error");
     }finally{
       setTimeout(()=>{ skipSSE.current=false; setSync("idle"); },1500);
     }
-  },[persistToAgriLogix]);
+  },[token, BASE]);
 
   // ── Mutations ─────────────────────────────────────────────
   const addField=(f)=>{

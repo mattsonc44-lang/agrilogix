@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { dbRead, dbListen } from "../../core/firebase.js";
+import { dbRead, dbWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 
 // ── CSS matching standalone exactly ───────────────────────────────
@@ -246,6 +246,21 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     return dbListen(BASE,token,({data:d})=>{if(d)setD(migrate(d));});
   },[tenantId,token]);
 
+  // ── Retry queued saves on reconnect ───────────────────────────
+  useEffect(()=>{
+    const retry=async()=>{
+      const q=slLoadQ();
+      if(!q||!tenantId) return;
+      setSync("saving");
+      try{ await dbWrite(BASE,token,q.data); slClearQ(); setSync("saved"); }
+      catch(e){ setSync("queued"); }
+      setTimeout(()=>setSync("idle"),2000);
+    };
+    window.addEventListener("online",retry);
+    retry();
+    return ()=>window.removeEventListener("online",retry);
+  },[tenantId,token]);
+
   const migrate=d=>({
     vehicles:  obj2arr(d.vehicles||{}).filter(Boolean),
     records:   obj2arr(d.records||{}).filter(Boolean),
@@ -258,11 +273,16 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     settings:{features:{invoicing:true,partsInventory:true,orderParts:true},...(d.settings||{})},
   });
 
+  const SL_QUEUE_KEY = `sl_queue_${tenantId}`;
+  const slSaveQ  = d=>{ try{ localStorage.setItem(SL_QUEUE_KEY,JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
+  const slClearQ = ()=>{ try{ localStorage.removeItem(SL_QUEUE_KEY); }catch(e){} };
+  const slLoadQ  = ()=>{ try{ const r=localStorage.getItem(SL_QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
+
   const save=(updates)=>{
     const next={...D,...updates};
     setD(next);
     setSync("saving");
-    persist("serviceLog",{
+    const payload={
       vehicles:  Object.fromEntries((next.vehicles||[]).map(v=>[v.id,v])),
       records:   Object.fromEntries((next.records||[]).map(r=>[r.id,r])),
       customers: next.customers||[],
@@ -272,8 +292,12 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       vendors:        Object.fromEntries((next.vendors||[]).map(v=>[v.id,v])),
       orderHistory:   Object.fromEntries((next.orderHistory||[]).map(h=>[h.id,h])),
       settings:       next.settings,
-    });
-    setTimeout(()=>setSync("idle"),1500);
+    };
+    slSaveQ(payload);
+    dbWrite(BASE, token, payload)
+      .then(()=>{ slClearQ(); setSync("saved"); })
+      .catch(()=>setSync("queued"))
+      .finally(()=>setTimeout(()=>setSync("idle"),2000));
   };
 
   // ── Mutations ──────────────────────────────────────────────────
@@ -355,7 +379,9 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
             <div><div className="ts-val">{D.records.length}</div><div className="ts-lbl">Records</div></div>
             <div><div className="ts-val">${sumCost(D.records).toLocaleString()}</div><div className="ts-lbl">Total Spent</div></div>
           </div>
-          <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+            {sync==="queued"&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",letterSpacing:"1px",background:"#fff0f0",color:"#dc2626",border:"1px solid #e0c0c0",borderRadius:"3px",padding:"2px 6px"}}>⚠ QUEUED</span>}
+            {sync==="saving"&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",letterSpacing:"1px",color:"#6b7280"}}>SAVING...</span>}
             {tab==="fleet"&&selVeh&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("record");}}>+ Log Service</button>}
             {tab==="fleet"&&!selVeh&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("vehicle");}}>+ Add Equipment</button>}
             {tab==="vendors"&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("vendor");}}>+ Add Vendor</button>}
