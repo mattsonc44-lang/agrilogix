@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { dbRead, dbListen } from "../../core/firebase.js";
+import { dbRead, dbWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 
 // ── Permission mapping from Agri Logix roles ──────────────────────
@@ -179,25 +179,81 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     if(loading||!tenantId) return;
     return dbListen(BASE,token,({data:d})=>{
       if(skipRef.current||!d) return;
-      if(d.fields)       setFields(obj2arr(d.fields));
-      if(d.bins)         setBins(obj2arr(d.bins));
-      if(d.customGrains) setGrains(obj2arr(d.customGrains));
+      if(d.fields)       setFields(obj2arr(d.fields).filter(Boolean));
+      if(d.bins)         setBins(obj2arr(d.bins).filter(Boolean));
+      if(d.customGrains) setGrains(obj2arr(d.customGrains).filter(Boolean));
       if(d.trucks)       setTrucks(obj2arr(d.trucks).filter(Boolean));
     });
   },[loading,tenantId,token]);
 
-  const save = useCallback((nf,nb,ng,nt)=>{
-    skipRef.current=true;
-    setSyncStatus("pushing");
-    persist("agriScale",{
+  const QUEUE_KEY = `as_queue_${tenantId}`;
+  const saveToQueue   = d => { try{ localStorage.setItem(QUEUE_KEY, JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
+  const clearQueue    = ()  => { try{ localStorage.removeItem(QUEUE_KEY); }catch(e){} };
+  const loadQueue     = ()  => { try{ const r=localStorage.getItem(QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
+
+  // Merge remote + local queued loads (handles offline concurrent adds)
+  const mergeWithRemote = (remote, localData) => {
+    if(!remote?.fields) return localData;
+    const remoteIds = new Set();
+    obj2arr(remote.fields||{}).forEach(f=>(f.loads||[]).forEach(l=>remoteIds.add(l.id)));
+    const localFields = obj2arr(localData.fields||{});
+    const merged = obj2arr(remote.fields||{}).map(rf=>{
+      const lf = localFields.find(f=>f.id===rf.id);
+      const extra = lf ? (lf.loads||[]).filter(l=>!remoteIds.has(l.id)) : [];
+      return {...rf, loads:[...(rf.loads||[]),...extra].sort((a,b)=>(a.ts||0)-(b.ts||0))};
+    });
+    localFields.forEach(lf=>{ if(!merged.find(mf=>mf.id===lf.id)) merged.push(lf); });
+    const allLoads = merged.flatMap(f=>f.loads||[]);
+    const mergedBins = obj2arr(remote.bins||{}).map(rb=>({...rb, storedLbs:allLoads.filter(l=>l.binId===rb.id).reduce((s,l)=>s+l.net,0)}));
+    return {...localData, fields:Object.fromEntries(merged.map(f=>[f.id,f])), bins:Object.fromEntries(mergedBins.map(b=>[b.id,b]))};
+  };
+
+  // ── Retry queued saves when back online ───────────────────────
+  useEffect(()=>{
+    const retry = async () => {
+      const q = loadQueue();
+      if(!q||!tenantId) return;
+      setSyncStatus("pushing");
+      try {
+        const remote = await dbRead(BASE, token).catch(()=>null);
+        const merged = remote ? mergeWithRemote(remote, q.data) : q.data;
+        await dbWrite(BASE, token, merged);
+        if(merged.fields)       setFields(obj2arr(merged.fields).filter(Boolean));
+        if(merged.bins)         setBins(obj2arr(merged.bins).filter(Boolean));
+        if(merged.customGrains) setGrains(obj2arr(merged.customGrains).filter(Boolean));
+        if(merged.trucks)       setTrucks(obj2arr(merged.trucks).filter(Boolean));
+        clearQueue();
+        setSyncStatus("live");
+      } catch(e) {
+        setSyncStatus("queued");
+      }
+    };
+    window.addEventListener("online", retry);
+    // Also check on mount
+    retry();
+    return ()=>window.removeEventListener("online", retry);
+  },[tenantId,token]);
+
+  const save = useCallback(async (nf,nb,ng,nt)=>{
+    const payload = {
       fields:      Object.fromEntries((nf||fields).map(f=>[f.id,f])),
       bins:        Object.fromEntries((nb||bins).map(b=>[b.id,b])),
       customGrains:Object.fromEntries((ng||grains).map((g,i)=>[i,g])),
       trucks:      Object.fromEntries((nt||trucks).map((t,i)=>[i,t])),
-    });
-    setSyncStatus("live");
-    setTimeout(()=>{ skipRef.current=false; },1500);
-  },[fields,bins,grains,trucks,persist]);
+    };
+    // Always save locally first
+    saveToQueue(payload);
+    skipRef.current = true;
+    setSyncStatus("pushing");
+    try {
+      await dbWrite(BASE, token, payload);
+      clearQueue();
+      setSyncStatus("live");
+    } catch(e) {
+      setSyncStatus("queued");
+    }
+    setTimeout(()=>{ skipRef.current=false; }, 1500);
+  },[fields,bins,grains,trucks,token,BASE]);
 
   // ── Scale computed (null-safe) ────────────────────────────────
   const safeArr    = a => (Array.isArray(a)?a:[]).filter(Boolean);
@@ -239,8 +295,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
   };
 
   const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
-  const syncLabel = syncStatus==="live"?"● LIVE":syncStatus==="pushing"?"SAVING...":syncStatus==="error"?"ERROR":"INIT";
-  const syncColor = syncStatus==="live"?"#4a5568":syncStatus==="error"?"#c03030":"#aaa";
+  const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
+  const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
   const btnBase = {cursor:"pointer",fontFamily:"'Share Tech Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
 
   const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
@@ -263,7 +319,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
               <div style={{color:"#4a7535",fontSize:"10px",letterSpacing:"0.06em"}}>→ {activeBin?.name}</div>
               <div style={{display:"flex",gap:"5px",justifyContent:"flex-end",alignItems:"center",marginTop:"3px",flexWrap:"wrap"}}>
                 <span style={{fontSize:"8px",color:"#fff",background:"#5a6878",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em"}}>{operatorName}</span>
-                <span style={{fontSize:"8px",fontFamily:"monospace",letterSpacing:"0.08em",color:syncColor,background:syncStatus==="live"?"#e8e2d8":"#f0f0f0",border:`1px solid ${syncStatus==="live"?"#b0a08a":"#ddd"}`,borderRadius:"3px",padding:"1px 6px"}}>{syncLabel}</span>
+                <span style={{fontSize:"8px",fontFamily:"monospace",letterSpacing:"0.08em",color:syncColor,background:syncStatus==="live"?"#e8e2d8":syncStatus==="queued"?"#fff0f0":"#f0f0f0",border:`1px solid ${syncStatus==="live"?"#b0a08a":syncStatus==="queued"?"#e0c0c0":"#ddd"}`,borderRadius:"3px",padding:"1px 6px"}}>{syncLabel}</span>
                 <span style={{fontSize:"8px",color:"#9a8a72",background:"#ede9e4",border:"1px solid #c0b8ac",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em",textTransform:"uppercase"}}>{role}</span>
               </div>
             </div>
