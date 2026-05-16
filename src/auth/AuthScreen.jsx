@@ -50,6 +50,7 @@ export default function AuthScreen({ onAuth }) {
         if (invite) {
           const userProfile = { uid:data.localId, name:name.trim(), email:data.email, tenantId:invite.tenantId, role:invite.role, createdAt:new Date().toISOString() };
           await dbWrite(`users/${data.localId}`, userProfile, data.idToken);
+          await dbWrite(`tenants/${invite.tenantId}/users/${data.localId}`, userProfile, data.idToken);
           await markInviteUsed(inviteToken, data.localId, data.idToken);
           window.history.replaceState({}, "", "/");
           onAuth(data, { isNewOrg:false }); return;
