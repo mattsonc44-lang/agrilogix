@@ -520,7 +520,6 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="addToService"&&<AddToServiceMo parts={(editTarget||[]).map(id=>D.partsToOrder.find(p=>p.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={addPartsToService} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="receive"  &&<ReceiveMo   part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="priceSearch"&&<PriceSearchMo part={editTarget} partsInventory={D.partsInventory} orderHistory={D.orderHistory} onApply={cost=>{const np=D.partsToOrder.map(p=>p.id===editTarget.id?{...p,unitCost:cost}:p);save({partsToOrder:np});setModal(null);setEdit(null);}} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invoice"  &&<InvoiceMo   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
     </>
   );
@@ -843,7 +842,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
                 </div>
               </td>
               <td><div style={{display:"flex",gap:"4px",flexWrap:"nowrap"}}>
-                <button className="btn btn-ghost btn-xs" style={{color:"#2563eb",borderColor:"rgba(37,99,235,.3)"}} title="Find best price" onClick={()=>{setEdit({...p,_priceSearch:true});setModal("priceSearch");}}>💲</button>
+                <button className="btn btn-ghost btn-xs" style={{color:"#2563eb",borderColor:"rgba(37,99,235,.3)"}} title="Search price online" onClick={()=>{const q=encodeURIComponent([p.num,p.desc].filter(Boolean).join(' ')+'  price');window.open(`https://www.google.com/search?q=${q}`,'_blank');}} >💲</button>
                 <button className="btn btn-ghost btn-xs" onClick={()=>{setEdit(p);setModal("part");}}>Edit</button>
                 <button className="btn btn-danger btn-xs" onClick={()=>deletePart(p.id)}>✕</button>
               </div></td>
