@@ -477,7 +477,8 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       {modal==="invItem"  &&<InvItemMo   initial={editTarget} vehicles={D.vehicles} onSave={saveInvItem} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="receive"  &&<ReceiveMo      part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="priceSearch"&&<PriceSearchMo part={editTarget} partsInventory={D.partsInventory} orderHistory={D.orderHistory} onApply={cost=>{const np=D.partsToOrder.map(p=>p.id===editTarget.id?{...p,unitCost:cost}:p);save({partsToOrder:np});setModal(null);setEdit(null);}} onClose={()=>{setModal(null);setEdit(null);}}/>}   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
+      {modal==="priceSearch"&&<PriceSearchMo part={editTarget} partsInventory={D.partsInventory} orderHistory={D.orderHistory} onApply={cost=>{const np=D.partsToOrder.map(p=>p.id===editTarget.id?{...p,unitCost:cost}:p);save({partsToOrder:np});setModal(null);setEdit(null);}} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="invoice"  &&<InvoiceMo   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
     </>
   );
 }
