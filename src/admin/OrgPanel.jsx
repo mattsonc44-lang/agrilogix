@@ -5,6 +5,8 @@ import { MODULES, ROLES } from "../core/config.js";
 import { obj2arr } from "../core/helpers.js";
 import InviteModal from "./InviteModal.jsx";
 
+const ROLE_COLOR = { owner:"#C07010", manager:"#2563EB", operator:"#16A34A" };
+
 export default function OrgPanel({ session, profile, tenant, onClose }) {
   const [users,      setUsers]      = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -28,6 +30,17 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
       await dbWrite(`tenants/${profile.tenantId}/users/${uid}/role`, newRole, token);
       await dbWrite(`users/${uid}/role`, newRole, token);
       setUsers(u => u.map(u2 => u2.uid===uid ? {...u2, role:newRole} : u2));
+    } catch(e) { setErr(e.message); }
+  };
+
+  const changeModuleRole = async (uid, moduleId, newRole) => {
+    const u = users.find(u=>u.uid===uid); if(!u) return;
+    const current = u.moduleRoles || {};
+    const cleaned = Object.fromEntries(Object.entries({...current,[moduleId]:newRole}).filter(([,v])=>v));
+    try {
+      await dbWrite(`tenants/${profile.tenantId}/users/${uid}/moduleRoles`, cleaned, token);
+      await dbWrite(`users/${uid}/moduleRoles`, cleaned, token);
+      setUsers(u => u.map(u2 => u2.uid===uid ? {...u2,moduleRoles:cleaned} : u2));
     } catch(e) { setErr(e.message); }
   };
 
@@ -112,17 +125,20 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
             return (
               <div key={u.uid} style={{padding:"12px 0",borderBottom:`1px solid ${T.border}`}}>
                 {/* Name + role row */}
-                <div style={{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap",marginBottom: (!isMe && !isOwner && enabledModules.length > 0) ? "10px" : "0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap",marginBottom:"8px"}}>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:600,fontSize:"14px"}}>{u.name||"—"}</div>
                     <div style={{fontSize:"12px",color:T.muted}}>{u.email}</div>
                   </div>
                   {!isMe ? (
-                    <select style={{...S.input,width:"auto",padding:"5px 10px",fontSize:"12px"}}
-                      value={u.role||"operator"}
-                      onChange={e=>changeRole(u.uid,e.target.value)}>
-                      {Object.entries(ROLES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
-                    </select>
+                    <div>
+                      <div style={{fontSize:"9px",color:T.faint,letterSpacing:"1px",textTransform:"uppercase",marginBottom:"2px"}}>Default Role</div>
+                      <select style={{...S.input,width:"auto",padding:"5px 10px",fontSize:"12px"}}
+                        value={u.role||"operator"}
+                        onChange={e=>changeRole(u.uid,e.target.value)}>
+                        {Object.entries(ROLES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
+                      </select>
+                    </div>
                   ) : (
                     <span style={{fontSize:"12px",padding:"4px 10px",borderRadius:"10px",background:T.brand+"20",color:T.brand,fontWeight:600,textTransform:"capitalize"}}>{u.role} (you)</span>
                   )}
@@ -132,10 +148,34 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
                   {u.active === false && <span style={{fontSize:"11px",color:T.danger}}>Inactive</span>}
                 </div>
 
-                {/* Module access toggles for non-owner, non-me users */}
+                {/* Per-module role selectors for non-owner, non-me */}
+                {!isMe && !isOwner && enabledModules.length > 0 && (
+                  <div style={{display:"flex",gap:"12px",flexWrap:"wrap",paddingLeft:"2px",marginBottom:"6px"}}>
+                    {enabledModules.map(mid => {
+                      const m = MODULES[mid]; if(!m) return null;
+                      const hasAccess = userHasModule(u, mid);
+                      const moduleRole = (u.moduleRoles||{})[mid] || u.role || "operator";
+                      return (
+                        <div key={mid} style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+                          <div style={{fontSize:"9px",color:m.color,letterSpacing:"1px",textTransform:"uppercase",fontWeight:700}}>{m.icon} {m.label}</div>
+                          {hasAccess ? (
+                            <select value={moduleRole} onChange={e=>changeModuleRole(u.uid,mid,e.target.value)}
+                              style={{...S.input,padding:"3px 8px",fontSize:"11px",fontWeight:700,color:ROLE_COLOR[moduleRole]||T.text,border:`1px solid ${ROLE_COLOR[moduleRole]||T.border}40`,background:`${ROLE_COLOR[moduleRole]||"#888"}10`,minWidth:"90px"}}>
+                              {Object.entries(ROLES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
+                            </select>
+                          ) : (
+                            <span style={{fontSize:"10px",color:T.faint,fontStyle:"italic",padding:"3px 0"}}>No access</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Module access toggles */}
                 {!isMe && !isOwner && enabledModules.length > 0 && (
                   <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",paddingLeft:"2px"}}>
-                    <span style={{fontSize:"11px",color:T.muted,minWidth:"95px"}}>Module access:</span>
+                    <span style={{fontSize:"11px",color:T.muted,minWidth:"95px"}}>Access:</span>
                     {enabledModules.map(mid => {
                       const m = MODULES[mid];
                       if (!m) return null;

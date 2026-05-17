@@ -17,6 +17,7 @@ export default function AdminPanel({ user, token, onBack }) {
   const [orgUsers,     setOrgUsers]     = useState({});
   const [usersLoading, setUsersLoading] = useState({});
   const [err,          setErr]          = useState("");
+  const [orgFilter,    setOrgFilter]    = useState("active"); // "active" | "suspended" | "all"
   const [newName,      setNewName]      = useState("");
   const [newEmail,     setNewEmail]     = useState("");
   const [newModules,   setNewModules]   = useState({fieldlog:true,agriScale:false,serviceLog:false});
@@ -67,6 +68,19 @@ export default function AdminPanel({ user, token, onBack }) {
       await dbWrite(`tenants/${tenantId}/users/${uid}/role`, newRole, token);
       await dbWrite(`users/${uid}/role`, newRole, token);
       setOrgUsers(p => ({ ...p, [tenantId]: (p[tenantId]||[]).map(u => u.uid===uid ? {...u,role:newRole} : u) }));
+    } catch(e) { setErr(e.message); }
+  };
+
+  const changeUserModuleRole = async (tenantId, uid, moduleId, newRole) => {
+    const u = (orgUsers[tenantId]||[]).find(u=>u.uid===uid); if(!u) return;
+    const current = u.moduleRoles || {};
+    const next = newRole ? {...current,[moduleId]:newRole} : {...current,[moduleId]:undefined};
+    // Remove undefined keys
+    const cleaned = Object.fromEntries(Object.entries(next).filter(([,v])=>v));
+    try {
+      await dbWrite(`tenants/${tenantId}/users/${uid}/moduleRoles`, cleaned, token);
+      await dbWrite(`users/${uid}/moduleRoles`, cleaned, token);
+      setOrgUsers(p => ({ ...p, [tenantId]: (p[tenantId]||[]).map(u => u.uid===uid ? {...u,moduleRoles:cleaned} : u) }));
     } catch(e) { setErr(e.message); }
   };
 
@@ -129,7 +143,22 @@ export default function AdminPanel({ user, token, onBack }) {
     setTenants(t => ({ ...t, [tenantId]: { ...t[tenantId], profile: newProfile } }));
   };
 
-  const tenantList = Object.values(tenants).filter(t=>t.profile).sort((a,b)=>a.profile.name?.localeCompare(b.profile.name));
+  const deleteOrg = async (tenantId, name) => {
+    if (!confirm(`Permanently delete "${name}" and all its data?\n\nThis cannot be undone.`)) return;
+    if (!confirm(`Second confirmation: delete "${name}"?`)) return;
+    try {
+      await dbWrite(`tenants/${tenantId}`, null, token);
+      setTenants(t => { const n = {...t}; delete n[tenantId]; return n; });
+      if (expandedOrg === tenantId) setExpandedOrg(null);
+    } catch(e) { setErr(e.message); }
+  };
+
+  const tenantList = Object.values(tenants).filter(t => {
+    if (!t.profile) return false;
+    if (orgFilter === "active")    return t.profile.active !== false;
+    if (orgFilter === "suspended") return t.profile.active === false;
+    return true;
+  }).sort((a,b) => a.profile.name?.localeCompare(b.profile.name));
 
   const Switch = ({ on, onChange }) => (
     <div onClick={onChange} style={{ width:"40px", height:"22px", borderRadius:"11px", cursor:"pointer", background:on?T.brand:"#C8C0B8", position:"relative", transition:"background .2s", flexShrink:0 }}>
@@ -166,10 +195,31 @@ export default function AdminPanel({ user, token, onBack }) {
 
         {err && <p style={{ color:T.danger, fontSize:"13px", marginBottom:"12px", padding:"8px 12px", background:"#FDF0EE", borderRadius:"6px", border:"1px solid rgba(132,26,24,.2)" }}>{err}</p>}
 
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"16px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px" }}>
           <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:"22px", margin:0 }}>Organizations</h2>
           <button style={mkBtn("primary", T.brand)} onClick={()=>setShowNew(true)}>+ Add Organization</button>
         </div>
+
+        {/* Filter tabs */}
+        {(() => {
+          const all = Object.values(tenants).filter(t=>t.profile);
+          const activeCnt    = all.filter(t=>t.profile.active!==false).length;
+          const suspendedCnt = all.filter(t=>t.profile.active===false).length;
+          return (
+            <div style={{ display:"flex", gap:"4px", marginBottom:"16px", borderBottom:`1px solid ${T.border}`, paddingBottom:"0" }}>
+              {[
+                { id:"active",    label:`Active (${activeCnt})` },
+                { id:"suspended", label:`Suspended (${suspendedCnt})` },
+                { id:"all",       label:`All (${all.length})` },
+              ].map(f => (
+                <button key={f.id} onClick={()=>setOrgFilter(f.id)}
+                  style={{ padding:"8px 16px", background:"none", border:"none", borderBottom:`2px solid ${orgFilter===f.id?T.brand:"transparent"}`, color:orgFilter===f.id?T.brand:T.muted, fontWeight:orgFilter===f.id?700:400, cursor:"pointer", fontSize:"13px", marginBottom:"-1px", transition:"color .15s" }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
 
         {showNew && (
           <div style={{ ...S.card, background:"#F0F8F0", border:`1px solid #A0C8A0`, marginBottom:"16px" }}>
@@ -204,6 +254,11 @@ export default function AdminPanel({ user, token, onBack }) {
         )}
 
         {loading && <p style={{ color:T.muted, textAlign:"center", padding:"32px" }}>Loading organizations…</p>}
+        {!loading && tenantList.length === 0 && (
+          <div style={{ ...S.card, textAlign:"center", padding:"48px", color:T.faint }}>
+            {orgFilter==="suspended" ? "No suspended organizations." : orgFilter==="active" ? "No active organizations." : "No organizations yet."}
+          </div>
+        )}
 
         {tenantList.map(({ profile:p }) => {
           const isExpanded = expandedOrg === p.id;
@@ -252,9 +307,14 @@ export default function AdminPanel({ user, token, onBack }) {
                     + Invite
                   </button>
                   <div style={{ textAlign:"center" }}>
-                    <div style={{ fontSize:"10px", color:T.muted, marginBottom:"2px" }}>Active</div>
-                    <Switch on={p.active} onChange={()=>toggleActive(p.id)}/>
+                    <div style={{ fontSize:"10px", color:T.muted, marginBottom:"2px" }}>{p.active===false?"Suspended":"Active"}</div>
+                    <Switch on={p.active!==false} onChange={()=>toggleActive(p.id)}/>
                   </div>
+                  <button onClick={()=>deleteOrg(p.id, p.name)}
+                    style={{ ...mkBtn("ghost"), padding:"6px 10px", fontSize:"12px", color:T.danger, borderColor:T.danger+"30" }}
+                    title="Permanently delete this organization">
+                    🗑
+                  </button>
                 </div>
               </div>
 
@@ -268,15 +328,13 @@ export default function AdminPanel({ user, token, onBack }) {
                   {!isLoadingUsers && users.length > 0 && (
                     <div>
                       {/* Table header */}
-                      <div style={{ display:"grid", gridTemplateColumns:"220px 110px 1fr 100px", gap:"8px", padding:"8px 20px", borderBottom:`1px solid ${T.border}`, fontSize:"10px", letterSpacing:"1px", textTransform:"uppercase", color:T.faint, fontWeight:700 }}>
-                        <span>User</span><span>Role</span><span>Module Access</span><span></span>
+                      <div style={{ display:"grid", gridTemplateColumns:"200px 100px 1fr 90px", gap:"8px", padding:"8px 20px", borderBottom:`1px solid ${T.border}`, fontSize:"10px", letterSpacing:"1px", textTransform:"uppercase", color:T.faint, fontWeight:700 }}>
+                        <span>User</span><span>Default Role</span><span>Role per Module</span><span></span>
                       </div>
 
                       {[...users].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(u => {
-                        const userMods = u.modules != null ? u.modules : [...tenantModules];
-                        const hasAll = u.modules == null;
                         return (
-                          <div key={u.uid} style={{ display:"grid", gridTemplateColumns:"220px 110px 1fr 100px", gap:"8px", alignItems:"center", padding:"10px 20px", borderBottom:`1px solid ${T.border}50`, opacity:u.active===false?0.5:1 }}>
+                          <div key={u.uid} style={{ display:"grid", gridTemplateColumns:"200px 100px 1fr 90px", gap:"8px", alignItems:"start", padding:"12px 20px", borderBottom:`1px solid ${T.border}50`, opacity:u.active===false?0.5:1 }}>
 
                             {/* User info */}
                             <div style={{ minWidth:0 }}>
@@ -288,35 +346,33 @@ export default function AdminPanel({ user, token, onBack }) {
                               <div style={{ fontSize:"9px", color:T.faint, marginTop:"1px", fontFamily:"monospace" }}>uid: {u.uid?.slice(0,14)}…</div>
                             </div>
 
-                            {/* Role */}
-                            <select value={u.role||"operator"} onChange={e=>changeUserRole(p.id,u.uid,e.target.value)}
-                              style={{ ...S.input, padding:"4px 6px", fontSize:"12px", fontWeight:700, color:ROLE_COLOR[u.role||"operator"]||T.text, border:`1px solid ${ROLE_COLOR[u.role||"operator"]||T.border}40`, background:`${ROLE_COLOR[u.role||"operator"]||"#888"}10` }}>
-                              {Object.entries(ROLES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
-                            </select>
+                            {/* Default role */}
+                            <div>
+                              <div style={{ fontSize:"9px", color:T.faint, letterSpacing:"1px", textTransform:"uppercase", marginBottom:"3px" }}>Default</div>
+                              <select value={u.role||"operator"} onChange={e=>changeUserRole(p.id,u.uid,e.target.value)}
+                                style={{ ...S.input, padding:"4px 6px", fontSize:"12px", fontWeight:700, color:ROLE_COLOR[u.role||"operator"]||T.text, border:`1px solid ${ROLE_COLOR[u.role||"operator"]||T.border}40`, background:`${ROLE_COLOR[u.role||"operator"]||"#888"}10` }}>
+                                {Object.entries(ROLES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
+                              </select>
+                            </div>
 
-                            {/* Module access */}
-                            <div style={{ display:"flex", gap:"4px", flexWrap:"wrap", alignItems:"center" }}>
-                              {tenantModules.length === 0 && <span style={{ fontSize:"11px", color:T.faint, fontStyle:"italic" }}>No modules on plan</span>}
+                            {/* Per-module roles */}
+                            <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", alignItems:"flex-start" }}>
                               {tenantModules.map(mid => {
                                 const m = MODULES[mid]; if(!m) return null;
-                                const has = userMods.includes(mid);
+                                const hasAccess = (u.modules==null) || (u.modules||[]).includes(mid);
+                                if(!hasAccess) return null;
+                                const moduleRole = (u.moduleRoles||{})[mid] || u.role || "operator";
                                 return (
-                                  <button key={mid} onClick={()=>toggleUserModule(p.id,u.uid,mid,tenantModules)}
-                                    title={has?"Revoke access to "+m.label:"Grant access to "+m.label}
-                                    style={{ padding:"3px 8px", borderRadius:"8px", fontSize:"10px", fontWeight:700, cursor:"pointer", border:`1px solid ${has?m.color+"60":T.border}`, background:has?m.color+"15":"transparent", color:has?m.color:T.faint, transition:"all .15s" }}>
-                                    {has?"✓":"○"} {m.icon} {m.label}
-                                  </button>
+                                  <div key={mid} style={{ display:"flex", flexDirection:"column", gap:"2px" }}>
+                                    <div style={{ fontSize:"9px", color:m.color, letterSpacing:"1px", textTransform:"uppercase", fontWeight:700 }}>{m.icon} {m.label}</div>
+                                    <select value={moduleRole} onChange={e=>changeUserModuleRole(p.id,u.uid,mid,e.target.value)}
+                                      style={{ ...S.input, padding:"3px 6px", fontSize:"11px", fontWeight:700, color:ROLE_COLOR[moduleRole]||T.text, border:`1px solid ${ROLE_COLOR[moduleRole]||T.border}40`, background:`${ROLE_COLOR[moduleRole]||"#888"}10`, minWidth:"90px" }}>
+                                      {Object.entries(ROLES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
+                                    </select>
+                                  </div>
                                 );
                               })}
-                              {!hasAll && tenantModules.length > 0 && (
-                                <button onClick={()=>grantAllModules(p.id,u.uid)}
-                                  style={{ fontSize:"10px", color:T.muted, cursor:"pointer", background:"none", border:"none", textDecoration:"underline", padding:"0 2px" }}>
-                                  All
-                                </button>
-                              )}
-                              {hasAll && tenantModules.length > 0 && (
-                                <span style={{ fontSize:"10px", color:T.faint, fontStyle:"italic" }}>full access</span>
-                              )}
+                              {tenantModules.length===0 && <span style={{ fontSize:"11px", color:T.faint, fontStyle:"italic" }}>No modules on plan</span>}
                             </div>
 
                             {/* Actions */}

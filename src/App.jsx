@@ -270,9 +270,9 @@ export default function App() {
         <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>
       )}
       <div>
-        {module === "fieldlog"   && <FieldLogModule   tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
-        {module === "agriScale"  && <AgriScaleModule  tenantId={profile.tenantId} token={token} userProfile={profile} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={profile.tenantId} token={token} persist={persist}/>}
+        {module === "fieldlog"   && <FieldLogModule   tenantId={profile.tenantId} token={token} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
+        {module === "agriScale"  && <AgriScaleModule  tenantId={profile.tenantId} token={token} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={profile.tenantId} token={token} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
