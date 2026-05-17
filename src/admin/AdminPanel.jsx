@@ -153,12 +153,14 @@ export default function AdminPanel({ user, token, onBack }) {
     } catch(e) { setErr(e.message); }
   };
 
-  const tenantList = Object.values(tenants).filter(t => {
-    if (!t.profile) return false;
+  const tenantList = Object.entries(tenants).map(([id, t]) => ({
+    ...t,
+    profile: t.profile || { id, name: id, active: true, modules: [], plan: "trial" },
+  })).filter(t => {
     if (orgFilter === "active")    return t.profile.active !== false;
     if (orgFilter === "suspended") return t.profile.active === false;
     return true;
-  }).sort((a,b) => a.profile.name?.localeCompare(b.profile.name));
+  }).sort((a,b) => (a.profile.name||"").localeCompare(b.profile.name||""));
 
   const Switch = ({ on, onChange }) => (
     <div onClick={onChange} style={{ width:"40px", height:"22px", borderRadius:"11px", cursor:"pointer", background:on?T.brand:"#C8C0B8", position:"relative", transition:"background .2s", flexShrink:0 }}>
@@ -202,7 +204,7 @@ export default function AdminPanel({ user, token, onBack }) {
 
         {/* Filter tabs */}
         {(() => {
-          const all = Object.values(tenants).filter(t=>t.profile);
+          const all = Object.entries(tenants).map(([id,t])=>({...t,profile:t.profile||{id,name:id,active:true,modules:[],plan:"trial"}}));
           const activeCnt    = all.filter(t=>t.profile.active!==false).length;
           const suspendedCnt = all.filter(t=>t.profile.active===false).length;
           return (
