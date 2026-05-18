@@ -1966,7 +1966,7 @@ function CropRotationView({fields,activities,onBack}){
 // ── Home View ─────────────────────────────────────────────────────────
 function HomeView({fields,activities,onSelect,onAdd,onImport,onReport,onRotation,pendingCount,onPendingLoads}){
   const[q,setQ]=useState("");
-  const filtered=fields.filter(f=>f.name.toLowerCase().includes(q.toLowerCase())||(f.legalDesc||"").toLowerCase().includes(q.toLowerCase()));
+  const filtered=[...fields].filter(f=>f.name.toLowerCase().includes(q.toLowerCase())||(f.legalDesc||"").toLowerCase().includes(q.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));
   return(
     <div>
       <div style={{background:"linear-gradient(135deg,#E8DDD0,#DDD3C0)",border:`1px solid ${T.borderHi}`,borderRadius:"12px",padding:"22px",marginBottom:"20px",display:"flex",alignItems:"center",gap:"16px"}}>
