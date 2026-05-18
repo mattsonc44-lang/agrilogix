@@ -752,7 +752,7 @@ function SprayingForm({v,set}){
 }
 
 // ── Activity Card ─────────────────────────────────────────────────────
-function ActivityCard({activity,onDelete}){
+function ActivityCard({activity,onDelete,onEdit}){
   const[open,setOpen]=useState(false);
   const meta=ACTIVITY_META[activity.type]||ACTIVITY_META.other;
   const d=activity.data||{};
@@ -923,6 +923,7 @@ function ActivityCard({activity,onDelete}){
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"8px",flexShrink:0}}>
           <span style={{color:T.faint,fontSize:"11px"}}>{open?"▲":"▼"}</span>
+          <button style={{...mkBtn("ghost"),padding:"3px 7px",fontSize:"11px"}} onClick={e=>{e.stopPropagation();onEdit(activity);}}>Edit</button>
           <button style={{...mkBtn("ghost"),padding:"3px 7px",fontSize:"11px",color:T.danger,borderColor:"#4A1010"}} onClick={e=>{e.stopPropagation();onDelete(activity.id)}}>✕</button>
         </div>
       </div>
@@ -931,16 +932,27 @@ function ActivityCard({activity,onDelete}){
   );
 }
 
-// ── Add Activity Modal ────────────────────────────────────────────────
-function AddActivityModal({field,onClose,onSave}){
-  const[type,setType]=useState("");const[date,setDate]=useState(nowLocal());
-  const[data,setData]=useState({});const[notes,setNotes]=useState("");const[err,setErr]=useState("");
-  const save=()=>{ if(!type){setErr("Please select an activity type.");return;} onSave({id:genId(),fieldId:field.id,type,date,data,notes}); onClose(); };
+// ── Add / Edit Activity Modal ─────────────────────────────────────────
+function AddActivityModal({field,onClose,onSave,initial}){
+  const[type,setType]=useState(initial?.type||"");
+  const[date,setDate]=useState(initial?.date||nowLocal());
+  const[data,setData]=useState(initial?.data||{});
+  const[notes,setNotes]=useState(initial?.notes||"");
+  const[err,setErr]=useState("");
+  const isEdit = !!initial;
+  const save=()=>{
+    if(!type){setErr("Please select an activity type.");return;}
+    onSave(isEdit
+      ? {...initial,type,date,data,notes}         // update existing
+      : {id:genId(),fieldId:field.id,type,date,data,notes} // new
+    );
+    onClose();
+  };
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:200,overflowY:"auto",display:"flex",justifyContent:"center",padding:"20px 12px"}}>
       <div style={{background:"#E8DFD0",border:`1px solid ${T.borderHi}`,borderRadius:"12px",width:"100%",maxWidth:"620px",padding:"22px",alignSelf:"flex-start",marginTop:"10px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"18px"}}>
-          <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",color:T.gold,margin:0}}>Log Activity — <span style={{color:T.text}}>{field.name}</span></h2>
+          <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",color:T.gold,margin:0}}>{isEdit?"Edit Activity":"Log Activity"} — <span style={{color:T.text}}>{field.name}</span></h2>
           <button style={{...mkBtn("ghost"),padding:"5px 10px"}} onClick={onClose}>✕</button>
         </div>
         <div style={S.row}><label style={S.label}>Date & Time</label><input style={S.input} type="datetime-local" value={date} onChange={e=>setDate(e.target.value)}/></div>
@@ -963,7 +975,7 @@ function AddActivityModal({field,onClose,onSave}){
         {err&&<p style={{color:"#E05050",fontSize:"13px",margin:"0 0 10px"}}>{err}</p>}
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
           <button style={mkBtn("ghost")} onClick={onClose}>Cancel</button>
-          <button style={mkBtn("primary")} onClick={save} disabled={!type}>Save Activity</button>
+          <button style={mkBtn("primary")} onClick={save} disabled={!type}>{isEdit?"Save Changes":"Save Activity"}</button>
         </div>
       </div>
     </div>
@@ -972,14 +984,15 @@ function AddActivityModal({field,onClose,onSave}){
 
 // ── Field Detail ──────────────────────────────────────────────────────
 
-function FieldDetailView({field,activities,onBack,onAddActivity,onDeleteActivity,onUpdateField,onDeleteField,onReport}){
-  const[tab,setTab]         =useState("activities"); // "activities"|"map"
+function FieldDetailView({field,activities,onBack,onAddActivity,onDeleteActivity,onEditActivity,onUpdateField,onDeleteField,onReport}){
+  const[tab,setTab]         =useState("activities");
   const[editName,setEditName]=useState(false);
   const[nameVal,setNameVal] =useState(field.name);
   const[acresVal,setAcresVal]=useState(field.acres||"");
   const[filter,setFilter]   =useState("all");
   const[confirmDelete,setConfirmDelete]=useState(false);
   const[editBoundary,setEditBoundary]=useState(false);
+  const[editingActivity,setEditingActivity]=useState(null);
 
   const all   = activities.filter(a=>a.fieldId===field.id);
   const shown = all.filter(a=>filter==="all"||a.type===filter).sort((a,b)=>new Date(b.date)-new Date(a.date));
@@ -1065,7 +1078,8 @@ function FieldDetailView({field,activities,onBack,onAddActivity,onDeleteActivity
             </select>
           </div>
           {shown.length===0&&<div style={{...S.card,textAlign:"center",padding:"36px",color:T.faint}}>{all.length===0?"No activities logged yet. Click \"+ Log Activity\" to get started.":"No activities match this filter."}</div>}
-          {shown.map(a=><ActivityCard key={a.id} activity={a} onDelete={onDeleteActivity}/>)}
+          {shown.map(a=><ActivityCard key={a.id} activity={a} onDelete={onDeleteActivity} onEdit={a=>setEditingActivity(a)}/>)}
+          {editingActivity&&<AddActivityModal field={field} initial={editingActivity} onClose={()=>setEditingActivity(null)} onSave={a=>{onEditActivity(a);setEditingActivity(null);}}/>}
         </>
       )}
     </div>
@@ -2340,6 +2354,9 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const addActivity=(a)=>{
     const na=[...activities,a]; setActs(na); persist(fields,na);
   };
+  const editActivity=(a)=>{
+    const na=activities.map(x=>x.id===a.id?a:x); setActs(na); persist(fields,na);
+  };
   const delActivity=(id)=>{
     const na=activities.filter(a=>a.id!==id); setActs(na); persist(fields,na);
   };
@@ -2519,7 +2536,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         {view==="reports"     &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId}/>}
         {view==="rotation"    &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
         {view==="addField"    &&<AddFieldView onBack={()=>setView("home")} onSave={addField}/>}
-        {view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}}/>}
+        {view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onEditActivity={editActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}}/>}
       </div>
 
       {showAdd&&curField&&<AddActivityModal field={curField} onClose={()=>setShowAdd(false)} onSave={addActivity}/>}
