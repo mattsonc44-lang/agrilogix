@@ -83,26 +83,33 @@ export default function App() {
   const loadUserProfile = async (sess) => {
     setLoading(true);
     try {
+      console.log("[AL] loadUserProfile start, uid:", sess.localId);
       const userProfile = await dbRead(`users/${sess.localId}`, sess.idToken);
+      console.log("[AL] userProfile:", userProfile);
       if (userProfile?.tenantId) {
-        // Only read the profile — not the full tenant (which can be huge)
         const tenantProfile = await dbRead(`tenants/${userProfile.tenantId}/profile`, sess.idToken);
+        console.log("[AL] tenantProfile:", tenantProfile);
         const tenantMods = tenantProfile?.modules || [];
+        console.log("[AL] tenantMods:", tenantMods);
         const userAllowlist = userProfile.modules;
         const mods = (userAllowlist != null && userAllowlist.length > 0)
           ? tenantMods.filter(m => userAllowlist.includes(m))
           : tenantMods;
+        console.log("[AL] mods:", mods);
         setProfile(userProfile);
         setTenant({ profile: tenantProfile });
         if (mods.length) setModule(mods[0]);
+        console.log("[AL] state set, first module:", mods[0]);
       } else {
+        console.log("[AL] no tenantId — pendingSetup");
         setProfile({ email: sess.email, pendingSetup: true });
       }
     } catch(e) {
-      console.error("loadUserProfile error:", e.message);
+      console.error("[AL] loadUserProfile ERROR:", e.message);
       setAuthErr("Could not load your account. Please try again.");
     } finally {
       setLoading(false);
+      console.log("[AL] loading = false");
     }
   };
 
