@@ -85,20 +85,21 @@ export default function App() {
     try {
       const userProfile = await dbRead(`users/${sess.localId}`, sess.idToken);
       if (userProfile?.tenantId) {
-        const tenantData = await dbRead(`tenants/${userProfile.tenantId}`, sess.idToken);
-        const tenantMods = tenantData?.profile?.modules || [];
+        // Only read the profile — not the full tenant (which can be huge)
+        const tenantProfile = await dbRead(`tenants/${userProfile.tenantId}/profile`, sess.idToken);
+        const tenantMods = tenantProfile?.modules || [];
         const userAllowlist = userProfile.modules;
         const mods = (userAllowlist != null && userAllowlist.length > 0)
           ? tenantMods.filter(m => userAllowlist.includes(m))
           : tenantMods;
-        // Set all state together so the first render has everything ready
         setProfile(userProfile);
-        setTenant(tenantData);
+        setTenant({ profile: tenantProfile });
         if (mods.length) setModule(mods[0]);
       } else {
         setProfile({ email: sess.email, pendingSetup: true });
       }
     } catch(e) {
+      console.error("loadUserProfile error:", e.message);
       setAuthErr("Could not load your account. Please try again.");
     } finally {
       setLoading(false);
