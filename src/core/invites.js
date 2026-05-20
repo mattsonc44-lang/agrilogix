@@ -40,37 +40,23 @@ export const markInviteUsed = async (token, uid, token_auth) => {
   await dbWrite(`invites/${token}/usedAt`, new Date().toISOString(), token_auth);
 };
 
-// Send invite email via EmailJS
+// Send invite email via Netlify function (SMTP through Network Solutions)
 export const sendInviteEmail = async ({ toEmail, toName, tenantName, role, inviteUrl }) => {
-  const SERVICE_ID  = (typeof window !== "undefined" && window.__EMAILJS_SERVICE__)  || "";
-  const TEMPLATE_ID = (typeof window !== "undefined" && window.__EMAILJS_TEMPLATE__) || "";
-  const PUBLIC_KEY  = (typeof window !== "undefined" && window.__EMAILJS_KEY__)      || "";
+  try {
+    const res = await fetch("/.netlify/functions/send-invite", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toEmail, toName, tenantName, role, inviteUrl }),
+    });
 
-  if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
-    console.warn("EmailJS not configured — invite URL:", inviteUrl);
-    return { warning: "Email not sent — EmailJS not configured. Share this link manually: " + inviteUrl };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Email failed (${res.status})`);
+    }
+
+    return { ok: true };
+  } catch (e) {
+    console.warn("Email send failed:", e.message, "— invite URL:", inviteUrl);
+    return { warning: "Email could not be sent. Share this link manually: " + inviteUrl };
   }
-
-  const params = {
-    to_email:    toEmail,
-    to_name:     toName || toEmail,
-    org_name:    tenantName,
-    role:        role.charAt(0).toUpperCase() + role.slice(1),
-    invite_url:  inviteUrl,
-    expires_in:  "7 days",
-  };
-
-  const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      service_id:  SERVICE_ID,
-      template_id: TEMPLATE_ID,
-      user_id:     PUBLIC_KEY,
-      template_params: params,
-    }),
-  });
-
-  if (!res.ok) throw new Error("Email failed to send — check your EmailJS config.");
-  return { ok: true };
 };
