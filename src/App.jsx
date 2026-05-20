@@ -114,6 +114,17 @@ export default function App() {
     });
   }, [profile?.tenantId, session?.idToken]);
 
+  // Safety net: if tenant loads but module wasn't set (timing race), set it now
+  useEffect(() => {
+    if (loading || !session || !profile || module) return;
+    const mods = tenant?.profile?.modules || [];
+    const allowlist = profile?.modules;
+    const available = (allowlist != null && allowlist.length > 0)
+      ? mods.filter(m => allowlist.includes(m))
+      : mods;
+    if (available.length > 0) setModule(available[0]);
+  }, [loading, tenant, profile, session, module]);
+
   const handleAuth = async (authData, extra) => {
     setLoading(true);
     setAuthErr("");
