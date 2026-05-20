@@ -85,15 +85,15 @@ export default function App() {
     try {
       const userProfile = await dbRead(`users/${sess.localId}`, sess.idToken);
       if (userProfile?.tenantId) {
-        setProfile(userProfile);
         const tenantData = await dbRead(`tenants/${userProfile.tenantId}`, sess.idToken);
-        setTenant(tenantData);
         const tenantMods = tenantData?.profile?.modules || [];
-        // userProfile.modules: null/undefined = all tenant mods, array = restricted set
         const userAllowlist = userProfile.modules;
-        const mods = userAllowlist != null
+        const mods = (userAllowlist != null && userAllowlist.length > 0)
           ? tenantMods.filter(m => userAllowlist.includes(m))
           : tenantMods;
+        // Set all state together so the first render has everything ready
+        setProfile(userProfile);
+        setTenant(tenantData);
         if (mods.length) setModule(mods[0]);
       } else {
         setProfile({ email: sess.email, pendingSetup: true });
@@ -198,7 +198,7 @@ export default function App() {
   const tenantProfile = tenant?.profile || {};
   const tenantModules = tenantProfile.modules || [];
   const userAllowlist = profile?.modules;
-  const enabledModules = userAllowlist != null
+  const enabledModules = (userAllowlist != null && userAllowlist.length > 0)
     ? tenantModules.filter(m => userAllowlist.includes(m))
     : tenantModules;
   const syncDot = { idle:"#D8CEBC", saving:T.gold, saved:T.green, error:T.danger }[syncStatus];
