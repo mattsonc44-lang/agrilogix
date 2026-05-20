@@ -97,8 +97,7 @@ export const dbListen = (path, token, onChange) => {
 // ── Firebase Auth REST ────────────────────────────────────────────
 const AUTH_BASE = "https://identitytoolkit.googleapis.com/v1/accounts";
 
-// You'll need your Firebase Web API key here
-const WEB_API_KEY = "YOUR-FIREBASE-WEB-API-KEY";
+const WEB_API_KEY = (typeof window !== "undefined" && window.__FIREBASE_API_KEY__) || "";
 
 export const authSignIn = async (email, password) => {
   const r = await fetch(`${AUTH_BASE}:signInWithPassword?key=${WEB_API_KEY}`, {
