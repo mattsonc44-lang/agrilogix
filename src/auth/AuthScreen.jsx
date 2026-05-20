@@ -192,7 +192,7 @@ export default function AuthScreen({ onAuth }) {
     }
   };
 
-  const LoginForm = () => (
+  const authCard = (
     <div className="land-auth-card">
       {inviteLoading ? (
         <p style={{textAlign:"center",color:"#7A6A58",fontFamily:"'Share Tech Mono',monospace",fontSize:"13px"}}>Loading invite...</p>
@@ -220,6 +220,16 @@ export default function AuthScreen({ onAuth }) {
           </div>
         </>
       )}
+    </div>
+  );
+
+  const ctaCard = (
+    <div className="land-auth-card">
+      <h2>Ready to get started?</h2>
+      <p className="land-auth-sub">Join farms across the Hi-Line already using Agri Logix Solutions.</p>
+      <button className="land-auth-btn" style={{marginBottom:"10px"}} onClick={()=>{setMode("signup");setShowLogin(true);}}>Start 14-Day Free Trial</button>
+      <div className="land-auth-divider"/>
+      <button className="land-auth-btn" style={{background:"transparent",color:"#1A3A1A",border:"1px solid #1A3A1A"}} onClick={()=>{setMode("login");setShowLogin(true);}}>Sign In to Your Account</button>
     </div>
   );
 
@@ -254,15 +264,7 @@ export default function AuthScreen({ onAuth }) {
               </div>
             </div>
             <div>
-              {showLogin ? <LoginForm/> : (
-                <div className="land-auth-card">
-                  <h2>Ready to get started?</h2>
-                  <p className="land-auth-sub">Join farms across the Hi-Line already using Agri Logix Solutions.</p>
-                  <button className="land-auth-btn" style={{marginBottom:"10px"}} onClick={()=>{setMode("signup");setShowLogin(true);}}>Start 14-Day Free Trial</button>
-                  <div className="land-auth-divider"/>
-                  <button className="land-auth-btn" style={{background:"transparent",color:"#1A3A1A",border:"1px solid #1A3A1A"}} onClick={()=>{setMode("login");setShowLogin(true);}}>Sign In to Your Account</button>
-                </div>
-              )}
+              {showLogin ? authCard : ctaCard}
             </div>
           </div>
         </section>
