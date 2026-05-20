@@ -114,6 +114,33 @@ const CSS = `
   .sl-record-meta { font-family:'Share Tech Mono',monospace; font-size:10px; color:rgba(244,239,230,0.35); }
   .sl-record-cost { font-family:'Share Tech Mono',monospace; font-size:13px; color:#4a9a4a; float:right; }
 
+  /* ── PRICING ── */
+  .land-pricing { padding:80px 32px; background:#1A2818; }
+  .land-pricing-inner { max-width:1000px; margin:0 auto; }
+  .land-pricing .land-section-tag { color:#b0c8a0; }
+  .land-pricing .land-section-h2 { color:#F4EFE6; }
+  .land-pricing .land-section-sub { color:rgba(244,239,230,0.6); margin-bottom:48px; }
+  .land-pricing-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1.2fr; gap:16px; align-items:stretch; }
+  .land-price-card { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:28px 24px; display:flex; flex-direction:column; }
+  .land-price-card.bundle { background:rgba(192,112,16,0.12); border:1px solid rgba(192,112,16,0.4); position:relative; overflow:hidden; }
+  .land-price-card.bundle::before { content:'BEST VALUE'; position:absolute; top:14px; right:-22px; background:#C07010; color:#F4EFE6; font-family:'Share Tech Mono',monospace; font-size:9px; letter-spacing:0.15em; padding:4px 28px; transform:rotate(35deg); }
+  .land-price-icon { font-size:28px; margin-bottom:12px; }
+  .land-price-name { font-family:'Playfair Display',serif; font-size:20px; color:#F4EFE6; margin-bottom:6px; }
+  .land-price-desc { font-size:13px; color:rgba(244,239,230,0.5); line-height:1.5; margin-bottom:20px; flex:1; }
+  .land-price-amount { font-family:'Share Tech Mono',monospace; font-size:36px; color:#C07010; line-height:1; }
+  .land-price-amount span { font-size:14px; color:rgba(244,239,230,0.4); font-family:'Barlow',sans-serif; }
+  .land-price-save { font-family:'Share Tech Mono',monospace; font-size:11px; color:#b0c8a0; letter-spacing:0.1em; margin-top:4px; margin-bottom:20px; }
+  .land-price-features { list-style:none; padding:0; margin:0 0 24px; display:flex; flex-direction:column; gap:7px; }
+  .land-price-features li { font-size:13px; color:rgba(244,239,230,0.6); display:flex; gap:7px; align-items:flex-start; }
+  .land-price-features li::before { content:'✓'; color:#C07010; flex-shrink:0; }
+  .land-price-btn { background:transparent; color:#C07010; border:1px solid rgba(192,112,16,0.5); border-radius:4px; padding:10px; font-family:'Barlow',sans-serif; font-size:14px; font-weight:600; cursor:pointer; letter-spacing:0.04em; transition:all .15s; }
+  .land-price-btn:hover { background:#C07010; color:#F4EFE6; }
+  .land-price-card.bundle .land-price-btn { background:#C07010; color:#F4EFE6; border-color:#C07010; }
+  .land-price-card.bundle .land-price-btn:hover { background:#A05A0A; }
+  .land-price-note { text-align:center; font-size:12px; color:rgba(244,239,230,0.35); margin-top:24px; font-family:'Share Tech Mono',monospace; letter-spacing:0.06em; }
+  @media(max-width:768px){ .land-pricing-grid{ grid-template-columns:1fr 1fr; } .land-pricing{ padding:48px 20px; } }
+  @media(max-width:480px){ .land-pricing-grid{ grid-template-columns:1fr; } }
+
   /* ── CTA ── */
   .land-cta-band { background:#1A3A1A; padding:64px 32px; text-align:center; }
   .land-cta-band h2 { font-family:'Playfair Display',serif; font-size:36px; font-weight:700; color:#F4EFE6; margin:0 0 12px; }
@@ -256,7 +283,7 @@ export default function AuthScreen({ onAuth }) {
             <div>
               <div className="land-hero-eyebrow">Farm Management Platform</div>
               <h1 className="land-hero-h1">Your whole operation,<br/><em>one platform.</em></h1>
-              <p className="land-hero-sub">FieldLog, AgriScale, and ServiceLog — purpose-built for modern farm operations. Track fields, harvest, and equipment from any device, even offline.</p>
+              <p className="land-hero-sub">FieldLog, AgriScale, and ServiceLog — purpose-built for modern farm operations. Pick the module you need, or bundle all three and save 20%.</p>
               <div className="land-hero-stats">
                 <div><div className="land-hero-stat-n">3</div><div className="land-hero-stat-l">Modules</div></div>
                 <div><div className="land-hero-stat-n">∞</div><div className="land-hero-stat-l">Fields</div></div>
@@ -377,6 +404,78 @@ export default function AuthScreen({ onAuth }) {
                 <li>Cost analysis by equipment, type, and year</li>
               </ul>
             </div>
+          </div>
+        </div>
+
+        {/* Pricing */}
+        <div className="land-pricing">
+          <div className="land-pricing-inner">
+            <div className="land-section-tag">Simple pricing</div>
+            <h2 className="land-section-h2">Pick what you need.<br/>Bundle and save.</h2>
+            <p className="land-section-sub">Start with one module or go all-in. Every plan includes a 14-day free trial, offline sync, and multi-device access.</p>
+            <div className="land-pricing-grid">
+              {/* FieldLog */}
+              <div className="land-price-card">
+                <div className="land-price-icon">🌾</div>
+                <div className="land-price-name">FieldLog</div>
+                <div className="land-price-desc">Field activity tracking, GPS boundaries, crop rotation, and harvest reports.</div>
+                <div className="land-price-amount">$150<span>/yr</span></div>
+                <div className="land-price-save">&nbsp;</div>
+                <ul className="land-price-features">
+                  <li>Unlimited fields &amp; boundaries</li>
+                  <li>Activity logging</li>
+                  <li>Crop rotation tracking</li>
+                  <li>AI-assisted FSA map scan</li>
+                </ul>
+                <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
+              </div>
+              {/* AgriScale */}
+              <div className="land-price-card">
+                <div className="land-price-icon">⚙️</div>
+                <div className="land-price-name">AgriScale</div>
+                <div className="land-price-desc">Grain cart tracking, live bin gauges, multi-field load logging, and harvest reports.</div>
+                <div className="land-price-amount">$150<span>/yr</span></div>
+                <div className="land-price-save">&nbsp;</div>
+                <ul className="land-price-features">
+                  <li>Unlimited bins &amp; fields</li>
+                  <li>Live bin fill gauges</li>
+                  <li>Per-field yield tracking</li>
+                  <li>Multi-device sync</li>
+                </ul>
+                <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
+              </div>
+              {/* ServiceLog */}
+              <div className="land-price-card">
+                <div className="land-price-icon">🔧</div>
+                <div className="land-price-name">ServiceLog</div>
+                <div className="land-price-desc">Fleet maintenance, parts ordering, vendor tracking, invoicing, and cost analysis.</div>
+                <div className="land-price-amount">$150<span>/yr</span></div>
+                <div className="land-price-save">&nbsp;</div>
+                <ul className="land-price-features">
+                  <li>Unlimited equipment</li>
+                  <li>Full service history</li>
+                  <li>Parts &amp; inventory tracking</li>
+                  <li>Customer invoicing</li>
+                </ul>
+                <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
+              </div>
+              {/* Bundle */}
+              <div className="land-price-card bundle">
+                <div className="land-price-icon">🌾⚙️🔧</div>
+                <div className="land-price-name">Full Bundle</div>
+                <div className="land-price-desc">All three modules. The complete picture of your farm operation — fields, harvest, and equipment.</div>
+                <div className="land-price-amount">$360<span>/yr</span></div>
+                <div className="land-price-save">↓ SAVE $90 vs. buying separately</div>
+                <ul className="land-price-features">
+                  <li>Everything in all 3 modules</li>
+                  <li>Cross-module reporting</li>
+                  <li>AgriScale + FieldLog sync</li>
+                  <li>Unlimited users</li>
+                </ul>
+                <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
+              </div>
+            </div>
+            <div className="land-price-note">All prices in USD · Annual billing · No credit card required for trial</div>
           </div>
         </div>
 
