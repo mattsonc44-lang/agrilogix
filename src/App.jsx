@@ -133,43 +133,9 @@ export default function App() {
     if (available.length > 0) setModule(available[0]);
   }, [loading, tenant, profile, session, module]);
 
-  const handleAuth = async (authData, extra) => {
-    setLoading(true);
-    setAuthErr("");
-    try {
-      saveSession(authData);
-      setSession(authData);
-
-      if (extra.isNewOrg) {
-        // Create tenant + user profile for self-signup
-        const tenantId = authData.localId + "_org";
-        const tenantProfile = {
-          id: tenantId, name: extra.orgName,
-          ownerEmail: authData.email,
-          plan: "trial",
-          modules: ["fieldlog"],
-          createdAt: new Date().toISOString(),
-          trialEnds: new Date(Date.now() + 14*24*60*60*1000).toISOString(),
-          active: true,
-        };
-        await dbWrite(`tenants/${tenantId}/profile`, tenantProfile, authData.idToken);
-
-        const userProfile = {
-          uid: authData.localId, name: extra.name,
-          email: authData.email, tenantId,
-          role: "owner", createdAt: new Date().toISOString(),
-        };
-        await dbWrite(`users/${authData.localId}`, userProfile, authData.idToken);
-        setProfile(userProfile);
-        setTenant({ profile: tenantProfile });
-        setModule("fieldlog");
-      } else {
-        await loadUserProfile(authData);
-      }
-    } catch(e) {
-      setAuthErr(e.message);
-      setLoading(false);
-    }
+  const handleAuth = (authData) => {
+    saveSession(authData);
+    window.location.reload();
   };
 
   const signOut = () => {
