@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { authSignIn, authSignUp, authResetPassword, dbWrite } from "../core/firebase.js";
+import { authSignIn, authSignUp, authResetPassword, dbWrite, dbRead } from "../core/firebase.js";
 import { readInvite, markInviteUsed } from "../core/invites.js";
 import { MODULES } from "../core/config.js";
 
@@ -205,8 +205,12 @@ export default function AuthScreen({ onAuth }) {
           await markInviteUsed(inviteToken, data.localId, data.idToken);
         } else {
           const id = `${data.localId}_org`;
-          const tenant = { id, name:org.trim()||"My Farm", ownerEmail:data.email, plan:"trial", modules:["fieldlog"], createdAt:new Date().toISOString(), trialEnds:new Date(Date.now()+14*24*60*60*1000).toISOString(), active:true };
-          await dbWrite(`tenants/${id}/profile`, tenant, data.idToken);
+          // Check if tenant already exists — don't overwrite modules/plan if it does
+          const existing = await dbRead(`tenants/${id}/profile`, data.idToken).catch(()=>null);
+          if (!existing) {
+            const tenant = { id, name:org.trim()||"My Farm", ownerEmail:data.email, plan:"trial", modules:["fieldlog"], createdAt:new Date().toISOString(), trialEnds:new Date(Date.now()+14*24*60*60*1000).toISOString(), active:true };
+            await dbWrite(`tenants/${id}/profile`, tenant, data.idToken);
+          }
           const userProfile = { uid:data.localId, name:name.trim(), email:data.email, tenantId:id, role:"owner", createdAt:new Date().toISOString() };
           await dbWrite(`users/${data.localId}`, userProfile, data.idToken);
           await dbWrite(`tenants/${id}/users/${data.localId}`, userProfile, data.idToken);
