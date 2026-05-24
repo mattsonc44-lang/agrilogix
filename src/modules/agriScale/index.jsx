@@ -146,6 +146,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
 
   // UI
   const [tab, setTab]           = useState("SCALE");
+  const [flImportModal, setFLImportModal] = useState(false);
+  const [flFields,      setFLFields]      = useState([]);
+  const [flSelected,    setFLSelected]    = useState(new Set());
+  const [flLoading,     setFLLoading]     = useState(false);
   const [logFieldId, setLogFId] = useState(null);
   const [editField,  setEF]     = useState(null);
   const [editBin,    setEB]     = useState(null);
@@ -319,7 +323,39 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
   const btnBase = {cursor:"pointer",fontFamily:"'Share Tech Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
 
-  const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
+  // ── Import fields from FieldLog ──────────────────────────────────
+  const openFLImport = async () => {
+    setFLLoading(true); setFLImportModal(true); setFLSelected(new Set());
+    try {
+      const flBase = (!farmId || farmId === "default")
+        ? `tenants/${tenantId}/fieldlog/fields`
+        : `tenants/${tenantId}/farms/${farmId}/fieldlog/fields`;
+      const data = await dbRead(flBase, token).catch(() => null);
+      const flList = obj2arr(data || {}).filter(Boolean);
+      const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
+      // Only show fields not already in AgriScale
+      const newOnly = flList.filter(f => !existingNames.has((f.name||"").trim().toLowerCase()));
+      setFLFields(newOnly);
+      setFLSelected(new Set(newOnly.map(f => f.id)));
+    } catch(e) { setFLFields([]); }
+    finally { setFLLoading(false); }
+  };
+
+  const importFLFields = () => {
+    const toImport = flFields.filter(f => flSelected.has(f.id));
+    const newFields = toImport.map(f => ({
+      id: genId(),
+      name: f.name,
+      acres: f.acres || 0,
+      farmId: farmId || "default",
+      loads: [], costs: {}, grainPrice: "", landlord: "",
+      cropShare: "", insCoverageLevel: "", insGuaranteedYield: "",
+      insPriceElection: "", insType: "", insInsuredAcres: "",
+    }));
+    const nf = [...fields, ...newFields];
+    setFields(nf); save(nf, bins, grains, trucks);
+    setFLImportModal(false);
+  };"SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
 
   if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'Share Tech Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
 
@@ -510,9 +546,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
 
           {/* ── FIELDS TAB ── */}
           {tab==="FIELDS"&&(<>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px",flexWrap:"wrap"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>FIELDS</div>
-              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
+              <div style={{display:"flex",gap:"6px"}}>
+                {perms.canEditFields&&<button onClick={openFLImport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↓ FROM FIELDLOG</button>}
+                {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
+              </div>
             </div>
             {safeFields.map(f=>{
               const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
@@ -637,6 +676,48 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       {/* ── Modals ── */}
       {editBin&&<BinMo bin={editBin} grains={grains} onSave={f=>{const nb=safeBins.map(b=>b.id===editBin.id?{...editBin,...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)}:b);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onClose={()=>setEB(null)} canDelete={bins.length>1}/>}
       {editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains,trucks);setEF(null);}} onClose={()=>setEF(null)}/>}
+
+      {/* ── FieldLog Import Modal ── */}
+      {flImportModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+          <div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"420px",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"12px"}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>IMPORT FROM FIELDLOG</div>
+            {flLoading&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>READING FIELDLOG...</div>}
+            {!flLoading&&flFields.length===0&&(
+              <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>
+                {fields.length>0?"ALL FIELDLOG FIELDS ALREADY IMPORTED":"NO FIELDS FOUND IN FIELDLOG"}
+              </div>
+            )}
+            {!flLoading&&flFields.length>0&&(<>
+              <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'Share Tech Mono',monospace",letterSpacing:"0.08em"}}>
+                SELECT FIELDS TO IMPORT ({flSelected.size} OF {flFields.length} SELECTED)
+              </div>
+              <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
+                {flFields.map(f=>{
+                  const sel = flSelected.has(f.id);
+                  return(
+                    <label key={f.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
+                      <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(flSelected);sel?n.delete(f.id):n.add(f.id);setFLSelected(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
+                      <div>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{f.name}</div>
+                        {f.acres&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#6a8060",marginTop:"2px"}}>{f.acres} ACRES</div>}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:"8px",paddingTop:"4px"}}>
+                <button onClick={()=>setFLSelected(new Set(flFields.map(f=>f.id)))} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#8a9880"}}>SELECT ALL</button>
+                <button onClick={()=>setFLSelected(new Set())} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#8a9880"}}>CLEAR</button>
+              </div>
+              <button onClick={importFLFields} disabled={flSelected.size===0} style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:flSelected.size>0?"#4a7535":"#2a3020",color:flSelected.size>0?"#f0eeea":"#4a5548",boxShadow:flSelected.size>0?"0 2px 0 #2a5020":"none",cursor:flSelected.size>0?"pointer":"not-allowed"}}>
+                IMPORT {flSelected.size>0?flSelected.size:""} FIELD{flSelected.size!==1?"S":""}
+              </button>
+            </>)}
+            <button onClick={()=>setFLImportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#6a8060"}}>CANCEL</button>
+          </div>
+        </div>
+      )}
       {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
       {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
       {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:f(f.loads||[]).map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains,trucks);setEL(null);}} onClose={()=>setEL(null)}/>}
