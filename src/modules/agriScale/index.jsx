@@ -117,8 +117,12 @@ function BinGauge({ bin, grains, small }) {
 }
 
 // ── Main module ───────────────────────────────────────────────────
-export default function AgriScaleModule({ tenantId, token, userProfile, persist }) {
+export default function AgriScaleModule({ tenantId, token, userProfile, persist, farmId }) {
   const BASE = `tenants/${tenantId}/agriScale`;
+  // Fields on non-default farms use the farm path
+  const FIELD_BASE = (!farmId || farmId === "default")
+    ? `${BASE}/fields`
+    : `tenants/${tenantId}/farms/${farmId}/agriScale/fields`;
   const role = userProfile?.role || "operator";
   const perms = PERMS[role] || PERMS.operator;
   const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
@@ -163,7 +167,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
         const bl=obj2arr(d.bins||{});
         const gl=obj2arr(d.customGrains||{});
         const tl=obj2arr(d.trucks||{});
-        if(fl.length){ setFields(fl); setAFId(fl[0].id); }
+        if(fl.length){
+          const farmFields = (!farmId||farmId==="default") ? fl.filter(f=>!f.farmId||f.farmId==="default") : fl.filter(f=>f.farmId===farmId);
+          setFields(farmFields); setAFId(farmFields[0]?.id||null);
+        }
         if(bl.length){ setBins(bl);   setABId(bl[0].id); }
         if(gl.length)  setGrains(gl);
         if(tl.length) setTrucks(tl.filter(Boolean)); else setTrucks(DEFAULT_TRUCKS);
@@ -179,8 +186,16 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
     if(loading||!tenantId) return;
     return dbListen(BASE,token,({data:d})=>{
       if(skipRef.current||!d) return;
-      if(d.fields)       setFields(obj2arr(d.fields).filter(Boolean));
-      if(d.bins)         setBins(obj2arr(d.bins).filter(Boolean));
+      if(d.fields){
+        const allF = obj2arr(d.fields).filter(Boolean);
+        const farmFields = (!farmId||farmId==="default") ? allF.filter(f=>!f.farmId||f.farmId==="default") : allF.filter(f=>f.farmId===farmId);
+        setFields(farmFields);
+      }
+      if(d.bins){
+        const allB = obj2arr(d.bins).filter(Boolean);
+        const farmBins = allB.filter(b => !b.farmId || b.farmId === farmId || b.farmId === "shared");
+        setBins(farmBins);
+      }
       if(d.customGrains) setGrains(obj2arr(d.customGrains).filter(Boolean));
       if(d.trucks)       setTrucks(obj2arr(d.trucks).filter(Boolean));
     });
@@ -218,8 +233,14 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
         const remote = await dbRead(BASE, token).catch(()=>null);
         const merged = remote ? mergeWithRemote(remote, q.data) : q.data;
         await dbSafeWrite(BASE, merged, token);
-        if(merged.fields)       setFields(obj2arr(merged.fields).filter(Boolean));
-        if(merged.bins)         setBins(obj2arr(merged.bins).filter(Boolean));
+        if(merged.fields){
+          const allF = obj2arr(merged.fields).filter(Boolean);
+          setFields((!farmId||farmId==="default") ? allF.filter(f=>!f.farmId||f.farmId==="default") : allF.filter(f=>f.farmId===farmId));
+        }
+        if(merged.bins){
+          const allB = obj2arr(merged.bins).filter(Boolean);
+          setBins(allB.filter(b => !b.farmId || b.farmId === farmId || b.farmId === "shared"));
+        }
         if(merged.customGrains) setGrains(obj2arr(merged.customGrains).filter(Boolean));
         if(merged.trucks)       setTrucks(obj2arr(merged.trucks).filter(Boolean));
         clearQueue();
@@ -478,7 +499,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
           {tab==="BINS"&&(<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>BIN STORAGE</div>
-              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT"}];setBins(nb);save(fields,nb,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
+              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,farmId:farmId||"default",capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT"}];setBins(nb);save(fields,nb,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
             </div>
             {safeBins.map(b=>(
               <div key={b.id} style={{marginBottom:"10px"}}>
@@ -491,7 +512,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist 
           {tab==="FIELDS"&&(<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>FIELDS</div>
-              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
+              {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
             </div>
             {safeFields.map(f=>{
               const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
@@ -633,17 +654,21 @@ const MoBtn = ({children,onClick,variant="ghost"})=><button onClick={onClick} st
 const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
 
 function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
-  const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName});
+  const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName,shared:bin.farmId==="shared"||!bin.farmId});
   return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
     <div style={hdrStyle}>EDIT {bin.name}</div>
     <div style={lblStyle}>BIN NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/>
     <div style={lblStyle}>CAPACITY (BU)</div><input style={inStyle} type="number" value={f.capacityBu} onChange={e=>setF(p=>({...p,capacityBu:e.target.value}))}/>
     <div style={lblStyle}>STORED (LBS)</div><input style={inStyle} type="number" value={f.storedLbs} onChange={e=>setF(p=>({...p,storedLbs:e.target.value}))}/>
     <div style={lblStyle}>GRAIN TYPE</div><select style={seStyle} value={f.grainName} onChange={e=>setF(p=>({...p,grainName:e.target.value}))}>{safeGrains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</select>
+    <label style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",margin:"8px 0",fontSize:"11px",color:"#b0c8a0",letterSpacing:"0.08em",textTransform:"uppercase"}}>
+      <input type="checkbox" checked={f.shared} onChange={e=>setF(p=>({...p,shared:e.target.checked}))} style={{accentColor:"#4a7535",width:"14px",height:"14px"}}/>
+      Shared across all farms
+    </label>
     <div style={{display:"flex",gap:"8px"}}>
       {canDelete&&<MoBtn variant="danger" onClick={onDelete}>DELETE</MoBtn>}
       <MoBtn onClick={onClose}>CANCEL</MoBtn>
-      <MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn>
+      <MoBtn variant="primary" onClick={()=>onSave({...f,farmId:f.shared?"shared":bin.farmId})}>SAVE</MoBtn>
     </div>
   </div></div>);
 }
