@@ -355,8 +355,9 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     const nf = [...fields, ...newFields];
     setFields(nf); save(nf, bins, grains, trucks);
     setFLImportModal(false);
-  };"SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
+  };
 
+  const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
   if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'Share Tech Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
 
   return (
