@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import JSZip from "jszip";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
@@ -137,118 +137,124 @@ const mkBtn=(v="primary")=>({
 });
 
 // ╔═══════════════════════════════════════════════════════════╗
-// ║  TILE MAP — <img> tiles + <svg> overlay                  ║
+// ║  LEAFLET MAP — satellite tiles + draggable boundary       ║
 // ╚═══════════════════════════════════════════════════════════╝
 function FieldMap({boundary=[],onBoundaryChange,height=350,readOnly=false}){
-  const wrapRef=useRef(null);
-  const dragRef=useRef({on:false,sx:0,sy:0,sc:[0,0],moved:false});
-  const touchR =useRef({x:0,y:0,sc:[0,0],moved:false});
-  const [ctr,setCtr]=useState(()=>{
-    if(boundary&&boundary.length>0){
-      const lats=boundary.map(p=>p[0]),lngs=boundary.map(p=>p[1]);
-      return[(Math.min(...lats)+Math.max(...lats))/2,(Math.min(...lngs)+Math.max(...lngs))/2];
+  const mapDivRef = useRef(null);
+  const L = useRef(null);
+  const mapInst = useRef(null);
+  const polyInst = useRef(null);
+  const markInst = useRef([]);
+  const [pts, setPts] = useState(boundary.length ? [...boundary] : []);
+  const ptsRef = useRef(pts);
+
+  // Keep ptsRef in sync with state (for use in Leaflet callbacks)
+  useEffect(() => { ptsRef.current = pts; }, [pts]);
+
+  // Init Leaflet once on mount
+  useEffect(() => {
+    if (!mapDivRef.current || !window.L) return;
+    L.current = window.L;
+    const Lf = L.current;
+
+    // Compute initial center + zoom from boundary
+    let center = [48.513, -110.979];
+    let zoom = 14;
+    if (boundary.length > 1) {
+      const lats = boundary.map(p => p[0]), lngs = boundary.map(p => p[1]);
+      center = [(Math.min(...lats)+Math.max(...lats))/2, (Math.min(...lngs)+Math.max(...lngs))/2];
+      const span = Math.max(Math.max(...lats)-Math.min(...lats), Math.max(...lngs)-Math.min(...lngs));
+      zoom = Math.min(16, Math.max(11, Math.round(Math.log2(0.08/span)+13)));
     }
-    return[48.513,-110.979];
-  });
-  const [zoom,setZoom]=useState(()=>{
-    if(boundary&&boundary.length>1){
-      const lats=boundary.map(p=>p[0]),lngs=boundary.map(p=>p[1]);
-      const span=Math.max(Math.max(...lats)-Math.min(...lats),Math.max(...lngs)-Math.min(...lngs));
-      // Zoom out 1 extra level for context
-      return Math.min(16,Math.max(11,Math.round(Math.log2(0.08/span)+13)));
+
+    const map = Lf.map(mapDivRef.current, {
+      center, zoom,
+      zoomControl: false,
+      attributionControl: true,
+    });
+    mapInst.current = map;
+
+    // ESRI satellite tiles — no API key required
+    Lf.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: '© Esri, DigitalGlobe, GeoEye',
+    }).addTo(map);
+
+    // Zoom control bottom-right
+    Lf.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // Click to place boundary points
+    if (!readOnly) {
+      map.on('click', e => {
+        const newPts = [...ptsRef.current, [e.latlng.lat, e.latlng.lng]];
+        setPts(newPts);
+        if (onBoundaryChange && newPts.length >= 3) onBoundaryChange([...newPts]);
+      });
     }
-    return 14;
-  });
-  const [pts,setPts]=useState(boundary.length?[...boundary]:[]);
-  const [W,setW]=useState(600);
-  const H=height;
-  const mX =(lon,z)=>(lon+180)/360*Math.pow(2,z)*256;
-  const mY =(lat,z)=>{ const r=lat*Math.PI/180; return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z)*256; };
-  const iX =(mx,z)=>mx/(Math.pow(2,z)*256)*360-180;
-  const iY =(my,z)=>{ const n=Math.PI-2*Math.PI*my/(Math.pow(2,z)*256); return Math.atan(0.5*(Math.exp(n)-Math.exp(-n)))*180/Math.PI; };
-  const tz=Math.max(0,Math.min(19,Math.round(zoom)));
-  const ll2px=(lat,lng)=>[Math.round(W/2+mX(lng,tz)-mX(ctr[1],tz)),Math.round(H/2+mY(lat,tz)-mY(ctr[0],tz))];
-  const px2ll=(px,py)=>[iY(mY(ctr[0],tz)+py-H/2,tz),iX(mX(ctr[1],tz)+px-W/2,tz)];
-  useEffect(()=>{
-    const el=wrapRef.current; if(!el) return;
-    const ro=new ResizeObserver(([e])=>setW(e.contentRect.width||600));
-    ro.observe(el); setW(el.clientWidth||600); return()=>ro.disconnect();
-  },[]);
-  const tiles=useMemo(()=>{
-    const cx=mX(ctr[1],tz),cy=mY(ctr[0],tz),x0=cx-W/2,y0=cy-H/2,n=Math.pow(2,tz),out=[];
-    for(let tx=Math.floor(x0/256);tx<=Math.ceil((cx+W/2)/256);tx++)
-      for(let ty=Math.floor(y0/256);ty<=Math.ceil((cy+H/2)/256);ty++){
-        if(ty<0||ty>=n) continue;
-        const wx=((tx%n)+n)%n;
-        out.push({key:`${tz}/${wx}/${ty}`,src:`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${tz}/${ty}/${wx}`,left:tx*256-x0,top:ty*256-y0});
-      }
-    return out;
+
+    return () => { map.remove(); mapInst.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[ctr,tz,W,H]);
-  const polyStr=pts.map(([la,ln])=>ll2px(la,ln).join(",")).join(" ");
-  const evXY=(e)=>{const r=wrapRef.current.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
-  const pan=(dx,dy,sc)=>setCtr([iY(mY(sc[0],tz)-dy,tz),iX(mX(sc[1],tz)-dx,tz)]);
-  const onMD=(e)=>{const[x,y]=evXY(e);dragRef.current={on:true,sx:x,sy:y,sc:[...ctr],moved:false};};
-  const onMM=(e)=>{
-    if(!dragRef.current.on) return;
-    const[x,y]=evXY(e),dx=x-dragRef.current.sx,dy=y-dragRef.current.sy;
-    if(Math.abs(dx)>3||Math.abs(dy)>3) dragRef.current.moved=true;
-    if(dragRef.current.moved) pan(dx,dy,dragRef.current.sc);
-  };
-  const onMU=()=>{dragRef.current.on=false;};
-  const onClick=(e)=>{
-    if(readOnly||dragRef.current.moved) return;
-    const[x,y]=evXY(e); setPts(p=>[...p,px2ll(x,y)]);
-  };
-  const onWheel=(e)=>{e.preventDefault();setZoom(z=>Math.max(8,Math.min(18,z+(e.deltaY<0?1:-1))));};
-  const onTS=(e)=>{if(e.touches.length===1)touchR.current={x:e.touches[0].clientX,y:e.touches[0].clientY,sc:[...ctr],moved:false};};
-  const onTM=(e)=>{
-    if(e.touches.length!==1) return; e.preventDefault();
-    const dx=e.touches[0].clientX-touchR.current.x,dy=e.touches[0].clientY-touchR.current.y;
-    if(Math.abs(dx)>5||Math.abs(dy)>5) touchR.current.moved=true;
-    if(touchR.current.moved) pan(dx,dy,touchR.current.sc);
-  };
-  const onTE=(e)=>{
-    if(readOnly||touchR.current.moved||e.changedTouches.length!==1) return;
-    const r=wrapRef.current.getBoundingClientRect();
-    setPts(p=>[...p,px2ll(e.changedTouches[0].clientX-r.left,e.changedTouches[0].clientY-r.top)]);
-  };
-  const undo =()=>setPts(p=>p.slice(0,-1));
-  const clear=()=>setPts([]);
+  }, []);
 
-  // Auto-save whenever pts changes (3+ points)
-  useEffect(()=>{
-    if(pts.length>=3&&onBoundaryChange) onBoundaryChange([...pts]);
-    else if(pts.length===0&&onBoundaryChange) onBoundaryChange([]);
-  },[pts]);
+  // Sync React pts state → Leaflet overlays
+  useEffect(() => {
+    const Lf = L.current, map = mapInst.current;
+    if (!Lf || !map) return;
 
-  const nPts=pts.length;
-  return(
+    // Clear existing overlays
+    markInst.current.forEach(m => map.removeLayer(m));
+    markInst.current = [];
+    if (polyInst.current) { map.removeLayer(polyInst.current); polyInst.current = null; }
+
+    // Draw polygon (3+ pts)
+    if (pts.length >= 3) {
+      polyInst.current = Lf.polygon(pts, {
+        color: '#C07010', weight: 2.5,
+        fillColor: '#C07010', fillOpacity: 0.18,
+      }).addTo(map);
+    } else if (pts.length === 2) {
+      // Draw a line for 2 pts
+      polyInst.current = Lf.polyline(pts, { color: '#C07010', weight: 2.5 }).addTo(map);
+    }
+
+    // Draw numbered markers
+    pts.forEach((pt, i) => {
+      const icon = Lf.divIcon({
+        html: `<div style="width:20px;height:20px;border-radius:50%;background:#E8B84B;border:2px solid #A07020;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#1A0E04;line-height:1">${i+1}</div>`,
+        iconSize: [20, 20], iconAnchor: [10, 10], className: '',
+      });
+      const m = Lf.marker(pt, { icon, draggable: !readOnly });
+      if (!readOnly) {
+        m.on('dragend', e => {
+          const { lat, lng } = e.target.getLatLng();
+          const newPts = ptsRef.current.map((p, idx) => idx === i ? [lat, lng] : p);
+          setPts(newPts);
+          if (onBoundaryChange && newPts.length >= 3) onBoundaryChange([...newPts]);
+        });
+      }
+      m.addTo(map);
+      markInst.current.push(m);
+    });
+
+    // Notify parent when pts cleared
+    if (pts.length === 0 && onBoundaryChange) onBoundaryChange([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pts]);
+
+  const undo  = () => setPts(p => { const n=p.slice(0,-1); if(onBoundaryChange&&n.length<3) onBoundaryChange([]); return n; });
+  const clear = () => { setPts([]); if(onBoundaryChange) onBoundaryChange([]); };
+  const nPts  = pts.length;
+
+  return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"5px"}}>
         <span style={{fontSize:"11px",color:T.muted}}>
           {readOnly
-            ? "Drag to pan · Scroll to zoom"
-            : <>Drag to pan · Scroll to zoom · <strong style={{color:T.goldSoft}}>Click map to place corners</strong></>}
+            ? "Drag to pan · Pinch to zoom"
+            : <>Drag to pan · Pinch to zoom · <strong style={{color:T.goldSoft}}>Click map to place corners</strong></>}
         </span>
-        <div style={{display:"flex",gap:"3px"}}>
-          <button style={{...mkBtn("ghost"),padding:"2px 10px",fontSize:"18px",lineHeight:1}} onClick={()=>setZoom(z=>Math.max(8,z-1))}>−</button>
-          <button style={{...mkBtn("ghost"),padding:"2px 10px",fontSize:"18px",lineHeight:1}} onClick={()=>setZoom(z=>Math.min(18,z+1))}>+</button>
-        </div>
       </div>
-      <div ref={wrapRef} style={{position:"relative",width:"100%",height:`${H}px`,borderRadius:"8px",overflow:"hidden",border:`1px solid ${T.borderHi}`,background:"#C8C8C0",cursor:readOnly?"grab":"crosshair",userSelect:"none"}}
-        onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}
-        onClick={onClick} onWheel={onWheel}
-        onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}>
-        {tiles.map(t=><img key={t.key} src={t.src} alt="" draggable={false} style={{position:"absolute",left:`${t.left}px`,top:`${t.top}px`,width:"256px",height:"256px",display:"block",pointerEvents:"none"}}/>)}
-        <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",pointerEvents:"none",overflow:"visible"}}>
-          {nPts>=3&&<polygon points={polyStr} fill="rgba(200,149,42,0.22)" stroke="#C07010" strokeWidth="2.5" strokeLinejoin="round"/>}
-          {nPts===2&&(()=>{const[ax,ay]=ll2px(pts[0][0],pts[0][1]),[bx,by]=ll2px(pts[1][0],pts[1][1]);return<line x1={ax} y1={ay} x2={bx} y2={by} stroke="#C07010" strokeWidth="2.5"/>;})()}
-          {pts.map(([la,ln],i)=>{const[px,py]=ll2px(la,ln);return(<g key={i}><circle cx={px} cy={py} r={6} fill="#E8B84B" stroke="#A07020" strokeWidth={2}/><text x={px} y={py} textAnchor="middle" dominantBaseline="middle" fill="#1A0E04" fontSize={9} fontWeight="bold">{i+1}</text></g>);})}
-        </svg>
-        <div style={{position:"absolute",bottom:0,right:0,background:"rgba(0,0,0,0.55)",color:"#bbb",fontSize:"9px",padding:"2px 6px",pointerEvents:"none"}}>© Esri, DigitalGlobe, GeoEye</div>
-        <div style={{position:"absolute",bottom:0,left:0,background:"rgba(0,0,0,0.55)",color:"#bbb",fontSize:"9px",padding:"2px 6px",pointerEvents:"none"}}>z{tz}</div>
-      </div>
+      <div ref={mapDivRef} style={{width:"100%",height:`${height}px`,borderRadius:"8px",border:`1px solid ${T.borderHi}`,overflow:"hidden",cursor:readOnly?"grab":"crosshair"}}/>
       {!readOnly&&(
         <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"8px",flexWrap:"wrap"}}>
           <span style={{flex:1,fontSize:"12px",color:nPts>=3?T.green:T.muted}}>
@@ -261,7 +267,6 @@ function FieldMap({boundary=[],onBoundaryChange,height=350,readOnly=false}){
     </div>
   );
 }
-
 // ── Seeding Form ──────────────────────────────────────────────────────
 const PULSE_CROPS = ["Peas","Lentils","Chickpeas","Soybeans"];
 
@@ -2246,8 +2251,10 @@ function SettingsModal({settings,onSave,onClose,onBulkImport,bulkLoading}){
   );
 }
 
-export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriLogix }){
-  const BASE = `tenants/${tenantId}/fieldlog`;
+export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriLogix, farmId }){
+  const BASE = (!farmId || farmId === "default")
+    ? `tenants/${tenantId}/fieldlog`
+    : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
 
   const[view,setView]      =useState("home");
   const[fields,setFields]  =useState([]);
@@ -2317,7 +2324,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     // Do NOT call retry() on mount
     return ()=>window.removeEventListener("online",retry);
   },[tenantId,token]);
-  const FL_QUEUE_KEY = `fl_queue_${tenantId}`;
+  const FL_QUEUE_KEY = `fl_queue_${tenantId}_${farmId||"default"}`;
   const flSaveQ  = d=>{ try{ localStorage.setItem(FL_QUEUE_KEY,JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
   const flClearQ = ()=>{ try{ localStorage.removeItem(FL_QUEUE_KEY); }catch(e){} };
   const flLoadQ  = ()=>{ try{ const r=localStorage.getItem(FL_QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
