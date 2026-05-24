@@ -432,7 +432,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const custName=id=>D.customers.find(c=>c.id===id)?.name||"";
   const vehName=id=>id==="__stock__"?"📦 For Stock":(D.vehicles.find(v=>v.id===id)?.name||"");
   const featOn=k=>D.settings.features?.[k]!==false;
-  const filteredPO=D.partsToOrder.filter(p=>{
+  const filteredPO=[...D.partsToOrder].reverse().filter(p=>{
     if(poFilters.q&&!(p.desc+p.num+(p.vendor||"")).toLowerCase().includes(poFilters.q.toLowerCase()))return false;
     if(poFilters.vendor&&(p.vendor||"").toLowerCase()!==poFilters.vendor.toLowerCase())return false;
     if(poFilters.num&&(p.num||"").toLowerCase()!==poFilters.num.toLowerCase())return false;
