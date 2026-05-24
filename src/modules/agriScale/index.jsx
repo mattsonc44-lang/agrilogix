@@ -328,13 +328,22 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     setFLLoading(true); setFLImportModal(true); setFLSelected(new Set());
     try {
       const flBase = (!farmId || farmId === "default")
-        ? `tenants/${tenantId}/fieldlog/fields`
-        : `tenants/${tenantId}/farms/${farmId}/fieldlog/fields`;
-      const data = await dbRead(flBase, token).catch(() => null);
-      const flList = obj2arr(data || {}).filter(Boolean);
+        ? `tenants/${tenantId}/fieldlog`
+        : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
+      const [fieldData, actData] = await Promise.all([
+        dbRead(`${flBase}/fields`, token).catch(() => null),
+        dbRead(`${flBase}/activities`, token).catch(() => null),
+      ]);
+      const flFields = obj2arr(fieldData || {}).filter(Boolean);
+      const activities = obj2arr(actData || {}).filter(Boolean);
+      // Only fields that have at least one seeding activity
+      const seededIds = new Set(
+        activities.filter(a => a.type === "seeding").map(a => a.fieldId)
+      );
+      const seededFields = flFields.filter(f => seededIds.has(f.id));
+      // Exclude fields already in AgriScale by name
       const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
-      // Only show fields not already in AgriScale
-      const newOnly = flList.filter(f => !existingNames.has((f.name||"").trim().toLowerCase()));
+      const newOnly = seededFields.filter(f => !existingNames.has((f.name||"").trim().toLowerCase()));
       setFLFields(newOnly);
       setFLSelected(new Set(newOnly.map(f => f.id)));
     } catch(e) { setFLFields([]); }
@@ -685,8 +694,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             <div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>IMPORT FROM FIELDLOG</div>
             {flLoading&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>READING FIELDLOG...</div>}
             {!flLoading&&flFields.length===0&&(
-              <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>
-                {fields.length>0?"ALL FIELDLOG FIELDS ALREADY IMPORTED":"NO FIELDS FOUND IN FIELDLOG"}
+              <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px",lineHeight:1.8}}>
+                {fields.length>0
+                  ? "ALL SEEDED FIELDS ALREADY IN AGRISCALE"
+                  : "NO SEEDED FIELDS FOUND IN FIELDLOG\nLOG A SEEDING ACTIVITY FIRST"}
               </div>
             )}
             {!flLoading&&flFields.length>0&&(<>
