@@ -44,6 +44,45 @@ const fmtDate  = (iso)=>{ try{return new Date(iso).toLocaleString("en-US",{month
 // obj2arr imported from core/helpers
 
 // ── GeoJSON / KML parsers for field import ────────────────────────────
+const parseShapefileZip = async (arrayBuffer) => {
+  const shp = window.shp;
+  if (!shp) throw new Error("Shapefile library not loaded. Please refresh and try again.");
+  const geojson = await shp(arrayBuffer); // auto-reprojects to WGS84
+  const collections = Array.isArray(geojson) ? geojson : [geojson];
+  const fields = [];
+  for (const col of collections) {
+    if (!col?.features) continue;
+    for (const feat of col.features) {
+      if (!feat?.geometry) continue;
+      const props = feat.properties || {};
+      // Try common attribute names for field/tract identification
+      const name = props.FIELD_NAME || props.CLU_NAME || props.TRACT_NO
+        || props.FIELD_ID || props.FIELDNAME || props.NAME
+        || props.FLD_NAME  || props.LABEL     || props.ID
+        || `Field ${fields.length + 1}`;
+      const acres = parseFloat(
+        props.CALC_ACRES || props.CLU_CALC_A || props.NET_ACRES
+        || props.CALCACRES || props.ACRES     || props.AREA_ACRES || ""
+      ) || 0;
+      // Handle Polygon and MultiPolygon
+      let coords = null;
+      if (feat.geometry.type === "Polygon") {
+        coords = feat.geometry.coordinates[0]; // outer ring
+      } else if (feat.geometry.type === "MultiPolygon") {
+        // Use the largest ring
+        coords = feat.geometry.coordinates
+          .map(p => p[0])
+          .sort((a, b) => b.length - a.length)[0];
+      }
+      if (!coords || coords.length < 3) continue;
+      // GeoJSON is [lng, lat] — flip to [lat, lng] for Leaflet
+      const boundary = coords.map(([lng, lat]) => [lat, lng]);
+      fields.push({ id: genId(), name: String(name), acres: acres || "", boundary });
+    }
+  }
+  return fields;
+};
+
 const parseGeoJSONFields = (text) => {
   const gj = JSON.parse(text);
   const features = gj.type==="FeatureCollection" ? gj.features
@@ -1255,12 +1294,30 @@ function ImportFieldsModal({onClose,onImport}){
         processFields(parseGeoJSONFields(await file.text()));
       } else if(ext==="kml"){
         processFields(parseKMLFields(await file.text()));
+      } else if(ext==="shp"){
+        processFields(await parseShapefileZip(await file.arrayBuffer()));
+      } else if(ext==="zip"){
+        const buf=await file.arrayBuffer();
+        const zip=await JSZip.loadAsync(buf);
+        const hasShp=Object.keys(zip.files).some(n=>n.toLowerCase().endsWith(".shp"));
+        if(hasShp){
+          // Shapefile zip — parse with shpjs (handles reprojection automatically)
+          processFields(await parseShapefileZip(buf));
+        } else {
+          // Assume KMZ — look for KML files inside
+          const kmlFiles=Object.values(zip.files).filter(f=>f.name.toLowerCase().endsWith(".kml")&&!f.dir);
+          if(!kmlFiles.length) throw new Error("No .shp or .kml file found inside the ZIP.");
+          const allFields=[];
+          for(const kmlFile of kmlFiles){
+            const kmlText=await kmlFile.async("text");
+            allFields.push(...parseKMLFields(kmlText));
+          }
+          processFields(allFields);
+        }
       } else if(ext==="kmz"){
-        // KMZ is a ZIP containing one or more .kml files
         const zip=await JSZip.loadAsync(await file.arrayBuffer());
         const kmlFiles=Object.values(zip.files).filter(f=>f.name.toLowerCase().endsWith(".kml")&&!f.dir);
         if(!kmlFiles.length) throw new Error("No .kml file found inside the KMZ archive.");
-        // Combine all KML files (usually just one — doc.kml)
         const allFields=[];
         for(const kmlFile of kmlFiles){
           const kmlText=await kmlFile.async("text");
@@ -1268,7 +1325,7 @@ function ImportFieldsModal({onClose,onImport}){
         }
         processFields(allFields);
       } else {
-        setErr(`Unsupported format: .${ext} — please use .kmz, .kml, .geojson, or .json`);
+        setErr(`Unsupported format: .${ext} — please use .zip, .shp, .kmz, .kml, .geojson, or .json`);
       }
     }catch(e){ setErr("Could not parse file: "+e.message); }
     finally{ setBusy(false); }
@@ -1413,10 +1470,10 @@ Reply ONLY with valid JSON, no markdown fences:
               <div style={{background:"#F8F4EC",border:`1px dashed ${T.borderHi}`,borderRadius:"8px",padding:"24px",textAlign:"center",marginBottom:"14px"}}>
                 <div style={{fontSize:"32px",marginBottom:"8px"}}>📂</div>
                 <p style={{color:T.text,fontWeight:600,marginBottom:"4px"}}>Drop your FSA / CLU file here</p>
-                <p style={{color:T.muted,fontSize:"12px",marginBottom:"16px"}}>Supports .kmz  ·  .kml  ·  .geojson  ·  .json</p>
+                <p style={{color:T.muted,fontSize:"12px",marginBottom:"16px"}}>Supports .zip (shapefile)  ·  .shp  ·  .kmz  ·  .kml  ·  .geojson  ·  .json</p>
                 <label style={{...mkBtn("primary"),cursor:"pointer"}}>
                   Choose File
-                  <input type="file" accept=".kmz,.kml,.geojson,.json" style={{display:"none"}} onChange={handleFile} disabled={busy}/>
+                  <input type="file" accept=".zip,.shp,.kmz,.kml,.geojson,.json" style={{display:"none"}} onChange={handleFile} disabled={busy}/>
                 </label>
               </div>
               <div style={{background:"#F5F5EC",border:`1px solid #D8D8B0`,borderRadius:"8px",padding:"12px",fontSize:"12px",color:T.muted}}>
