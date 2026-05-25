@@ -150,6 +150,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [flFields,      setFLFields]      = useState([]);
   const [flSelected,    setFLSelected]    = useState(new Set());
   const [flLoading,     setFLLoading]     = useState(false);
+  const [flExportModal, setFLExportModal] = useState(false);
+  const [flExportData,  setFLExportData]  = useState([]);
+  const [flExportSel,   setFLExportSel]   = useState(new Set());
+  const [flExporting,   setFLExporting]   = useState(false);
   const [logFieldId, setLogFId] = useState(null);
   const [editField,  setEF]     = useState(null);
   const [editBin,    setEB]     = useState(null);
@@ -364,6 +368,79 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     const nf = [...fields, ...newFields];
     setFields(nf); save(nf, bins, grains, trucks);
     setFLImportModal(false);
+  };
+
+  // ── Export harvest to FieldLog ────────────────────────────────────
+  const openFLExport = async () => {
+    setFLExporting(false); setFLExportModal(true);
+    try {
+      const flBase = (!farmId || farmId === "default")
+        ? `tenants/${tenantId}/fieldlog`
+        : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
+      const flFieldData = await dbRead(`${flBase}/fields`, token).catch(() => null);
+      const flFieldList = obj2arr(flFieldData || {}).filter(Boolean);
+      const flByName = {};
+      flFieldList.forEach(f => { flByName[f.name.trim().toLowerCase()] = f; });
+
+      // Build export rows — one per AgriScale field with loads
+      const rows = safeFields.map(f => {
+        const loads = (f.loads||[]).filter(Boolean);
+        if (!loads.length) return null;
+        const totalLbs = loads.reduce((s,l) => s + (parseFloat(l.lbs)||0), 0);
+        const grain = safeGrains.find(g => g.name === (loads[0]?.grainName||f.loads?.[0]?.grainName)) || safeGrains[0];
+        const lbsPerBu = parseFloat(grain?.lbsPerBu) || 60;
+        const totalBu = totalLbs / lbsPerBu;
+        const acres = parseFloat(f.acres) || 0;
+        const yieldPerAc = acres > 0 ? (totalBu / acres).toFixed(1) : "";
+        const lastDate = loads.map(l=>l.date).filter(Boolean).sort().pop() || new Date().toISOString().slice(0,10);
+        const flMatch = flByName[f.name.trim().toLowerCase()];
+        return {
+          asFieldId: f.id,
+          name: f.name,
+          acres,
+          totalLbs: Math.round(totalLbs),
+          totalBu: Math.round(totalBu),
+          yieldPerAc,
+          lbsPerBu,
+          grainName: loads[0]?.grainName || grain?.name || "Unknown",
+          date: lastDate,
+          flFieldId: flMatch?.id || null,
+          flBase,
+        };
+      }).filter(Boolean);
+
+      setFLExportData(rows);
+      setFLExportSel(new Set(rows.filter(r => r.flFieldId).map(r => r.asFieldId)));
+    } catch(e) { setFLExportData([]); }
+  };
+
+  const exportToFieldLog = async () => {
+    setFLExporting(true);
+    try {
+      const toExport = flExportData.filter(r => flExportSel.has(r.asFieldId) && r.flFieldId);
+      for (const r of toExport) {
+        const actId = genId();
+        const activity = {
+          id: actId,
+          fieldId: r.flFieldId,
+          type: "harvest",
+          date: r.date,
+          data: {
+            crop: r.grainName,
+            yieldPerAc: r.yieldPerAc,
+            totalBushels: String(r.totalBu),
+            testWeight: String(r.lbsPerBu),
+            acres: String(r.acres),
+          },
+          notes: `Exported from AgriScale — ${r.totalLbs.toLocaleString()} lbs`,
+        };
+        await dbWrite(`${r.flBase}/activities/${actId}`, activity, token);
+      }
+      setFLExportModal(false);
+      alert(`✅ ${toExport.length} harvest ${toExport.length===1?"activity":"activities"} added to FieldLog!`);
+    } catch(e) {
+      alert("Export failed: " + e.message);
+    } finally { setFLExporting(false); }
   };
 
   const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
@@ -650,7 +727,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
 
           {/* ── REPORT TAB ── */}
           {tab==="REPORT"&&perms.canReport&&(<>
-            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"12px"}}>HARVEST REPORT</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px"}}>
+              <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>HARVEST REPORT</div>
+              <button onClick={openFLExport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↑ EXPORT TO FIELDLOG</button>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
               {[
                 ["TOTAL LOADS",totalLoads],
@@ -687,7 +767,49 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       {editBin&&<BinMo bin={editBin} grains={grains} onSave={f=>{const nb=safeBins.map(b=>b.id===editBin.id?{...editBin,...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)}:b);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onClose={()=>setEB(null)} canDelete={bins.length>1}/>}
       {editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains,trucks);setEF(null);}} onClose={()=>setEF(null)}/>}
 
-      {/* ── FieldLog Import Modal ── */}
+      {/* ── FieldLog Export Modal ── */}
+      {flExportModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+          <div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"480px",maxHeight:"85vh",display:"flex",flexDirection:"column",gap:"12px"}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>EXPORT HARVEST TO FIELDLOG</div>
+            {flExportData.length===0&&(
+              <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>NO FIELDS WITH LOADS TO EXPORT</div>
+            )}
+            {flExportData.length>0&&(<>
+              <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'Share Tech Mono',monospace",letterSpacing:"0.08em",lineHeight:1.6}}>
+                SELECT FIELDS TO WRITE AS HARVEST ACTIVITIES IN FIELDLOG.
+                FIELDS WITHOUT A NAME MATCH IN FIELDLOG ARE GREYED OUT.
+              </div>
+              <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
+                {flExportData.map(r=>{
+                  const sel = flExportSel.has(r.asFieldId);
+                  const canSel = !!r.flFieldId;
+                  return(
+                    <label key={r.asFieldId} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"10px 12px",borderRadius:"5px",cursor:canSel?"pointer":"not-allowed",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":canSel?"rgba(255,255,255,0.08)":"rgba(255,100,100,0.15)"}`,opacity:canSel?1:0.5,transition:"all .1s"}}>
+                      <input type="checkbox" checked={sel&&canSel} disabled={!canSel} onChange={()=>{const n=new Set(flExportSel);sel?n.delete(r.asFieldId):n.add(r.asFieldId);setFLExportSel(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0,marginTop:"2px"}}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{r.name}</div>
+                        <div style={{display:"flex",gap:"12px",marginTop:"5px",flexWrap:"wrap"}}>
+                          <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.grainName}</span>
+                          <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalBu.toLocaleString()} BU</span>
+                          {r.yieldPerAc&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.yieldPerAc} BU/AC</span>}
+                          <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalLbs.toLocaleString()} LBS</span>
+                        </div>
+                        {!canSel&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#c06060",marginTop:"4px"}}>⚠ NO MATCHING FIELD IN FIELDLOG</div>}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <button onClick={exportToFieldLog} disabled={flExportSel.size===0||flExporting}
+                style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:flExportSel.size>0?"#4a7535":"#2a3020",color:flExportSel.size>0?"#f0eeea":"#4a5548",boxShadow:flExportSel.size>0?"0 2px 0 #2a5020":"none",cursor:flExportSel.size>0?"pointer":"not-allowed"}}>
+                {flExporting?"WRITING TO FIELDLOG...":`EXPORT ${flExportSel.size} FIELD${flExportSel.size!==1?"S":""} TO FIELDLOG`}
+              </button>
+            </>)}
+            <button onClick={()=>setFLExportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#6a8060"}}>CANCEL</button>
+          </div>
+        </div>
+      )}
       {flImportModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
           <div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"420px",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"12px"}}>
