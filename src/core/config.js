@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  AGRI LOGIX — Platform Configuration                           ║
 // ╠══════════════════════════════════════════════════════════════════╣
-export const FIREBASE_URL  = "https://YOUR-AGRILOGIX-DB.firebaseio.com";
+export const FIREBASE_URL  = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
 export const STRIPE_KEY    = (typeof window !== "undefined" && window.__STRIPE_KEY__)  || "";
 export const ANTHROPIC_KEY = (typeof window !== "undefined" && window.__ANTHROPIC_KEY__) || "";
 
