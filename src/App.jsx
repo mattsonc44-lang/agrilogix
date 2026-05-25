@@ -132,7 +132,11 @@ export default function App() {
   };
 
   const handleAuth = (authData) => { saveSession(authData); window.location.reload(); };
-  const signOut    = () => { clearSession(); localStorage.removeItem(`al_farm_${profile?.tenantId}`); window.location.reload(); };
+  const signOut = () => {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(`al_farm_${profile?.tenantId}`);
+    window.location.reload();
+  };
 
   const persist = (status) => { setSyncStatus(status); if (status !== "saving") setTimeout(() => setSyncStatus("idle"), 2000); };
 
