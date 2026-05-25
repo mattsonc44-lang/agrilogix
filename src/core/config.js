@@ -1,7 +1,7 @@
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  AGRI LOGIX — Platform Configuration                           ║
 // ╠══════════════════════════════════════════════════════════════════╣
-export const FIREBASE_URL  = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+export const FIREBASE_URL  = "https://YOUR-AGRILOGIX-DB.firebaseio.com";
 export const STRIPE_KEY    = (typeof window !== "undefined" && window.__STRIPE_KEY__)  || "";
 export const ANTHROPIC_KEY = (typeof window !== "undefined" && window.__ANTHROPIC_KEY__) || "";
 
@@ -9,10 +9,10 @@ export const ANTHROPIC_KEY = (typeof window !== "undefined" && window.__ANTHROPI
 export const MODULES = {
   fieldlog: {
     id:    "fieldlog",
-    label: "FieldLog",
+    label: "AgriLog",
     icon:  "🌾",
     desc:  "Field activity tracking — seeding, spraying, scouting, harvest",
-    price: 150,   // USD / year
+    price: 150,
     color: "#C07010",
   },
   agriScale: {
@@ -25,7 +25,7 @@ export const MODULES = {
   },
   serviceLog: {
     id:    "serviceLog",
-    label: "ServiceLog",
+    label: "AgriService",
     icon:  "🔧",
     desc:  "Equipment & vehicle maintenance — service records, schedules",
     price: 150,
