@@ -639,6 +639,8 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
   }
 
   if(selVeh){
+    const openTodos=(selVeh.todos||[]).filter(t=>!t.done);
+    const doneTodos=(selVeh.todos||[]).filter(t=>t.done);
     return(<div onClick={()=>setPartsMenu(false)}>
       <div className="vic">
         <div className="vic-top">
