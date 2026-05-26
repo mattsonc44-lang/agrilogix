@@ -648,25 +648,20 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
             <div className="vic-icon">{ICONS[selVeh.type]||"🔧"}</div>
             <div style={{flex:1,minWidth:0}}>
               <div className="vic-vname">{selVeh.name}</div>
-              <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",marginTop:"3px"}}>
-                <span className="vic-badge">{selVeh.type}</span>
-                {selVeh.year&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"var(--text-dim)"}}>{selVeh.year}</span>}
-                {selVeh.make&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"var(--text-dim)"}}>{selVeh.make}</span>}
-                {selVeh.model&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"var(--text)"}}>{selVeh.model}</span>}
-              </div>
-              {selVeh.vin&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",color:"var(--text-dim)",marginTop:"4px",letterSpacing:"0.04em"}}>VIN/Serial: <span style={{color:"var(--amber)",letterSpacing:"0.08em"}}>{selVeh.vin}</span></div>}
+              <span className="vic-badge">{selVeh.type}</span>
+              {custName&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",color:"var(--text-dim)",marginLeft:"8px"}}>@ {custName}</span>}
             </div>
           </div>
           <div className="vic-actions">
             {(selVeh.make||selVeh.model)&&(
               <div style={{position:"relative"}}>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setPartsMenu(p=>!p)}>🔍 Parts</button>
+                <button className="btn btn-ghost btn-sm" onClick={e=>{e.stopPropagation();setPartsMenu(p=>!p);}}>🔍 Parts</button>
                 {partsMenu&&(
                   <div style={{position:"absolute",top:"100%",right:0,zIndex:50,background:"var(--panel)",border:"1px solid var(--border)",borderRadius:"6px",boxShadow:"0 4px 16px rgba(0,0,0,0.12)",minWidth:"200px",marginTop:"4px"}} onClick={e=>e.stopPropagation()}>
                     <div style={{padding:"8px 12px",fontSize:"10px",fontFamily:"'Share Tech Mono',monospace",letterSpacing:"1px",color:"var(--text-dim)",borderBottom:"1px solid var(--border)"}}>FIND PARTS FOR {[selVeh.year,selVeh.make,selVeh.model].filter(Boolean).join(" ").toUpperCase()}</div>
                     {partsSearchLinks(selVeh).map(l=>(
                       <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={()=>setPartsMenu(false)}
-                        style={{display:"flex",alignItems:"center",gap:"10px",padding:"9px 14px",fontSize:"13px",color:"var(--text)",textDecoration:"none",borderBottom:"1px solid var(--border)2",transition:"background .1s"}}
+                        style={{display:"flex",alignItems:"center",gap:"10px",padding:"9px 14px",fontSize:"13px",color:"var(--text)",textDecoration:"none",borderBottom:"1px solid var(--border)",transition:"background .1s"}}
                         onMouseEnter={e=>e.currentTarget.style.background="var(--bg3)"}
                         onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                         <span style={{fontSize:"16px"}}>{l.icon}</span>
@@ -683,13 +678,20 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
             <button className="btn btn-danger btn-sm" onClick={()=>deleteVehicle(selVeh.id)}>Delete</button>
           </div>
         </div>
-        <div className="vic-specs">
-          {selVeh.engine&&<div className="vic-spec"><div className="vic-spec-lbl">Engine</div><div className="vic-spec-val">{selVeh.engine}</div></div>}
-          {selVeh.hp&&<div className="vic-spec"><div className="vic-spec-lbl">HP</div><div className="vic-spec-val">{selVeh.hp}</div></div>}
-          {selVeh.hours&&<div className="vic-spec"><div className="vic-spec-lbl">Hrs/Miles</div><div className="vic-spec-val">{Number(selVeh.hours).toLocaleString()}</div></div>}
-          <div className="vic-spec"><div className="vic-spec-lbl">Records</div><div className="vic-spec-val">{vRecords.length}</div></div>
-          <div className="vic-spec"><div className="vic-spec-lbl">Total Cost</div><div className="vic-spec-val" style={{color:"var(--green)"}}>${sumCost(vRecords).toLocaleString()}</div></div>
+
+        {/* Full vehicle info grid */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"8px 16px",padding:"12px 0",borderTop:"1px solid var(--border)",marginTop:"8px"}}>
+          {selVeh.year&&<div><div className="vic-spec-lbl">Year</div><div className="vic-spec-val">{selVeh.year}</div></div>}
+          {selVeh.make&&<div><div className="vic-spec-lbl">Make</div><div className="vic-spec-val">{selVeh.make}</div></div>}
+          {selVeh.model&&<div><div className="vic-spec-lbl">Model</div><div className="vic-spec-val">{selVeh.model}</div></div>}
+          {selVeh.engine&&<div><div className="vic-spec-lbl">Engine</div><div className="vic-spec-val">{selVeh.engine}</div></div>}
+          {selVeh.hp&&<div><div className="vic-spec-lbl">HP</div><div className="vic-spec-val">{selVeh.hp}</div></div>}
+          {selVeh.hours&&<div><div className="vic-spec-lbl">Hrs / Miles</div><div className="vic-spec-val">{Number(selVeh.hours).toLocaleString()}</div></div>}
+          {selVeh.vin&&<div style={{gridColumn:"span 2"}}><div className="vic-spec-lbl">VIN / Serial</div><div className="vic-spec-val" style={{fontFamily:"'Share Tech Mono',monospace",letterSpacing:"0.08em",color:"var(--amber)"}}>{selVeh.vin}</div></div>}
+          <div><div className="vic-spec-lbl">Records</div><div className="vic-spec-val">{vRecords.length}</div></div>
+          <div><div className="vic-spec-lbl">Total Cost</div><div className="vic-spec-val" style={{color:"var(--green)"}}>${sumCost(vRecords).toLocaleString()}</div></div>
         </div>
+
         {selVeh.notes&&<div className="vic-notes">📝 {selVeh.notes}</div>}
       </div>
 
