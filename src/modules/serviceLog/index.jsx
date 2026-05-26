@@ -223,7 +223,6 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const [sync, setSync] = useState("idle");
 
   const [tab,      setTab]      = useState("fleet");
-  const [partsMenu,setPartsMenu]= useState(false);
   const [selCustId,setSelCust]  = useState(null);
   const [selVehId, setSelVeh]   = useState(null);
   const [sbSearch, setSbSearch] = useState("");
@@ -562,6 +561,34 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
 // ── Fleet View ────────────────────────────────────────────────────
 function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory}){
+  const [partsMenu, setPartsMenu] = useState(false);
+
+  const partsSearchLinks = (v) => {
+    if (!v?.model && !v?.make) return [];
+    const q = [v.year, v.make, v.model].filter(Boolean).join(" ");
+    const qEnc = encodeURIComponent(q + " parts");
+    const modelEnc = encodeURIComponent(v.model || q);
+    const makeL = (v.make||"").toLowerCase();
+    const links = [
+      { label:"Google", icon:"🔍", url:`https://www.google.com/search?q=${qEnc}` },
+      { label:"Messick's", icon:"🚜", url:`https://www.messicks.com/search?term=${modelEnc}` },
+      { label:"TractorJoe", icon:"🌾", url:`https://www.tractorjoe.com/search?searchterm=${modelEnc}` },
+      { label:"Amazon", icon:"📦", url:`https://www.amazon.com/s?k=${qEnc}` },
+    ];
+    if (makeL.includes("john deere")||makeL.includes("deere"))
+      links.splice(1,0,{ label:"John Deere Parts", icon:"🟡", url:`https://www.deere.com/en/parts-and-service/find-parts/parts-catalog/?modelNumber=${modelEnc}` });
+    else if (makeL.includes("case")||makeL.includes("cnh"))
+      links.splice(1,0,{ label:"Case IH Parts", icon:"🔴", url:`https://www.caseih.com/northamerica/en-us/parts-and-service/parts.html?search=${modelEnc}` });
+    else if (makeL.includes("new holland"))
+      links.splice(1,0,{ label:"New Holland Parts", icon:"🔵", url:`https://www.newholland.com/naen/en-us/parts-and-service.html?search=${modelEnc}` });
+    else if (makeL.includes("kubota"))
+      links.splice(1,0,{ label:"Kubota Parts", icon:"🟠", url:`https://www.kubotausa.com/parts-and-service?search=${modelEnc}` });
+    else if (makeL.includes("cat")||makeL.includes("caterpillar"))
+      links.splice(1,0,{ label:"Cat Parts", icon:"🟡", url:`https://parts.cat.com/en/catcorp?searchterm=${modelEnc}` });
+    else if (makeL.includes("agco")||makeL.includes("massey"))
+      links.splice(1,0,{ label:"AGCO Parts", icon:"⚙️", url:`https://www.agcoparts.com/parts/catalog?q=${modelEnc}` });
+    return links;
+  };
   if(!selCustId&&!selVeh) return (
     <div>
       <div className="overview-title">Fleet Overview</div>
@@ -610,34 +637,6 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
       </div>
     </div>);
   }
-
-  // Build parts search URLs from vehicle info
-  const partsSearchLinks = (v) => {
-    if (!v?.model && !v?.make) return [];
-    const q = [v.year, v.make, v.model].filter(Boolean).join(" ");
-    const qEnc = encodeURIComponent(q + " parts");
-    const modelEnc = encodeURIComponent(v.model || q);
-    const makeL = (v.make||"").toLowerCase();
-    const links = [
-      { label:"Google", icon:"🔍", url:`https://www.google.com/search?q=${qEnc}` },
-      { label:"Messick's", icon:"🚜", url:`https://www.messicks.com/search?term=${modelEnc}` },
-      { label:"TractorJoe", icon:"🌾", url:`https://www.tractorjoe.com/search?searchterm=${modelEnc}` },
-      { label:"Amazon", icon:"📦", url:`https://www.amazon.com/s?k=${qEnc}` },
-    ];
-    if (makeL.includes("john deere")||makeL.includes("deere"))
-      links.splice(1,0,{ label:"John Deere Parts", icon:"🟡", url:`https://www.deere.com/en/parts-and-service/find-parts/parts-catalog/?modelNumber=${modelEnc}` });
-    else if (makeL.includes("case")||makeL.includes("cnh"))
-      links.splice(1,0,{ label:"Case IH Parts", icon:"🔴", url:`https://www.caseih.com/northamerica/en-us/parts-and-service/parts.html?search=${modelEnc}` });
-    else if (makeL.includes("new holland"))
-      links.splice(1,0,{ label:"New Holland Parts", icon:"🔵", url:`https://www.newholland.com/naen/en-us/parts-and-service.html?search=${modelEnc}` });
-    else if (makeL.includes("kubota"))
-      links.splice(1,0,{ label:"Kubota Parts", icon:"🟠", url:`https://www.kubotausa.com/parts-and-service?search=${modelEnc}` });
-    else if (makeL.includes("cat")||makeL.includes("caterpillar"))
-      links.splice(1,0,{ label:"Cat Parts", icon:"🟡", url:`https://parts.cat.com/en/catcorp?searchterm=${modelEnc}` });
-    else if (makeL.includes("agco")||makeL.includes("massey"))
-      links.splice(1,0,{ label:"AGCO Parts", icon:"⚙️", url:`https://www.agcoparts.com/parts/catalog?q=${modelEnc}` });
-    return links;
-  };
 
   if(selVeh){
     return(<div onClick={()=>setPartsMenu(false)}>
