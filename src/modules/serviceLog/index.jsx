@@ -356,7 +356,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
   const savePart=f=>{let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...f}];}save({partsToOrder:np});setModal(null);setEdit(null);};
-  const quickAddPart=()=>{if(!poNew.desc.trim())return;const np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...poNew}];save({partsToOrder:np});setPoNew({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});};
+  const quickAddPart=()=>{if(!poNew.desc.trim())return;const np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,addedAt:Date.now(),...poNew}];save({partsToOrder:np});setPoNew({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});};
   const toggleOrdered=id=>{const np=D.partsToOrder.map(p=>p.id===id?{...p,ordered:!p.ordered||p.received,orderedDate:!p.ordered?today():p.orderedDate}:p);save({partsToOrder:np});};
   const toggleReceived=id=>{const p=D.partsToOrder.find(pp=>pp.id===id);if(!p)return;if(p.received){save({partsToOrder:D.partsToOrder.map(pp=>pp.id===id?{...pp,received:false}:pp)});return;}setEdit(p);setModal("receive");};
   const confirmReceive=(partId,f)=>{
@@ -432,7 +432,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const custName=id=>D.customers.find(c=>c.id===id)?.name||"";
   const vehName=id=>id==="__stock__"?"📦 For Stock":(D.vehicles.find(v=>v.id===id)?.name||"");
   const featOn=k=>D.settings.features?.[k]!==false;
-  const filteredPO=[...D.partsToOrder].reverse().filter(p=>{
+  const filteredPO=[...D.partsToOrder].sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)).filter(p=>{
     if(poFilters.q&&!(p.desc+p.num+(p.vendor||"")).toLowerCase().includes(poFilters.q.toLowerCase()))return false;
     if(poFilters.vendor&&(p.vendor||"").toLowerCase()!==poFilters.vendor.toLowerCase())return false;
     if(poFilters.num&&(p.num||"").toLowerCase()!==poFilters.num.toLowerCase())return false;
