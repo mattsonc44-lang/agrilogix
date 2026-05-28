@@ -1028,7 +1028,7 @@ function AddActivityModal({field,onClose,onSave,initial}){
     try {
       const fieldMap = {
         seeding:  '{"crop":"","variety":"","seedingRate":"","rowSpacing":"","seedTreatment":"","notes":""}',
-        spraying: '{"products":"","rate":"","waterVolume":"","targetPest":"","notes":""}',
+        spraying: `{"waterVol":"","purpose":"","tankMix":[{"chemical":"CHEMICAL_NAME","oz":"RATE_NUMBER","unit":"UNIT"}],"notes":""}\nFor tankMix: extract each chemical. chemical must match one of: ${CHEMICALS.join(", ")}. If not in list use "Other". unit options: oz/ac, fl oz/ac, ml/ac, L/ac, lbs/ac, pt/ac, qt/ac. oz is numeric rate only.`,
         scouting: '{"pestsPressure":"","diseaseRisk":"","weedPressure":"","recommendations":"","notes":""}',
         harvest:  '{"crop":"","yieldPerAc":"","moisture":"","testWeight":"","notes":""}',
         tillage:  '{"details":"","depth":"","notes":""}',
@@ -1040,7 +1040,7 @@ function AddActivityModal({field,onClose,onSave,initial}){
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          prompt:`A farmer said: "${notes}"\n\nField: "${field.name}" | Activity: ${type}\n\nExtract into this JSON schema (leave blank if not mentioned). Return ONLY raw JSON:\n${schema}`
+          prompt:`A farmer said: "${notes}"\n\nField: "${field.name}" | Activity: ${type}\n\nExtract into this JSON schema. Return ONLY raw JSON with no markdown or backticks:\n${schema}`
         })
       });
       const result = await resp.json();
@@ -1049,7 +1049,13 @@ function AddActivityModal({field,onClose,onSave,initial}){
       const {notes:parsedNotes,...parsedData} = parsed;
       if(parsedNotes) setNotes(parsedNotes);
       else setNotes(notes);
-      setData(prev=>({...prev,...Object.fromEntries(Object.entries(parsedData).filter(([,v])=>v))}));
+      // For spraying: add genId() to each tankMix entry
+      if(parsedData.tankMix && Array.isArray(parsedData.tankMix)) {
+        parsedData.tankMix = parsedData.tankMix
+          .filter(c=>c.chemical)
+          .map(c=>({id:genId(),chemical:c.chemical||"",oz:String(c.oz||""),unit:c.unit||"L/ac"}));
+      }
+      setData(prev=>({...prev,...Object.fromEntries(Object.entries(parsedData).filter(([,v])=>v!==undefined&&v!==""))}));
     } catch(e){ /* keep notes as-is on error */ }
     setAIParsing(false);
   };
