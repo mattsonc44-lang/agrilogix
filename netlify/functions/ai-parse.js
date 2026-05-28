@@ -4,13 +4,16 @@ exports.handler = async (event) => {
   }
   try {
     const { prompt } = JSON.parse(event.body || '{}');
-    if (!prompt) return { statusCode: 400, body: 'Missing prompt' };
+    if (!prompt) return { statusCode: 400, body: JSON.stringify({ error: 'Missing prompt' }) };
+
+    const apiKey = process.env.ANTHROPIC_KEY;
+    if (!apiKey) return { statusCode: 500, body: JSON.stringify({ error: 'ANTHROPIC_KEY not set' }) };
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_KEY,
+        'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -19,7 +22,13 @@ exports.handler = async (event) => {
         messages: [{ role: 'user', content: prompt }],
       }),
     });
+
     const data = await resp.json();
+
+    if (!resp.ok) {
+      return { statusCode: 500, body: JSON.stringify({ error: data.error?.message || 'API error', status: resp.status }) };
+    }
+
     const text = data.content?.[0]?.text || '';
     return {
       statusCode: 200,
