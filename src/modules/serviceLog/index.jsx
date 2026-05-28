@@ -441,7 +441,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     if(poFilters.status==="ordered"&&(!p.ordered||p.received))return false;
     if(poFilters.status==="received"&&!p.received)return false;
     return true;
-  }).sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+  });
 
   const tabs=[
     {id:"fleet",label:"🚜 Fleet"},
