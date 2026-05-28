@@ -977,13 +977,84 @@ function ActivityCard({activity,onDelete,onEdit}){
 }
 
 // ── Add / Edit Activity Modal ─────────────────────────────────────────
+
+// ── Voice-to-text hook ─────────────────────────────────────────────
+function useVoiceInput() {
+  const [listening, setListening] = useState(false);
+  const recRef = useRef(null);
+
+  const toggle = (onUpdate) => {
+    if (listening) {
+      recRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Voice input requires Chrome or Edge."); return; }
+    const rec = new SR();
+    recRef.current = rec;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    rec.onresult = e => {
+      const t = Array.from(e.results).map(r => r[0].transcript).join(" ");
+      onUpdate(t);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    rec.start();
+    setListening(true);
+  };
+
+  const stop = () => { recRef.current?.stop(); setListening(false); };
+
+  return { listening, toggle, stop };
+}
+
 function AddActivityModal({field,onClose,onSave,initial}){
   const[type,setType]=useState(initial?.type||"");
   const[date,setDate]=useState(initial?.date||nowLocal());
   const[data,setData]=useState(initial?.data||{});
   const[notes,setNotes]=useState(initial?.notes||"");
   const[err,setErr]=useState("");
+  const[aiParsing,setAIParsing]=useState(false);
+  const{listening:voiceListening,toggle:voiceToggle,stop:voiceStop}=useVoiceInput();
+  const activityType=type;
   const isEdit = !!initial;
+
+  const aiSmartFill = async () => {
+    if(!notes.trim()||!type) return;
+    setAIParsing(true);
+    try {
+      const fieldMap = {
+        seeding:  '{"crop":"","variety":"","seedingRate":"","rowSpacing":"","seedTreatment":"","notes":""}',
+        spraying: '{"products":"","rate":"","waterVolume":"","targetPest":"","notes":""}',
+        scouting: '{"pestsPressure":"","diseaseRisk":"","weedPressure":"","recommendations":"","notes":""}',
+        harvest:  '{"crop":"","yieldPerAc":"","moisture":"","testWeight":"","notes":""}',
+        tillage:  '{"details":"","depth":"","notes":""}',
+        rockPicking: '{"details":"","notes":""}',
+        other:    '{"details":"","notes":""}',
+      };
+      const schema = fieldMap[type] || '{"details":"","notes":""}';
+      const resp = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"},
+        body:JSON.stringify({
+          model:"claude-haiku-4-5-20251001",
+          max_tokens:400,
+          messages:[{role:"user",content:`A farmer said: "${notes}"\n\nField: "${field.name}" | Activity: ${type}\n\nExtract into this JSON schema (leave blank if not mentioned). Return ONLY raw JSON:\n${schema}`}]
+        })
+      });
+      const result = await resp.json();
+      const raw = result.content?.[0]?.text||"{}";
+      const parsed = JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,"").trim());
+      const {notes:parsedNotes,...parsedData} = parsed;
+      if(parsedNotes) setNotes(parsedNotes);
+      else setNotes(notes);
+      setData(prev=>({...prev,...Object.fromEntries(Object.entries(parsedData).filter(([,v])=>v))}));
+    } catch(e){ /* keep notes as-is on error */ }
+    setAIParsing(false);
+  };
   const save=()=>{
     if(!type){setErr("Please select an activity type.");return;}
     onSave(isEdit
@@ -994,6 +1065,7 @@ function AddActivityModal({field,onClose,onSave,initial}){
   };
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:200,overflowY:"auto",display:"flex",justifyContent:"center",padding:"20px 12px"}}>
+      <style>{`@keyframes fl-pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
       <div style={{background:"#E8DFD0",border:`1px solid ${T.borderHi}`,borderRadius:"12px",width:"100%",maxWidth:"620px",padding:"22px",alignSelf:"flex-start",marginTop:"10px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"18px"}}>
           <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",color:T.gold,margin:0}}>{isEdit?"Edit Activity":"Log Activity"} — <span style={{color:T.text}}>{field.name}</span></h2>
@@ -1015,7 +1087,30 @@ function AddActivityModal({field,onClose,onSave,initial}){
         {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
         {type==="harvest"  &&<HarvestForm v={data} set={setData}/>}
         {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
-        {type&&<div style={S.row}><label style={S.label}>Notes</label><textarea style={{...S.input,height:"60px",resize:"vertical"}} placeholder="Weather, observations…" value={notes} onChange={e=>setNotes(e.target.value)}/></div>}
+        {type&&(
+        <div style={S.row}>
+          <label style={{...S.label,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>Notes</span>
+            {voiceListening&&<span style={{fontSize:"11px",color:"#E05050",fontWeight:600,animation:"fl-pulse 1s infinite"}}>🔴 Listening…</span>}
+          </label>
+          <div style={{position:"relative"}}>
+            <textarea
+              style={{...S.input,height:"60px",resize:"vertical",paddingRight:"44px"}}
+              placeholder={voiceListening?"🎤 Speak now — transcript will appear here…":"Weather, observations… or tap 🎤 to speak"}
+              value={notes}
+              onChange={e=>setNotes(e.target.value)}
+            />
+            <button onClick={()=>voiceToggle(t=>setNotes(t))} title={voiceListening?"Stop recording":"Speak to fill notes"} style={{position:"absolute",right:"6px",top:"6px",width:"32px",height:"32px",borderRadius:"50%",border:"none",cursor:"pointer",background:voiceListening?"#E05050":T.gold,color:"#FFF",fontSize:"16px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:voiceListening?"0 0 0 3px rgba(224,80,80,0.3)":"none"}}>
+              {voiceListening?"⏹":"🎤"}
+            </button>
+          </div>
+          {notes.trim()&&activityType&&(
+            <button onClick={aiSmartFill} disabled={aiParsing} style={{...mkBtn("ghost"),fontSize:"11px",marginTop:"6px",color:T.brand,borderColor:T.brand+"40"}}>
+              {aiParsing?"⏳ Parsing…":"✨ AI smart-fill from notes"}
+            </button>
+          )}
+        </div>
+      )}
         {err&&<p style={{color:"#E05050",fontSize:"13px",margin:"0 0 10px"}}>{err}</p>}
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
           <button style={mkBtn("ghost")} onClick={onClose}>Cancel</button>
