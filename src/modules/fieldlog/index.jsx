@@ -1036,17 +1036,15 @@ function AddActivityModal({field,onClose,onSave,initial}){
         other:    '{"details":"","notes":""}',
       };
       const schema = fieldMap[type] || '{"details":"","notes":""}';
-      const resp = await fetch("https://api.anthropic.com/v1/messages",{
+      const resp = await fetch("/.netlify/functions/ai-parse",{
         method:"POST",
-        headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"},
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001",
-          max_tokens:400,
-          messages:[{role:"user",content:`A farmer said: "${notes}"\n\nField: "${field.name}" | Activity: ${type}\n\nExtract into this JSON schema (leave blank if not mentioned). Return ONLY raw JSON:\n${schema}`}]
+          prompt:`A farmer said: "${notes}"\n\nField: "${field.name}" | Activity: ${type}\n\nExtract into this JSON schema (leave blank if not mentioned). Return ONLY raw JSON:\n${schema}`
         })
       });
       const result = await resp.json();
-      const raw = result.content?.[0]?.text||"{}";
+      const raw = result.text||"{}";
       const parsed = JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,"").trim());
       const {notes:parsedNotes,...parsedData} = parsed;
       if(parsedNotes) setNotes(parsedNotes);
