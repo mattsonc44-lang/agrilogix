@@ -71,6 +71,24 @@ export default function App() {
     });
   }, [profile?.tenantId, session?.idToken]);
 
+  // ── Background prefetch: cache all module data while online ────────
+  useEffect(() => {
+    if (!session?.idToken || !profile?.tenantId) return;
+    if (!navigator.onLine) return;
+    const tid = profile.tenantId;
+    const tok = session.idToken;
+    const bases = [
+      { key: `sl_cache_${tid}`,  path: `tenants/${tid}/serviceLog`  },
+      { key: `as_cache_${tid}`,  path: `tenants/${tid}/agriScale`   },
+      { key: `fl_cache_${tid}_default`, path: `tenants/${tid}/fieldlog` },
+    ];
+    bases.forEach(({ key, path }) => {
+      dbRead(path, tok)
+        .then(d => { if(d) try{ localStorage.setItem(key, JSON.stringify({...d,_at:Date.now()})); }catch(e){} })
+        .catch(() => {}); // silent — prefetch only, no impact on UI
+    });
+  }, [profile?.tenantId, session?.idToken]);
+
   // ── Safety net: set module if not set after loading ───────────────
   useEffect(() => {
     if (!loading && session && profile?.tenantId && !module) {

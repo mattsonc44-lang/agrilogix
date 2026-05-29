@@ -179,15 +179,31 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
           const farmFields = (!farmId||farmId==="default") ? fl.filter(f=>!f.farmId||f.farmId==="default") : fl.filter(f=>f.farmId===farmId);
           setFields(farmFields); setAFId(farmFields[0]?.id||null);
         }
-        if(bl.length){ setBins(bl);   setABId(bl[0].id); }
+        if(bl.length){ setBins(bl); setABId(bl[0].id); }
         if(gl.length)  setGrains(gl);
         if(tl.length) setTrucks(tl.filter(Boolean)); else setTrucks(DEFAULT_TRUCKS);
+        asSaveCache(d);
       } else {
         setAFId(DEFAULT_FIELDS[0].id);
         setABId(DEFAULT_BINS[0].id);
       }
       setSyncStatus("live");
-    }).catch(()=>setSyncStatus("error")).finally(()=>setLoading(false));
+    }).catch(()=>{
+      const cached = asLoadCache();
+      if(cached){
+        const fl=obj2arr(cached.fields||{});
+        const bl=obj2arr(cached.bins||{});
+        const gl=obj2arr(cached.customGrains||{});
+        const tl=obj2arr(cached.trucks||{});
+        if(fl.length){ const ff=(!farmId||farmId==="default")?fl.filter(f=>!f.farmId||f.farmId==="default"):fl.filter(f=>f.farmId===farmId); setFields(ff); setAFId(ff[0]?.id||null); }
+        if(bl.length){ setBins(bl); setABId(bl[0].id); }
+        if(gl.length) setGrains(gl);
+        if(tl.length) setTrucks(tl.filter(Boolean));
+        setSyncStatus("offline");
+      } else {
+        setSyncStatus("error");
+      }
+    }).finally(()=>setLoading(false));
   },[tenantId,token]);
 
   useEffect(()=>{
@@ -206,6 +222,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       }
       if(d.customGrains) setGrains(obj2arr(d.customGrains).filter(Boolean));
       if(d.trucks)       setTrucks(obj2arr(d.trucks).filter(Boolean));
+      asSaveCache(d);
     });
   },[loading,tenantId,token]);
 
@@ -213,6 +230,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const saveToQueue   = d => { try{ localStorage.setItem(QUEUE_KEY, JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
   const clearQueue    = ()  => { try{ localStorage.removeItem(QUEUE_KEY); }catch(e){} };
   const loadQueue     = ()  => { try{ const r=localStorage.getItem(QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
+
+  const AS_CACHE_KEY  = `as_cache_${tenantId}`;
+  const asSaveCache   = d => { try{ localStorage.setItem(AS_CACHE_KEY, JSON.stringify({...d,_at:Date.now()})); }catch(e){} };
+  const asLoadCache   = ()  => { try{ const r=localStorage.getItem(AS_CACHE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
 
   // Merge remote + local queued loads (handles offline concurrent adds)
   const mergeWithRemote = (remote, localData) => {

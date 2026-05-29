@@ -238,7 +238,12 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
   useEffect(()=>{
     if(!tenantId) return;
-    dbRead(BASE,token).then(d=>{if(d)setD(migrate(d));}).catch(()=>{}).finally(()=>setLoading(false));
+    dbRead(BASE,token).then(d=>{
+      if(d){ const m=migrate(d); setD(m); slSaveCache(d); }
+    }).catch(()=>{
+      const cached=slLoadCache();
+      if(cached){ setD(migrate(cached)); setSync("offline"); }
+    }).finally(()=>setLoading(false));
   },[tenantId,token]);
 
   const skipRef = useRef(false);
@@ -250,7 +255,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       if(skipRef.current) return;
       // Only process full-path updates, not partial sub-path updates
       if(path && path !== "/") return;
-      if(d) setD(migrate(d));
+      if(d){ setD(migrate(d)); slSaveCache(d); }
     });
   },[tenantId,token]);
 
@@ -298,6 +303,10 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const SL_QUEUE_KEY = `sl_queue_${tenantId}`;
   const slSaveQ  = d=>{ try{ localStorage.setItem(SL_QUEUE_KEY,JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
   const slClearQ = ()=>{ try{ localStorage.removeItem(SL_QUEUE_KEY); }catch(e){} };
+
+  const SL_CACHE_KEY = `sl_cache_${tenantId}`;
+  const slSaveCache  = d=>{ try{ localStorage.setItem(SL_CACHE_KEY,JSON.stringify({...d,_at:Date.now()})); }catch(e){} };
+  const slLoadCache  = ()=>{ try{ const r=localStorage.getItem(SL_CACHE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
   const slLoadQ  = ()=>{ try{ const r=localStorage.getItem(SL_QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
 
   const save=(updates)=>{
@@ -320,6 +329,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
       settings:       next.settings,
     };
     slSaveQ(payload);
+    slSaveCache(payload);
     dbSafeWrite(BASE, payload, token)
       .then(()=>{ slClearQ(); setSync("saved"); })
       .catch(e=>{
