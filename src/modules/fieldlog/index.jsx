@@ -309,7 +309,27 @@ function FieldMap({boundary=[],onBoundaryChange,height=350,readOnly=false}){
 // ── Seeding Form ──────────────────────────────────────────────────────
 const PULSE_CROPS = ["Peas","Lentils","Chickpeas","Soybeans"];
 
-function SeedingForm({v,set}){
+function SeedingForm({v,set,products={}}){
+  const mySeeds = products.seeds || [];
+  const myFerts = products.fertilizers || [];
+  // When a saved seed is picked, auto-fill rate
+  const pickSeed = (cropId, seedName) => {
+    const found = mySeeds.find(s => s.name === seedName);
+    const newRate = found?.defaultRate || "";
+    const newUnit = found?.unit || "lbs/ac";
+    set({...v, crops: (v.crops||[]).map(c => c.id === cropId
+      ? {...c, variety: seedName, seedRate: newRate || c.seedRate}
+      : c
+    )});
+  };
+  // When a saved fertilizer is picked, auto-fill rate
+  const pickFert = (fertId, fertName) => {
+    const found = myFerts.find(f => f.name === fertName);
+    set({...v, ferts: (v.ferts||[]).map(f => f.id === fertId
+      ? {...f, blend: fertName, rate: found?.defaultRate || f.rate}
+      : f
+    )});
+  };
   // ── Crops (multiple for double-crop) ──
   const crops   = v.crops   || (v.crop ? [{id:genId(),crop:v.crop,seedRate:v.seedRate||"",totalSeed:v.totalSeed||""}] : [{id:genId(),crop:"",seedRate:"",totalSeed:""}]);
   const addCrop = ()=>set({...v,crops:[...crops,{id:genId(),crop:"",seedRate:"",totalSeed:""}]});
@@ -347,6 +367,15 @@ function SeedingForm({v,set}){
                 <select style={S.input} value={c.crop} onChange={e=>updCrop(c.id,"crop",e.target.value)}>
                   <option value="">Select crop…</option>{CROPS.map(cr=><option key={cr}>{cr}</option>)}
                 </select>
+                {mySeeds.filter(s=>!s.cropType||s.cropType===c.crop).length>0&&(
+                  <select style={{...S.input,marginTop:"5px",fontSize:"11px",color:T.brand}}
+                    value={c.variety||""} onChange={e=>pickSeed(c.id,e.target.value)}>
+                    <option value="">📦 Pick saved variety…</option>
+                    {mySeeds.filter(s=>!s.cropType||s.cropType===c.crop).map(s=>(
+                      <option key={s.id} value={s.name}>{s.name} {s.defaultRate?`(${s.defaultRate} ${s.unit})`:"" }</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div style={{flex:"1 1 90px"}}>
                 <label style={S.label}>Rate (lbs/ac)</label>
@@ -374,8 +403,10 @@ function SeedingForm({v,set}){
             <div style={{display:"flex",gap:"8px",alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:"2 1 150px"}}>
                 <label style={S.label}>Product #{i+1}</label>
-                <select style={S.input} value={f.blend} onChange={e=>updFert(f.id,"blend",e.target.value)}>
-                  <option value="">Select blend…</option>{FERT_BLENDS.map(b=><option key={b}>{b}</option>)}
+                <select style={S.input} value={f.blend} onChange={e=>pickFert(f.id,e.target.value)}>
+                  <option value="">Select product…</option>
+                  {myFerts.length>0&&<optgroup label="── My Products ──">{myFerts.map(mf=><option key={mf.id} value={mf.name}>{mf.name}{mf.analysis?` (${mf.analysis})`:""}</option>)}</optgroup>}
+                  <optgroup label="── Standard Blends ──">{FERT_BLENDS.map(b=><option key={b}>{b}</option>)}</optgroup>
                 </select>
                 {f.blend==="Custom Blend"&&<input style={{...S.input,marginTop:"6px"}} type="text" placeholder="e.g. 16-20-10-5S" value={f.custom} onChange={e=>updFert(f.id,"custom",e.target.value)}/>}
               </div>
@@ -752,7 +783,7 @@ function HarvestForm({v,set}){
 }
 
 // ── Spraying Form ─────────────────────────────────────────────────────
-function SprayingForm({v,set}){
+function SprayingForm({v,set,products={}}){
   const mix=v.tankMix||[];
   const add=()=>set({...v,tankMix:[...mix,{id:genId(),chemical:"",oz:"",unit:"oz/ac"}]});
   const upd=(id,f,val)=>set({...v,tankMix:mix.map(c=>c.id===id?{...c,[f]:val}:c)});
@@ -774,8 +805,15 @@ function SprayingForm({v,set}){
             <div style={{display:"flex",gap:"8px",alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:"3 1 160px"}}>
                 <label style={S.label}>Chemical #{i+1}</label>
-                <select style={S.input} value={c.chemical} onChange={e=>upd(c.id,"chemical",e.target.value)}>
-                  <option value="">Select chemical…</option>{CHEMICALS.map(ch=><option key={ch}>{ch}</option>)}
+                <select style={S.input} value={c.chemical} onChange={e=>{
+                      const name=e.target.value;
+                      const saved=(products.chemicals||[]).find(p=>p.name===name);
+                      upd(c.id,"chemical",name);
+                      if(saved){ upd(c.id,"oz",saved.defaultRate||""); upd(c.id,"unit",saved.unit||"L/ac"); }
+                    }}>
+                  <option value="">Select chemical…</option>
+                  {(products.chemicals||[]).length>0&&<optgroup label="── My Products ──">{(products.chemicals||[]).map(ch=><option key={ch.id} value={ch.name}>{ch.name}{ch.type?` (${ch.type})`:""}</option>)}</optgroup>}
+                  <optgroup label="── Common Chemicals ──">{CHEMICALS.map(ch=><option key={ch}>{ch}</option>)}</optgroup>
                 </select>
                 {c.chemical==="Other"&&<input style={{...S.input,marginTop:"6px"}} type="text" placeholder="Chemical name" value={c.chemicalName||""} onChange={e=>upd(c.id,"chemicalName",e.target.value)}/>}
               </div>
@@ -1011,7 +1049,7 @@ function useVoiceInput() {
   return { listening, toggle, stop };
 }
 
-function AddActivityModal({field,onClose,onSave,initial}){
+function AddActivityModal({field,onClose,onSave,initial,products={}}){
   const[type,setType]=useState(initial?.type||"");
   const[date,setDate]=useState(initial?.date||nowLocal());
   const[data,setData]=useState(initial?.data||{});
@@ -1086,8 +1124,8 @@ function AddActivityModal({field,onClose,onSave,initial}){
             ))}
           </div>
         </div>
-        {type==="seeding"  &&<SeedingForm v={data} set={setData}/>}
-        {type==="spraying" &&<SprayingForm v={data} set={setData}/>}
+        {type==="seeding"  &&<SeedingForm v={data} set={setData} products={products}/>}
+        {type==="spraying" &&<SprayingForm v={data} set={setData} products={products}/>}
         {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
         {type==="harvest"  &&<HarvestForm v={data} set={setData}/>}
         {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
@@ -2254,6 +2292,189 @@ function PendingLoadsModal({loads,fields,onImport,onClose}){
 }
 
 // ── Settings Modal ────────────────────────────────────────────────────
+
+// ── Products Library Modal ────────────────────────────────────────────────────
+function ProductsModal({ products, onSave, onClose }) {
+  const [tab, setTab]     = useState("seeds");
+  const [items, setItems] = useState({
+    seeds:       (products?.seeds       || []).map(x=>({...x})),
+    chemicals:   (products?.chemicals   || []).map(x=>({...x})),
+    fertilizers: (products?.fertilizers || []).map(x=>({...x})),
+  });
+
+  const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","g/ac"];
+  const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
+  const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
+
+  const add = (cat, defaults) => setItems(p => ({ ...p, [cat]: [...p[cat], { id: genId(), ...defaults }] }));
+  const upd = (cat, id, k, v) => setItems(p => ({ ...p, [cat]: p[cat].map(x => x.id === id ? { ...x, [k]: v } : x) }));
+  const del = (cat, id)       => setItems(p => ({ ...p, [cat]: p[cat].filter(x => x.id !== id) }));
+
+  const save = () => { onSave(items); onClose(); };
+
+  const TAB_CONFIG = [
+    { id: "seeds",       icon: "🌱", label: "Seeds",       color: "#4A8A4A" },
+    { id: "chemicals",   icon: "💧", label: "Chemicals",   color: "#2563EB" },
+    { id: "fertilizers", icon: "⚗️", label: "Fertilizers", color: "#C07010" },
+  ];
+
+  return (
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:400,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 12px",overflowY:"auto" }}>
+      <div style={{ background:"#FDFAF4",border:`1px solid ${T.borderHi}`,borderRadius:"12px",width:"100%",maxWidth:"580px",padding:"24px",marginTop:"10px" }}>
+
+        {/* Header */}
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"18px" }}>
+          <h2 style={{ fontFamily:"'Playfair Display',serif",fontSize:"20px",color:T.gold,margin:0 }}>📦 Products Library</h2>
+          <button style={{ ...mkBtn("ghost"),padding:"5px 10px" }} onClick={onClose}>✕</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display:"flex",gap:0,marginBottom:"18px",borderBottom:`1px solid ${T.border}` }}>
+          {TAB_CONFIG.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              padding:"9px 18px",border:"none",borderBottom:`2px solid ${tab===t.id?t.color:"transparent"}`,
+              background:"transparent",color:tab===t.id?t.color:T.muted,fontWeight:tab===t.id?700:400,
+              fontSize:"13px",cursor:"pointer",fontFamily:"inherit",marginBottom:"-1px",
+            }}>{t.icon} {t.label} ({items[t.id].length})</button>
+          ))}
+        </div>
+
+        {/* ── Seeds Tab ── */}
+        {tab === "seeds" && (
+          <div>
+            {items.seeds.length === 0 && (
+              <div style={{ textAlign:"center",padding:"20px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px",marginBottom:"12px" }}>
+                No seeds saved yet. Add your varieties below.
+              </div>
+            )}
+            {items.seeds.map((s, i) => (
+              <div key={s.id} style={{ background:"#F0F7F0",border:"1px solid #A8CCA8",borderRadius:"7px",padding:"10px",marginBottom:"8px" }}>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 90px 90px 32px",gap:"6px",alignItems:"flex-end" }}>
+                  <div>
+                    {i===0&&<label style={S.label}>Variety / Brand</label>}
+                    <input style={S.input} placeholder="e.g. AC Carberry" value={s.name||""} onChange={e=>upd("seeds",s.id,"name",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Crop Type</label>}
+                    <select style={S.input} value={s.cropType||""} onChange={e=>upd("seeds",s.id,"cropType",e.target.value)}>
+                      <option value="">Select crop…</option>
+                      {CROPS.map(c=><option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Rate</label>}
+                    <input style={S.input} type="number" step="0.5" placeholder="e.g. 90" value={s.defaultRate||""} onChange={e=>upd("seeds",s.id,"defaultRate",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Unit</label>}
+                    <select style={S.input} value={s.unit||"lbs/ac"} onChange={e=>upd("seeds",s.id,"unit",e.target.value)}>
+                      {["lbs/ac","kg/ac","seeds/ac","bu/ac"].map(u=><option key={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={()=>del("seeds",s.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>✕</button>
+                </div>
+              </div>
+            ))}
+            <button onClick={()=>add("seeds",{name:"",cropType:"",defaultRate:"",unit:"lbs/ac"})}
+              style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#A8CCA8",color:"#2A6A28",fontSize:"12px" }}>
+              + Add Seed Variety
+            </button>
+          </div>
+        )}
+
+        {/* ── Chemicals Tab ── */}
+        {tab === "chemicals" && (
+          <div>
+            {items.chemicals.length === 0 && (
+              <div style={{ textAlign:"center",padding:"20px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px",marginBottom:"12px" }}>
+                No chemicals saved yet. Add your products below.
+              </div>
+            )}
+            {items.chemicals.map((c, i) => (
+              <div key={c.id} style={{ background:"#EEF3FC",border:"1px solid #A8C0E8",borderRadius:"7px",padding:"10px",marginBottom:"8px" }}>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 120px 80px 90px 32px",gap:"6px",alignItems:"flex-end" }}>
+                  <div>
+                    {i===0&&<label style={S.label}>Product Name</label>}
+                    <input style={S.input} placeholder="e.g. Roundup WeatherMax" value={c.name||""} onChange={e=>upd("chemicals",c.id,"name",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Type</label>}
+                    <select style={S.input} value={c.type||""} onChange={e=>upd("chemicals",c.id,"type",e.target.value)}>
+                      <option value="">Type…</option>
+                      {CHEM_TYPES.map(t=><option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Rate</label>}
+                    <input style={S.input} type="number" step="0.1" placeholder="e.g. 1.2" value={c.defaultRate||""} onChange={e=>upd("chemicals",c.id,"defaultRate",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Unit</label>}
+                    <select style={S.input} value={c.unit||"L/ac"} onChange={e=>upd("chemicals",c.id,"unit",e.target.value)}>
+                      {UNITS_CHEM.map(u=><option key={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={()=>del("chemicals",c.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>✕</button>
+                </div>
+              </div>
+            ))}
+            <button onClick={()=>add("chemicals",{name:"",type:"",defaultRate:"",unit:"L/ac"})}
+              style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#A8C0E8",color:"#2563EB",fontSize:"12px" }}>
+              + Add Chemical
+            </button>
+          </div>
+        )}
+
+        {/* ── Fertilizers Tab ── */}
+        {tab === "fertilizers" && (
+          <div>
+            {items.fertilizers.length === 0 && (
+              <div style={{ textAlign:"center",padding:"20px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px",marginBottom:"12px" }}>
+                No fertilizers saved yet. Add your products below.
+              </div>
+            )}
+            {items.fertilizers.map((f, i) => (
+              <div key={f.id} style={{ background:"#FBF6EC",border:"1px solid #D8C090",borderRadius:"7px",padding:"10px",marginBottom:"8px" }}>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 100px 80px 90px 32px",gap:"6px",alignItems:"flex-end" }}>
+                  <div>
+                    {i===0&&<label style={S.label}>Product Name</label>}
+                    <input style={S.input} placeholder="e.g. Urea, CAN-17, ESN" value={f.name||""} onChange={e=>upd("fertilizers",f.id,"name",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Analysis</label>}
+                    <input style={S.input} placeholder="e.g. 46-0-0" value={f.analysis||""} onChange={e=>upd("fertilizers",f.id,"analysis",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Rate</label>}
+                    <input style={S.input} type="number" step="0.5" placeholder="e.g. 80" value={f.defaultRate||""} onChange={e=>upd("fertilizers",f.id,"defaultRate",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Unit</label>}
+                    <select style={S.input} value={f.unit||"lbs/ac"} onChange={e=>upd("fertilizers",f.id,"unit",e.target.value)}>
+                      {UNITS_FERT.map(u=><option key={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={()=>del("fertilizers",f.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>✕</button>
+                </div>
+              </div>
+            ))}
+            <button onClick={()=>add("fertilizers",{name:"",analysis:"",defaultRate:"",unit:"lbs/ac"})}
+              style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#D8C090",color:"#7A6020",fontSize:"12px" }}>
+              + Add Fertilizer
+            </button>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"20px",paddingTop:"16px",borderTop:`1px solid ${T.border}` }}>
+          <button style={mkBtn("ghost")} onClick={onClose}>Cancel</button>
+          <button style={mkBtn("primary", T.brand)} onClick={save}>💾 Save Products</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsModal({settings,onSave,onClose,onBulkImport,bulkLoading}){
   const[s,setS]=useState(settings);
   const upd=(k,v)=>setS(p=>({...p,[k]:v}));
@@ -2415,6 +2636,13 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const[view,setView]      =useState("home");
   const[fields,setFields]  =useState([]);
   const[showSettings,setShowSettings]=useState(false);
+  const[showProducts,setShowProducts]=useState(false);
+  const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[]});
+
+  const saveProducts = async (newProds) => {
+    setProducts(newProds);
+    try { await dbWrite(`${BASE}/products`, newProds, token); } catch(e) { console.warn("Products save failed",e); }
+  };
   const[settings,setSettings]=useState({
     agriScaleEnabled:false, agriScaleUrl:"", agriScaleMode:"manual",
     agriScaleMatch:"name", showAcres:true, showLegal:true,
@@ -2457,6 +2685,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       setFields(obj2arr(data.fields||{}));
       setActs(obj2arr(data.activities||{}));
       if(data.settings) setSettings(s=>({...s,...data.settings}));
+      if(data.products) setProducts(p=>({...p,...data.products}));
     });
   },[loading,tenantId,token]);
 
@@ -2689,6 +2918,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
           {syncDot.label&&<span style={{fontSize:"11px",color:sync==="error"?T.danger:sync==="saved"?T.green:T.muted}}>{syncDot.label}</span>}
           <div style={{width:"8px",height:"8px",borderRadius:"50%",background:syncDot.bg,flexShrink:0}}/>
           {sync==="error"&&<span style={{fontSize:"10px",color:"#841A18",background:"#FDF0EE",border:"1px solid #E0A0A0",borderRadius:"4px",padding:"2px 6px"}}>Save error</span>}
+          <button style={{...mkBtn("ghost"),padding:"5px 9px",fontSize:"13px",lineHeight:1}} onClick={()=>setShowProducts(true)} title="Products Library">📦</button>
           <button style={{...mkBtn("ghost"),padding:"5px 9px",fontSize:"16px",lineHeight:1}} onClick={()=>setShowSettings(true)} title="Settings">⚙️</button>
         </div>
         {view!=="home"&&<button style={{...mkBtn("ghost"),padding:"5px 12px",fontSize:"12px"}} onClick={()=>setView("home")}>Home</button>}
@@ -2705,6 +2935,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       {showAdd&&curField&&<AddActivityModal field={curField} onClose={()=>setShowAdd(false)} onSave={addActivity}/>}
       {showImport&&<ImportFieldsModal onClose={()=>setShowImport(false)} onImport={importFields}/>}
       {showSettings&&<SettingsModal settings={settings} onSave={setSettings} onClose={()=>setShowSettings(false)} onBulkImport={bulkImportAgriScale} bulkLoading={bulkLoading}/>}
+      {showProducts&&<ProductsModal products={products} onSave={saveProducts} onClose={()=>setShowProducts(false)}/>}
       {showPending&&<PendingLoadsModal
         loads={pendingLoads} fields={fields}
         onClose={()=>setShowPending(false)}
