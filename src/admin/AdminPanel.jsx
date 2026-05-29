@@ -42,7 +42,7 @@ function InvoiceBuilder({ client,setClient,sel,setSel,extras,setExtras,date,setD
     w.document.write(`<!DOCTYPE html><html><head><title>Invoice ${invNum}</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Barlow,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.ih{background:#1A3A1A;padding:32px 44px 26px}.ib{padding:28px 44px}.if{background:#E8DEC8;padding:14px 44px;border-top:1px solid #D0C0A0}
+.ih{background:#1A3A1A;padding:24px 32px 20px}.ib{padding:22px 32px}.if{background:#E8DEC8;padding:12px 32px;border-top:1px solid #D0C0A0}
 table{width:100%;border-collapse:collapse}th{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7A6A58;padding:8px 0;border-bottom:1px solid #D8C8A8;text-align:left;font-weight:600}
 td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;vertical-align:top}.tar{text-align:right}.sm{font-size:12px;color:#7A6A58}
 </style></head><body>${el.innerHTML}</body></html>`);
@@ -110,7 +110,7 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
       <div id="al-inv-preview" style={{ background:IC.cream, borderRadius:8, boxShadow:"0 4px 20px rgba(0,0,0,.1)", overflow:"hidden" }}>
         <style>{`.al-ib table{width:100%;border-collapse:collapse}.al-ib th{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7A6A58;padding:8px 0;border-bottom:1px solid #D8C8A8;text-align:left;font-weight:600}.al-ib td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;vertical-align:top}`}</style>
         {/* Header */}
-        <div className="ih" style={{ background:IC.green, padding:"32px 44px 26px" }}>
+        <div className="ih" style={{ background:IC.green, padding:"24px 32px 20px" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
             <div>
               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:26, color:"#F4EFE6", fontWeight:700 }}>Agri<span style={{ color:IC.amber }}>Logix</span></div>
@@ -125,7 +125,7 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
           </div>
         </div>
         {/* Body */}
-        <div className="al-ib" style={{ padding:"28px 44px" }}>
+        <div className="al-ib" style={{ padding:"22px 32px" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:20 }}>
             <div>
               <div style={{ fontSize:10, color:IC.muted, textTransform:"uppercase", letterSpacing:".14em", marginBottom:7, fontWeight:600 }}>Bill To</div>
@@ -197,7 +197,7 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
           </div>}
         </div>
         {/* Footer */}
-        <div className="if" style={{ background:IC.light, padding:"14px 44px", borderTop:`1px solid ${IC.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div className="if" style={{ background:IC.light, padding:"12px 32px", borderTop:`1px solid ${IC.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div style={{ fontSize:11, color:IC.muted }}>Agri Logix Solutions · Built for the Hi-Line</div>
           <div style={{ fontSize:11, color:IC.amber, fontWeight:600 }}>{invNum}</div>
         </div>
