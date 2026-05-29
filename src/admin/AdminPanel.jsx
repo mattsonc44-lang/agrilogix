@@ -6,6 +6,206 @@ import { genId, slugify } from "../core/helpers.js";
 import { obj2arr } from "../core/helpers.js";
 import InviteModal from "./InviteModal.jsx";
 
+
+// ── Invoice helpers ────────────────────────────────────────────────
+const _pad = n => String(n).padStart(2,"0");
+const invToday = () => { const d=new Date(); return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`; };
+const invAddDays = (s,n) => { const d=new Date(s); d.setDate(d.getDate()+n); return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`; };
+const invFmtDate = s => { const [y,m,d]=s.split("-"); return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]} ${+d}, ${y}`; };
+const invMoney = n => "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+const invNextNum = () => `AL-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`;
+const INV_MODS = [
+  { id:"agrilog",     name:"AgriLog",     desc:"Field activity tracking & mapping",  price:150 },
+  { id:"agriscale",   name:"AgriScale",   desc:"Grain cart & harvest management",     price:150 },
+  { id:"agriservice", name:"AgriService", desc:"Fleet & equipment maintenance",       price:150 },
+];
+
+function InvoiceBuilder({ client,setClient,sel,setSel,extras,setExtras,date,setDate,due,setDue,notes,setNotes,invNum }) {
+  const toggleMod = id => setSel(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+  const allThree = INV_MODS.every(m=>sel.has(m.id));
+  const setBundle = () => setSel(allThree ? new Set() : new Set(INV_MODS.map(m=>m.id)));
+  const addExtra = () => setExtras(e=>[...e,{id:Date.now(),desc:"",qty:1,price:""}]);
+  const updExtra = (id,k,v) => setExtras(e=>e.map(x=>x.id===id?{...x,[k]:v}:x));
+  const delExtra = id => setExtras(e=>e.filter(x=>x.id!==id));
+  const modTotal = allThree ? 360 : [...sel].reduce((s,id)=>s+(INV_MODS.find(m=>m.id===id)?.price||0),0);
+  const extTotal = extras.reduce((s,l)=>s+(+l.price||0)*(+l.qty||0),0);
+  const total = modTotal + extTotal;
+  const saving = allThree ? 90 : 0;
+
+  const IC = { green:"#1A3A1A", amber:"#C07010", cream:"#FDFAF4", border:"#D8C8A8", muted:"#7A6A58", light:"#E8DEC8" };
+  const iInp = { width:"100%", padding:"8px 10px", border:`1px solid ${IC.border}`, borderRadius:5, fontSize:13, background:"#F8F4EE", color:"#2A1A0A", marginBottom:7, outline:"none", fontFamily:"inherit" };
+
+  const print = () => {
+    const el = document.getElementById("al-inv-preview");
+    if(!el) return;
+    const w = window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Invoice ${invNum}</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Barlow,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.ih{background:#1A3A1A;padding:32px 44px 26px}.ib{padding:28px 44px}.if{background:#E8DEC8;padding:14px 44px;border-top:1px solid #D0C0A0}
+table{width:100%;border-collapse:collapse}th{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7A6A58;padding:8px 0;border-bottom:1px solid #D8C8A8;text-align:left;font-weight:600}
+td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;vertical-align:top}.tar{text-align:right}.sm{font-size:12px;color:#7A6A58}
+</style></head><body>${el.innerHTML}</body></html>`);
+    w.document.close(); setTimeout(()=>w.print(),400);
+  };
+
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"290px 1fr", gap:18, alignItems:"start" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Barlow:wght@300;400;600&display=swap');`}</style>
+
+      {/* Controls */}
+      <div>
+        {/* Bill To */}
+        <div style={{ background:"#FDFAF4", borderRadius:8, padding:14, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,.07)" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:IC.green, letterSpacing:".12em", textTransform:"uppercase", marginBottom:10 }}>Bill To</div>
+          {[["name","Company / Farm Name"],["address","Street Address"],["city","City, State, ZIP"],["email","Email"]].map(([k,ph])=>(
+            <input key={k} placeholder={ph} value={client[k]} onChange={e=>setClient(c=>({...c,[k]:e.target.value}))} style={iInp}/>
+          ))}
+        </div>
+        {/* Modules */}
+        <div style={{ background:"#FDFAF4", borderRadius:8, padding:14, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,.07)" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:IC.green, letterSpacing:".12em", textTransform:"uppercase", marginBottom:10 }}>Modules (USD)</div>
+          <button onClick={setBundle} style={{ width:"100%", padding:"9px 12px", marginBottom:8, borderRadius:6, border:`2px solid ${allThree?"#4A8A4A":IC.border}`, background:allThree?"#EBF5EB":"#F4EFE6", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"inherit" }}>
+            <div style={{ textAlign:"left" }}>
+              <div style={{ fontWeight:700, fontSize:12, color:allThree?"#2A6A2A":"#3A2A1A" }}>Full Bundle — All 3</div>
+              <div style={{ fontSize:11, color:allThree?"#4A8A4A":IC.muted }}>Save $90 vs individual</div>
+            </div>
+            <div style={{ fontWeight:700, color:allThree?"#2A6A2A":IC.amber }}>$360/yr</div>
+          </button>
+          {INV_MODS.map(m=>(
+            <label key={m.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 9px", borderRadius:5, border:`1px solid ${sel.has(m.id)?"#A8CCA8":IC.border}`, background:sel.has(m.id)?"#F0F7F0":"transparent", marginBottom:5, cursor:"pointer" }}>
+              <input type="checkbox" checked={sel.has(m.id)} onChange={()=>toggleMod(m.id)} style={{ accentColor:"#4A8A4A" }}/>
+              <div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:12 }}>{m.name}</div><div style={{ fontSize:11, color:IC.muted }}>{m.desc}</div></div>
+              <div style={{ fontWeight:700, fontSize:12, color:IC.amber }}>${m.price}/yr</div>
+            </label>
+          ))}
+        </div>
+        {/* Custom lines */}
+        <div style={{ background:"#FDFAF4", borderRadius:8, padding:14, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,.07)" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:IC.green, letterSpacing:".12em", textTransform:"uppercase", marginBottom:10 }}>Custom Lines</div>
+          {extras.map(l=>(
+            <div key={l.id} style={{ display:"grid", gridTemplateColumns:"1fr 42px 64px 22px", gap:4, marginBottom:5 }}>
+              <input placeholder="Description" value={l.desc} onChange={e=>updExtra(l.id,"desc",e.target.value)} style={{...iInp,marginBottom:0}}/>
+              <input type="number" placeholder="Qty" value={l.qty} onChange={e=>updExtra(l.id,"qty",e.target.value)} style={{...iInp,marginBottom:0,textAlign:"center"}}/>
+              <input type="number" placeholder="$" value={l.price} onChange={e=>updExtra(l.id,"price",e.target.value)} style={{...iInp,marginBottom:0,textAlign:"right"}}/>
+              <button onClick={()=>delExtra(l.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#C05050", fontSize:15 }}>✕</button>
+            </div>
+          ))}
+          <button onClick={addExtra} style={{ background:"none", border:`1px dashed ${IC.border}`, borderRadius:4, padding:"5px 10px", color:IC.muted, fontSize:11, cursor:"pointer", width:"100%", fontFamily:"inherit" }}>+ Add line</button>
+        </div>
+        {/* Dates */}
+        <div style={{ background:"#FDFAF4", borderRadius:8, padding:14, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,.07)" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:IC.green, letterSpacing:".12em", textTransform:"uppercase", marginBottom:10 }}>Details</div>
+          <label style={{ fontSize:11, color:IC.muted, display:"block", marginBottom:3 }}>Invoice Date</label>
+          <input type="date" value={date} onChange={e=>{setDate(e.target.value);setDue(invAddDays(e.target.value,30));}} style={iInp}/>
+          <label style={{ fontSize:11, color:IC.muted, display:"block", marginBottom:3 }}>Due Date</label>
+          <input type="date" value={due} onChange={e=>setDue(e.target.value)} style={iInp}/>
+          <label style={{ fontSize:11, color:IC.muted, display:"block", marginBottom:3 }}>Notes</label>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} style={{...iInp,resize:"vertical"}}/>
+        </div>
+        <button onClick={print} style={{ width:"100%", background:IC.amber, color:"#fff", border:"none", borderRadius:6, padding:"11px", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:"inherit", letterSpacing:".04em" }}>🖨 Print / Save PDF</button>
+      </div>
+
+      {/* Preview */}
+      <div id="al-inv-preview" style={{ background:IC.cream, borderRadius:8, boxShadow:"0 4px 20px rgba(0,0,0,.1)", overflow:"hidden" }}>
+        <style>{`.al-ib table{width:100%;border-collapse:collapse}.al-ib th{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#7A6A58;padding:8px 0;border-bottom:1px solid #D8C8A8;text-align:left;font-weight:600}.al-ib td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;vertical-align:top}`}</style>
+        {/* Header */}
+        <div className="ih" style={{ background:IC.green, padding:"32px 44px 26px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:26, color:"#F4EFE6", fontWeight:700 }}>Agri<span style={{ color:IC.amber }}>Logix</span></div>
+              <div style={{ fontSize:10, color:"rgba(244,239,230,0.45)", letterSpacing:".18em", textTransform:"uppercase", marginTop:4 }}>Solutions</div>
+              <div style={{ marginTop:12, fontSize:11, color:"rgba(244,239,230,0.55)", lineHeight:1.9 }}>agrilogixsolutions.com<br/>info@agrilogixsolutions.com</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:30, color:"#F4EFE6", fontWeight:400, letterSpacing:".06em" }}>INVOICE</div>
+              <div style={{ color:IC.amber, fontWeight:600, fontSize:13, marginTop:5 }}>{invNum}</div>
+              <div style={{ fontSize:11, color:"rgba(244,239,230,0.5)", marginTop:8, lineHeight:1.9 }}>Issued: {invFmtDate(date)}<br/>Due: {invFmtDate(due)}</div>
+            </div>
+          </div>
+        </div>
+        {/* Body */}
+        <div className="al-ib" style={{ padding:"28px 44px" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:20 }}>
+            <div>
+              <div style={{ fontSize:10, color:IC.muted, textTransform:"uppercase", letterSpacing:".14em", marginBottom:7, fontWeight:600 }}>Bill To</div>
+              {client.name
+                ? <><div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:IC.green, fontWeight:700 }}>{client.name}</div>
+                   {client.address && <div style={{ fontSize:13, color:IC.muted, marginTop:2 }}>{client.address}</div>}
+                   {client.city    && <div style={{ fontSize:13, color:IC.muted }}>{client.city}</div>}
+                   {client.email   && <div style={{ fontSize:12, color:IC.amber, marginTop:3 }}>{client.email}</div>}</>
+                : <div style={{ fontSize:13, color:"#C8B898", fontStyle:"italic" }}>Enter client info →</div>
+              }
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:10, color:IC.muted, textTransform:"uppercase", letterSpacing:".14em", marginBottom:7, fontWeight:600 }}>Terms</div>
+              <div style={{ fontSize:12, color:IC.muted, lineHeight:1.7 }}>Annual subscription<br/>All prices in USD</div>
+            </div>
+          </div>
+          <hr style={{ border:"none", borderTop:`1px solid ${IC.border}`, margin:"0 0 18px" }}/>
+          <table>
+            <thead>
+              <tr>{["Description","Qty","Unit Price","Amount"].map((h,i)=>(
+                <th key={h} style={{ textAlign:i>1?"right":"left", paddingRight:i===2?16:0 }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {allThree
+                ? <tr>
+                    <td><div style={{ fontWeight:600 }}>Agri Logix — Full Suite Bundle</div><div style={{ fontSize:12, color:IC.muted }}>AgriLog · AgriScale · AgriService — Annual</div></td>
+                    <td style={{ textAlign:"center" }}>1</td>
+                    <td style={{ textAlign:"right", paddingRight:16 }}>{invMoney(360)}</td>
+                    <td style={{ textAlign:"right", fontWeight:600 }}>{invMoney(360)}</td>
+                  </tr>
+                : [...sel].map(id=>{const m=INV_MODS.find(x=>x.id===id);return m?(
+                    <tr key={id}>
+                      <td><div style={{ fontWeight:600 }}>Agri Logix — {m.name}</div><div style={{ fontSize:12, color:IC.muted }}>{m.desc} — Annual</div></td>
+                      <td style={{ textAlign:"center" }}>1</td>
+                      <td style={{ textAlign:"right", paddingRight:16 }}>{invMoney(m.price)}</td>
+                      <td style={{ textAlign:"right", fontWeight:600 }}>{invMoney(m.price)}</td>
+                    </tr>
+                  ):null;})
+              }
+              {extras.filter(l=>l.desc).map(l=>(
+                <tr key={l.id}>
+                  <td style={{ fontWeight:600 }}>{l.desc}</td>
+                  <td style={{ textAlign:"center" }}>{l.qty}</td>
+                  <td style={{ textAlign:"right", paddingRight:16 }}>{invMoney(+l.price||0)}</td>
+                  <td style={{ textAlign:"right", fontWeight:600 }}>{invMoney((+l.price||0)*(+l.qty||1))}</td>
+                </tr>
+              ))}
+              {sel.size===0&&extras.length===0&&<tr><td colSpan={4} style={{ textAlign:"center", color:"#C8B898", fontStyle:"italic", padding:"24px 0" }}>Select modules to add line items</td></tr>}
+            </tbody>
+          </table>
+          {(sel.size>0||extras.length>0)&&(
+            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
+              <table style={{ borderCollapse:"collapse" }}>
+                <tbody>
+                  {saving>0&&<tr><td style={{ padding:"4px 24px 4px 0", fontSize:12, color:IC.muted }}>Bundle savings</td><td style={{ fontSize:12, color:"#4A8A4A", textAlign:"right", fontWeight:600 }}>−{invMoney(saving)}</td></tr>}
+                  <tr><td style={{ padding:"6px 24px 6px 0", fontSize:13, color:IC.muted }}>Subtotal</td><td style={{ fontSize:13, textAlign:"right" }}>{invMoney(total)}</td></tr>
+                  <tr>
+                    <td style={{ padding:"10px 24px 0 0", fontSize:15, color:IC.green, fontWeight:700, borderTop:`2px solid ${IC.green}` }}>TOTAL DUE</td>
+                    <td style={{ fontSize:20, color:IC.amber, fontWeight:700, textAlign:"right", borderTop:`2px solid ${IC.green}`, paddingTop:10 }}>{invMoney(total)} USD</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          {notes&&<div style={{ marginTop:24, background:"#F0EBE0", borderRadius:6, padding:"12px 16px", borderLeft:`3px solid ${IC.amber}` }}>
+            <div style={{ fontSize:10, color:IC.muted, textTransform:"uppercase", letterSpacing:".12em", marginBottom:4, fontWeight:600 }}>Notes</div>
+            <div style={{ fontSize:13, color:IC.muted, lineHeight:1.7 }}>{notes}</div>
+          </div>}
+        </div>
+        {/* Footer */}
+        <div className="if" style={{ background:IC.light, padding:"14px 44px", borderTop:`1px solid ${IC.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:11, color:IC.muted }}>Agri Logix Solutions · Built for the Hi-Line</div>
+          <div style={{ fontSize:11, color:IC.amber, fontWeight:600 }}>{invNum}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ROLE_COLOR = { owner:"#C07010", manager:"#2563EB", operator:"#16A34A" };
 
 export default function AdminPanel({ user, token, onBack }) {
@@ -23,6 +223,14 @@ export default function AdminPanel({ user, token, onBack }) {
   const [newModules,   setNewModules]   = useState({fieldlog:true,agriScale:false,serviceLog:false});
   const [newPlan,      setNewPlan]      = useState("trial");
   const [saving,       setSaving]       = useState(false);
+  const [adminTab,     setAdminTab]     = useState("orgs");
+  const [invClient,  setInvClient]  = useState({name:"",address:"",city:"",email:""});
+  const [invSel,     setInvSel]     = useState(new Set());
+  const [invExtras,  setInvExtras]  = useState([]);
+  const [invDate,    setInvDate]    = useState(invToday());
+  const [invDue,     setInvDue]     = useState(invAddDays(invToday(),30));
+  const [invNotes,   setInvNotes]   = useState("Payment due within 30 days. Thank you for your business!");
+  const [invNum]                    = useState(invNextNum());
 
   useEffect(() => {
     dbRead("tenants", token)
@@ -179,7 +387,14 @@ export default function AdminPanel({ user, token, onBack }) {
         </div>
       </div>
 
-      <div style={S.content}>
+      <div style={{ background:"#F0EBE0", borderBottom:`1px solid ${T.border}`, padding:"0 20px", display:"flex" }}>
+        {[["orgs","🏢 Organizations"],["invoice","🧾 Invoice"]].map(([id,lbl])=>(
+          <button key={id} onClick={()=>setAdminTab(id)} style={{ padding:"11px 18px", border:"none", borderBottom:`2px solid ${adminTab===id?T.brand:"transparent"}`, background:"transparent", color:adminTab===id?T.brand:T.muted, fontWeight:adminTab===id?700:400, fontSize:"13px", cursor:"pointer", transition:"all .15s", fontFamily:"inherit" }}>{lbl}</button>
+        ))}
+      </div>
+      {adminTab==="invoice"
+        ? <div style={S.content}><InvoiceBuilder client={invClient} setClient={setInvClient} sel={invSel} setSel={setInvSel} extras={invExtras} setExtras={setInvExtras} date={invDate} setDate={setInvDate} due={invDue} setDue={setInvDue} notes={invNotes} setNotes={setInvNotes} invNum={invNum}/></div>
+        : <div style={S.content}>
         {/* Stats */}
         <div style={{ display:"flex", gap:"12px", marginBottom:"20px", flexWrap:"wrap" }}>
           {[
@@ -403,6 +618,7 @@ export default function AdminPanel({ user, token, onBack }) {
         })}
       </div>
 
+      </div>}{/* end orgs tab */}
       {inviteTarget && (
         <InviteModal
           tenantId={inviteTarget.tenantId}
