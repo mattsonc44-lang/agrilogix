@@ -2658,12 +2658,12 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const skipSSE=useRef(false);
 
   const syncDot = {
-    idle:    {bg:"#D8CEBC",label:""},
-    saving:  {bg:"#C07010",label:"Saving…"},
-    saved:   {bg:"#2A5E2A",label:"Saved"},
-    error:   {bg:"#841A18",label:"Save error"},
-    offline: {bg:"#888",   label:"Offline"},
-  }[sync];
+    idle:    {bg:"#D8CEBC", label:""},
+    saving:  {bg:"#C07010", label:"Saving…"},
+    saved:   {bg:"#2A5E2A", label:"Saved"},
+    error:   {bg:"#841A18", label:"Save error — will retry"},
+    offline: {bg:"#E08030", label:"Offline — cached data"},
+  }[sync] || {bg:"#D8CEBC", label:""};
 
   // ── Load on mount ─────────────────────────────────────────
   useEffect(()=>{
@@ -2682,10 +2682,13 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     if(loading||!tenantId) return;
     return dbListen(BASE, token, ({data})=>{
       if(skipSSE.current||!data) return;
-      setFields(obj2arr(data.fields||{}));
-      setActs(obj2arr(data.activities||{}));
+      const f2 = obj2arr(data.fields||{});
+      const a2 = obj2arr(data.activities||{});
+      setFields(f2);
+      setActs(a2);
       if(data.settings) setSettings(s=>({...s,...data.settings}));
       if(data.products) setProducts(p=>({...p,...data.products}));
+      flSaveCache(f2, a2, data.products||{}, data.settings||{});
     });
   },[loading,tenantId,token]);
 
@@ -2693,10 +2696,20 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   useEffect(()=>{
     const retry=async()=>{
       const q=flLoadQ();
-      if(!q||!tenantId) return;
+      if(!tenantId) return;
       setSync("saving");
       try{
-        await dbSafeWrite(BASE,q.data,token);
+        if(q) await dbSafeWrite(BASE,q.data,token);
+        // Re-fetch fresh data from Firebase after reconnecting
+        const fresh = await dbRead(BASE, token);
+        if(fresh){
+          const f3=obj2arr(fresh.fields||{});
+          const a3=obj2arr(fresh.activities||{});
+          setFields(f3); setActs(a3);
+          if(fresh.settings) setSettings(s=>({...s,...fresh.settings}));
+          if(fresh.products) setProducts(p=>({...p,...fresh.products}));
+          flSaveCache(f3,a3,fresh.products||{},fresh.settings||{});
+        }
         flClearQ();
         setSync("saved");
       }catch{
@@ -2709,7 +2722,21 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     // Do NOT call retry() on mount
     return ()=>window.removeEventListener("online",retry);
   },[tenantId,token]);
-  const FL_QUEUE_KEY = `fl_queue_${tenantId}_${farmId||"default"}`;
+  const FL_QUEUE_KEY  = `fl_queue_${tenantId}_${farmId||"default"}`;
+  const FL_CACHE_KEY  = `fl_cache_${tenantId}_${farmId||"default"}`;
+
+  const flSaveCache = (fields, acts, prods, sett) => {
+    try {
+      localStorage.setItem(FL_CACHE_KEY, JSON.stringify({
+        fields, activities: acts, products: prods, settings: sett,
+        _cachedAt: Date.now(),
+      }));
+    } catch(e) {}
+  };
+  const flLoadCache = () => {
+    try { const r = localStorage.getItem(FL_CACHE_KEY); return r ? JSON.parse(r) : null; }
+    catch(e) { return null; }
+  };
   const flSaveQ  = d=>{ try{ localStorage.setItem(FL_QUEUE_KEY,JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
   const flClearQ = ()=>{ try{ localStorage.removeItem(FL_QUEUE_KEY); }catch(e){} };
   const flLoadQ  = ()=>{ try{ const r=localStorage.getItem(FL_QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
@@ -2725,6 +2752,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     try{
       await dbSafeWrite(BASE, payload, token);
       flClearQ();
+      flSaveCache(newFields, newActs, products, settings);
       setSync("saved");
     }catch{
       setSync("error");
@@ -2915,7 +2943,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         </div>
         {/* Sync indicator + settings */}
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:"8px"}}>
-          {syncDot.label&&<span style={{fontSize:"11px",color:sync==="error"?T.danger:sync==="saved"?T.green:T.muted}}>{syncDot.label}</span>}
+          {syncDot.label&&<span style={{fontSize:"11px",color:sync==="error"?T.danger:sync==="saved"?T.green:sync==="offline"?"#E08030":T.muted}}>{syncDot.label}</span>}
           <div style={{width:"8px",height:"8px",borderRadius:"50%",background:syncDot.bg,flexShrink:0}}/>
           {sync==="error"&&<span style={{fontSize:"10px",color:"#841A18",background:"#FDF0EE",border:"1px solid #E0A0A0",borderRadius:"4px",padding:"2px 6px"}}>Save error</span>}
           <button style={{...mkBtn("ghost"),padding:"5px 9px",fontSize:"13px",lineHeight:1}} onClick={()=>setShowProducts(true)} title="Products Library">📦</button>
@@ -2924,6 +2952,12 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         {view!=="home"&&<button style={{...mkBtn("ghost"),padding:"5px 12px",fontSize:"12px"}} onClick={()=>setView("home")}>Home</button>}
       </div>
 
+      {sync==="offline"&&(
+        <div style={{background:"#FFF3E0",borderBottom:"2px solid #E08030",padding:"10px 20px",display:"flex",alignItems:"center",gap:"10px",fontSize:"12px",color:"#7A4010"}}>
+          <span style={{fontSize:"16px"}}>📵</span>
+          <div><strong>Offline mode</strong> — showing cached data. Any new activities will sync automatically when connection returns.</div>
+        </div>
+      )}
       <div style={S.content}>
         {view==="home"        &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)}/>}
         {view==="reports"     &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId}/>}
