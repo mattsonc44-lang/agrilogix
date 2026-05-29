@@ -51,7 +51,7 @@ exports.handler = async (event) => {
     </div>
     <div style="background:#E8E0D0;padding:18px 36px;border-top:1px solid #D8CEC0;">
       <p style="font-size:11px;color:#9A8A78;margin:0;text-align:center;">
-        Agri Logix Solutions · Built for the Hi-Line<br>
+        1836 Laird Rd, Chester, MT 59522<br/>Agri Logix Solutions · Built for the Hi-Line<br>
         <a href="https://agrilogixsolutions.com" style="color:#C07010;text-decoration:none;">agrilogixsolutions.com</a>
       </p>
     </div>

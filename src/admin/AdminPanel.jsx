@@ -115,7 +115,7 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
             <div>
               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:26, color:"#F4EFE6", fontWeight:700 }}>Agri<span style={{ color:IC.amber }}>Logix</span></div>
               <div style={{ fontSize:10, color:"rgba(244,239,230,0.45)", letterSpacing:".18em", textTransform:"uppercase", marginTop:4 }}>Solutions</div>
-              <div style={{ marginTop:12, fontSize:11, color:"rgba(244,239,230,0.55)", lineHeight:1.9 }}>agrilogixsolutions.com<br/>info@agrilogixsolutions.com</div>
+              <div style={{ marginTop:12, fontSize:11, color:"rgba(244,239,230,0.55)", lineHeight:1.9 }}>1836 Laird Rd, Chester, MT 59522<br/>agrilogixsolutions.com<br/>info@agrilogixsolutions.com</div>
             </div>
             <div style={{ textAlign:"right" }}>
               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:30, color:"#F4EFE6", fontWeight:400, letterSpacing:".06em" }}>INVOICE</div>
