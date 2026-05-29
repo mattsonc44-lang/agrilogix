@@ -9,7 +9,7 @@ export const ANTHROPIC_KEY = (typeof window !== "undefined" && window.__ANTHROPI
 export const MODULES = {
   fieldlog: {
     id:    "fieldlog",
-    label: "AgriLog",
+    label: "AgriField",
     icon:  "🌾",
     desc:  "Field activity tracking — seeding, spraying, scouting, harvest",
     price: 150,

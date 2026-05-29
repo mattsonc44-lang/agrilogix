@@ -287,7 +287,7 @@ export default function AuthScreen({ onAuth }) {
             <div>
               <div className="land-hero-eyebrow">Farm Management Platform</div>
               <h1 className="land-hero-h1">Your whole operation,<br/><em>one platform.</em></h1>
-              <p className="land-hero-sub">AgriLog, AgriScale, and AgriService — purpose-built for modern farm operations. Pick the module you need, or bundle all three and save 20%.</p>
+              <p className="land-hero-sub">AgriField, AgriScale, and AgriService — purpose-built for modern farm operations. Pick the module you need, or bundle all three and save 20%.</p>
               <div className="land-hero-stats">
                 <div><div className="land-hero-stat-n">3</div><div className="land-hero-stat-l">Modules</div></div>
                 <div><div className="land-hero-stat-n">∞</div><div className="land-hero-stat-l">Fields</div></div>
@@ -313,7 +313,7 @@ export default function AuthScreen({ onAuth }) {
                 <div className="land-mockup-dot" style={{background:"#FF5F57"}}/>
                 <div className="land-mockup-dot" style={{background:"#FFBD2E"}}/>
                 <div className="land-mockup-dot" style={{background:"#28CA42"}}/>
-                <span className="land-mockup-title">AgriLog — North Quarter</span>
+                <span className="land-mockup-title">AgriField — North Quarter</span>
               </div>
               <div className="land-mockup-body">
                 <div className="fl-map">
@@ -328,7 +328,7 @@ export default function AuthScreen({ onAuth }) {
               </div>
             </div>
             <div>
-              <div className="land-module-badge">🌾 AgriLog</div>
+              <div className="land-module-badge">🌾 AgriField</div>
               <h3 className="land-module-h3">Map-based field activity tracking</h3>
               <p className="land-module-desc">Log every activity on every field with GPS boundary mapping, crop rotation tracking, and comprehensive reports — from seeding through harvest.</p>
               <ul className="land-module-features">
@@ -421,7 +421,7 @@ export default function AuthScreen({ onAuth }) {
               {/* FieldLog */}
               <div className="land-price-card">
                 <div className="land-price-icon">🌾</div>
-                <div class="land-price-name">AgriLog</div>
+                <div class="land-price-name">AgriField</div>
                 <div className="land-price-desc">Field activity tracking, GPS boundaries, crop rotation, and harvest reports.</div>
                 <div className="land-price-amount">$150<span>/yr</span></div>
                 <div className="land-price-save">&nbsp;</div>
@@ -473,7 +473,7 @@ export default function AuthScreen({ onAuth }) {
                 <ul className="land-price-features">
                   <li>Everything in all 3 modules</li>
                   <li>Cross-module reporting</li>
-                  <li>AgriScale + AgriLog sync</li>
+                  <li>AgriScale + AgriField sync</li>
                   <li>Unlimited users</li>
                 </ul>
                 <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>

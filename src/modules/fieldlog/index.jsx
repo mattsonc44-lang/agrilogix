@@ -2407,7 +2407,7 @@ function SettingsModal({settings,onSave,onClose,onBulkImport,bulkLoading}){
   );
 }
 
-export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriLogix, farmId }){
+export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriFieldix, farmId }){
   const BASE = (!farmId || farmId === "default")
     ? `tenants/${tenantId}/fieldlog`
     : `tenants/${tenantId}/farms/${farmId}/fieldlog`;

@@ -15,7 +15,7 @@ const invFmtDate = s => { const [y,m,d]=s.split("-"); return `${["Jan","Feb","Ma
 const invMoney = n => "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",");
 const invNextNum = () => `AL-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`;
 const INV_MODS = [
-  { id:"agrilog",     name:"AgriLog",     desc:"Field activity tracking & mapping",  price:150 },
+  { id:"agrilog",     name:"AgriField",     desc:"Field activity tracking & mapping",  price:150 },
   { id:"agriscale",   name:"AgriScale",   desc:"Grain cart & harvest management",     price:150 },
   { id:"agriservice", name:"AgriService", desc:"Fleet & equipment maintenance",       price:150 },
 ];
@@ -152,7 +152,7 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
             <tbody>
               {allThree
                 ? <tr>
-                    <td><div style={{ fontWeight:600 }}>Agri Logix — Full Suite Bundle</div><div style={{ fontSize:12, color:IC.muted }}>AgriLog · AgriScale · AgriService — Annual</div></td>
+                    <td><div style={{ fontWeight:600 }}>Agri Logix — Full Suite Bundle</div><div style={{ fontSize:12, color:IC.muted }}>AgriField · AgriScale · AgriService — Annual</div></td>
                     <td style={{ textAlign:"center" }}>1</td>
                     <td style={{ textAlign:"right", paddingRight:16 }}>{invMoney(360)}</td>
                     <td style={{ textAlign:"right", fontWeight:600 }}>{invMoney(360)}</td>
