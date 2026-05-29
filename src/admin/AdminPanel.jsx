@@ -618,7 +618,7 @@ export default function AdminPanel({ user, token, onBack }) {
         })}
       </div>
 
-      </div>}
+      }
       {inviteTarget && (
         <InviteModal
           tenantId={inviteTarget.tenantId}
