@@ -2670,11 +2670,31 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     if(!tenantId) return;
     dbRead(BASE, token).then(data=>{
       if(data){
-        setFields(obj2arr(data.fields||{}));
-        setActs(obj2arr(data.activities||{}));
-        if(data.settings) setSettings(s=>({...s,...data.settings}));
+        const f = obj2arr(data.fields||{});
+        const a = obj2arr(data.activities||{});
+        const p = data.products || {seeds:[],chemicals:[],fertilizers:[]};
+        const s = data.settings || {};
+        setFields(f); setActs(a);
+        if(data.settings) setSettings(prev=>({...prev,...s}));
+        if(data.products) setProducts(prev=>({...prev,...p}));
+        // Save to local cache for offline use
+        try{ localStorage.setItem(`fl_cache_${tenantId}_${farmId||"default"}`, JSON.stringify({fields:f,activities:a,products:p,settings:s,_at:Date.now()})); }catch(e){}
       }
-    }).catch(()=>setSync("error")).finally(()=>setLoading(false));
+    }).catch(()=>{
+      // Offline — load from local cache
+      try{
+        const raw = localStorage.getItem(`fl_cache_${tenantId}_${farmId||"default"}`);
+        const cached = raw ? JSON.parse(raw) : null;
+        if(cached){
+          const f = Array.isArray(cached.fields)     ? cached.fields     : obj2arr(cached.fields||{});
+          const a = Array.isArray(cached.activities)  ? cached.activities : obj2arr(cached.activities||{});
+          setFields(f); setActs(a);
+          if(cached.products) setProducts(p=>({...p,...cached.products}));
+          if(cached.settings) setSettings(s=>({...s,...cached.settings}));
+          setSync("offline");
+        } else { setSync("error"); }
+      }catch(e){ setSync("error"); }
+    }).finally(()=>setLoading(false));
   },[tenantId,token]);
 
   // ── Real-time listener ────────────────────────────────────
