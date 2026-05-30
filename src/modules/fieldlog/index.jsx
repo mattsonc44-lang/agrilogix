@@ -306,10 +306,23 @@ function FieldMap({boundary=[],onBoundaryChange,height=350,readOnly=false}){
     </div>
   );
 }
+
+// ── Reusable "Save to Products?" prompt ───────────────────────────────────
+function SavePrompt({name, dismissed, onYes, onNo}) {
+  if(!name || name.trim().length < 2 || dismissed) return null;
+  return (
+    <div style={{marginTop:"5px",padding:"7px 10px",background:"#EEF6EE",border:"1px solid #A8CCA8",borderRadius:"5px",display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <span style={{fontSize:"12px",color:"#2A5A28",flex:1}}>💾 Add <strong>{name}</strong> to your Products list?</span>
+      <button onClick={onYes} style={{background:"#2A6A28",color:"#fff",border:"none",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>Yes</button>
+      <button onClick={onNo} style={{background:"none",border:"1px solid #A8CCA8",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",color:"#5A7A58",fontFamily:"inherit"}}>No</button>
+    </div>
+  );
+}
+
 // ── Seeding Form ──────────────────────────────────────────────────────
 const PULSE_CROPS = ["Peas","Lentils","Chickpeas","Soybeans"];
 
-function SeedingForm({v,set,products={}}){
+function SeedingForm({v,set,products={},onAddProduct}){
   const mySeeds = products.seeds || [];
   const myFerts = products.fertilizers || [];
   // When a saved seed is picked, auto-fill rate
@@ -330,6 +343,12 @@ function SeedingForm({v,set,products={}}){
       : f
     )});
   };
+  // ── Save-to-products prompts ──
+  const [sp, setSP] = useState({seeds:{}, ferts:{}, inocs:{}});
+  const dismiss = (cat,id) => setSP(p=>({...p,[cat]:{...p[cat],[id]:"dismissed"}}));
+  const asking  = (cat,id) => setSP(p=>({...p,[cat]:{...p[cat],[id]:"asking"}}));
+  const addProduct = (cat, item) => { if(onAddProduct) onAddProduct(cat, item); dismiss(cat, item._id); };
+
   // ── Crops (multiple for double-crop) ──
   const crops   = v.crops   || (v.crop ? [{id:genId(),crop:v.crop,seedRate:v.seedRate||"",totalSeed:v.totalSeed||""}] : [{id:genId(),crop:"",seedRate:"",totalSeed:""}]);
   const addCrop = ()=>set({...v,crops:[...crops,{id:genId(),crop:"",seedRate:"",totalSeed:""}]});
@@ -372,9 +391,26 @@ function SeedingForm({v,set,products={}}){
                     value={c.variety||""} onChange={e=>pickSeed(c.id,e.target.value)}>
                     <option value="">📦 Pick saved variety…</option>
                     {mySeeds.filter(s=>!s.cropType||s.cropType===c.crop).map(s=>(
-                      <option key={s.id} value={s.name}>{s.name} {s.defaultRate?`(${s.defaultRate} ${s.unit})`:"" }</option>
+                      <option key={s.id} value={s.name}>{s.name} {s.defaultRate?`(${s.defaultRate} ${s.unit})`:""}</option>
                     ))}
                   </select>
+                )}
+                {/* Variety text input — always available */}
+                <input style={{...S.input,marginTop:"5px"}} type="text" placeholder="Variety / brand (optional)"
+                  value={c.variety||""}
+                  onChange={e=>{
+                    updCrop(c.id,"variety",e.target.value);
+                    if(sp.seeds[c.id]==="dismissed") setSP(p=>({...p,seeds:{...p.seeds,[c.id]:undefined}}));
+                  }}
+                />
+                {/* Save prompt — show when variety typed and not already in saved seeds */}
+                {(c.variety||"").trim().length>1 && !mySeeds.find(s=>s.name===c.variety) && (
+                  <SavePrompt
+                    name={c.variety}
+                    dismissed={sp.seeds[c.id]==="dismissed"}
+                    onYes={()=>addProduct("seeds",{_id:c.id, name:c.variety, cropType:c.crop, defaultRate:c.seedRate||"", unit:"lbs/ac"})}
+                    onNo={()=>dismiss("seeds",c.id)}
+                  />
                 )}
               </div>
               <div style={{flex:"1 1 90px"}}>
@@ -403,12 +439,37 @@ function SeedingForm({v,set,products={}}){
             <div style={{display:"flex",gap:"8px",alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:"2 1 150px"}}>
                 <label style={S.label}>Product #{i+1}</label>
-                <select style={S.input} value={f.blend} onChange={e=>pickFert(f.id,e.target.value)}>
+                <select style={S.input} value={f.blend} onChange={e=>{ pickFert(f.id,e.target.value); setSP(p=>({...p,ferts:{...p.ferts,[f.id]:undefined}})); }}>
                   <option value="">Select product…</option>
                   {myFerts.length>0&&<optgroup label="── My Products ──">{myFerts.map(mf=><option key={mf.id} value={mf.name}>{mf.name}{mf.analysis?` (${mf.analysis})`:""}</option>)}</optgroup>}
                   <optgroup label="── Standard Blends ──">{FERT_BLENDS.map(b=><option key={b}>{b}</option>)}</optgroup>
                 </select>
-                {f.blend==="Custom Blend"&&<input style={{...S.input,marginTop:"6px"}} type="text" placeholder="e.g. 16-20-10-5S" value={f.custom} onChange={e=>updFert(f.id,"custom",e.target.value)}/>}
+                {/* Offer to save standard blend to My Products */}
+                {f.blend && f.blend!=="Custom Blend" && f.blend!=="" && !myFerts.find(mf=>mf.name===f.blend) && (
+                  <SavePrompt
+                    name={f.blend}
+                    dismissed={sp.ferts[f.id]==="dismissed"}
+                    onYes={()=>addProduct("fertilizers",{_id:f.id, name:f.blend, analysis:f.blend.split(" ")[0]||"", defaultRate:f.rate||"", unit:"lbs/ac"})}
+                    onNo={()=>dismiss("ferts",f.id)}
+                  />
+                )}
+                {f.blend==="Custom Blend"&&(
+                <div>
+                  <input style={{...S.input,marginTop:"6px"}} type="text" placeholder="e.g. 16-20-10-5S"
+                    value={f.custom}
+                    onChange={e=>{
+                      updFert(f.id,"custom",e.target.value);
+                      if(sp.ferts[f.id]==="dismissed") setSP(p=>({...p,ferts:{...p.ferts,[f.id]:undefined}}));
+                    }}
+                  />
+                  <SavePrompt
+                    name={f.custom}
+                    dismissed={sp.ferts[f.id]==="dismissed"}
+                    onYes={()=>addProduct("fertilizers",{_id:f.id, name:f.custom, analysis:"", defaultRate:f.rate||"", unit:"lbs/ac"})}
+                    onNo={()=>dismiss("ferts",f.id)}
+                  />
+                </div>
+              )}
               </div>
               <div style={{flex:"1 1 80px"}}>
                 <label style={S.label}>Rate (lbs/ac)</label>
@@ -442,7 +503,21 @@ function SeedingForm({v,set,products={}}){
             <div style={{display:"flex",gap:"8px",alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:"2 1 180px"}}>
                 <label style={S.label}>Product #{i+1}</label>
-                <input style={S.input} type="text" placeholder="e.g. Nodulator PRO, TagTeam, Optimize" value={n.product} onChange={e=>updInoculant(n.id,"product",e.target.value)}/>
+                <div>
+                  <input style={S.input} type="text" placeholder="e.g. Nodulator PRO, TagTeam, Optimize"
+                    value={n.product}
+                    onChange={e=>{
+                      updInoculant(n.id,"product",e.target.value);
+                      if(sp.inocs[n.id]==="dismissed") setSP(p=>({...p,inocs:{...p.inocs,[n.id]:undefined}}));
+                    }}
+                  />
+                  <SavePrompt
+                    name={n.product}
+                    dismissed={sp.inocs[n.id]==="dismissed"}
+                    onYes={()=>addProduct("chemicals",{_id:n.id, name:n.product, type:"Inoculant/Seed Treatment", defaultRate:n.rate||"", unit:"oz/cwt"})}
+                    onNo={()=>dismiss("inocs",n.id)}
+                  />
+                </div>
               </div>
               <div style={{flex:"1 1 120px"}}>
                 <label style={S.label}>Rate</label>
@@ -783,7 +858,7 @@ function HarvestForm({v,set}){
 }
 
 // ── Spraying Form ─────────────────────────────────────────────────────
-function SprayingForm({v,set,products={}}){
+function SprayingForm({v,set,products={},onAddChemical}){
   const mix=v.tankMix||[];
   const add=()=>set({...v,tankMix:[...mix,{id:genId(),chemical:"",oz:"",unit:"oz/ac"}]});
   const upd=(id,f,val)=>set({...v,tankMix:mix.map(c=>c.id===id?{...c,[f]:val}:c)});
@@ -815,7 +890,32 @@ function SprayingForm({v,set,products={}}){
                   {(products.chemicals||[]).length>0&&<optgroup label="── My Products ──">{(products.chemicals||[]).map(ch=><option key={ch.id} value={ch.name}>{ch.name}{ch.type?` (${ch.type})`:""}</option>)}</optgroup>}
                   <optgroup label="── Common Chemicals ──">{CHEMICALS.map(ch=><option key={ch}>{ch}</option>)}</optgroup>
                 </select>
-                {c.chemical==="Other"&&<input style={{...S.input,marginTop:"6px"}} type="text" placeholder="Chemical name" value={c.chemicalName||""} onChange={e=>upd(c.id,"chemicalName",e.target.value)}/>}
+                {c.chemical==="Other"&&(
+                    <div>
+                      <input
+                        style={{...S.input,marginTop:"6px"}}
+                        type="text"
+                        placeholder="Chemical name"
+                        value={c.chemicalName||""}
+                        onChange={e=>{
+                          upd(c.id,"chemicalName",e.target.value);
+                          // Reset prompt if user changes name
+                          if(savePrompt[c.id]==="dismissed") setSavePrompt(p=>({...p,[c.id]:undefined}));
+                        }}
+                      />
+                      {/* Save-to-Products prompt */}
+                      {(c.chemicalName||"").trim().length>1 && !savePrompt[c.id] && (
+                        <div style={{marginTop:"5px",padding:"7px 10px",background:"#EEF6EE",border:"1px solid #A8CCA8",borderRadius:"5px",display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                          <span style={{fontSize:"12px",color:"#2A5A28",flex:1}}>💾 Add <strong>{c.chemicalName}</strong> to your Products list?</span>
+                          <button onClick={()=>handleAddToProducts(c)} style={{background:"#2A6A28",color:"#fff",border:"none",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>Yes</button>
+                          <button onClick={()=>setSavePrompt(p=>({...p,[c.id]:"dismissed"}))} style={{background:"none",border:"1px solid #A8CCA8",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",color:"#5A7A58",fontFamily:"inherit"}}>No</button>
+                        </div>
+                      )}
+                      {savePrompt[c.id]==="dismissed" && (c.chemicalName||"").trim().length>1 && (
+                        <div style={{marginTop:"4px",fontSize:"11px",color:"#5A7A58",paddingLeft:"2px"}}>✓ Not saved</div>
+                      )}
+                    </div>
+                  )}
               </div>
               <div style={{flex:"1 1 70px"}}><label style={S.label}>Rate</label><input style={S.input} type="number" step="0.1" placeholder="16" value={c.oz} onChange={e=>upd(c.id,"oz",e.target.value)}/></div>
               <div style={{flex:"1 1 80px"}}><label style={S.label}>Unit</label>
@@ -1049,7 +1149,7 @@ function useVoiceInput() {
   return { listening, toggle, stop };
 }
 
-function AddActivityModal({field,onClose,onSave,initial,products={}}){
+function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct}){
   const[type,setType]=useState(initial?.type||"");
   const[date,setDate]=useState(initial?.date||nowLocal());
   const[data,setData]=useState(initial?.data||{});
@@ -1124,8 +1224,8 @@ function AddActivityModal({field,onClose,onSave,initial,products={}}){
             ))}
           </div>
         </div>
-        {type==="seeding"  &&<SeedingForm v={data} set={setData} products={products}/>}
-        {type==="spraying" &&<SprayingForm v={data} set={setData} products={products}/>}
+        {type==="seeding"  &&<SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct}/>}
+        {type==="spraying" &&<SprayingForm v={data} set={setData} products={products} onAddChemical={onAddChemical}/>}
         {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
         {type==="harvest"  &&<HarvestForm v={data} set={setData}/>}
         {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
@@ -2986,7 +3086,17 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         {view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onEditActivity={editActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}}/>}
       </div>
 
-      {showAdd&&curField&&<AddActivityModal field={curField} onClose={()=>setShowAdd(false)} onSave={addActivity}/>}
+      {showAdd&&curField&&<AddActivityModal
+        field={curField}
+        products={products}
+        onAddChemical={chem=>saveProducts({...products,chemicals:[...(products.chemicals||[]),{id:genId(),...chem}]})}
+        onAddProduct={(cat,item)=>{
+          const {_id,...clean}=item;
+          saveProducts({...products,[cat]:[...(products[cat]||[]),{id:genId(),...clean}]});
+        }}
+        onClose={()=>setShowAdd(false)}
+        onSave={addActivity}
+      />}
       {showImport&&<ImportFieldsModal onClose={()=>setShowImport(false)} onImport={importFields}/>}
       {showSettings&&<SettingsModal settings={settings} onSave={setSettings} onClose={()=>setShowSettings(false)} onBulkImport={bulkImportAgriScale} bulkLoading={bulkLoading}/>}
       {showProducts&&<ProductsModal products={products} onSave={saveProducts} onClose={()=>setShowProducts(false)}/>}
