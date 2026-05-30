@@ -863,6 +863,11 @@ function SprayingForm({v,set,products={},onAddChemical}){
   const add=()=>set({...v,tankMix:[...mix,{id:genId(),chemical:"",oz:"",unit:"oz/ac"}]});
   const upd=(id,f,val)=>set({...v,tankMix:mix.map(c=>c.id===id?{...c,[f]:val}:c)});
   const del=(id)=>set({...v,tankMix:mix.filter(c=>c.id!==id)});
+  const [savePrompt, setSavePrompt] = useState({});
+  const handleAddToProducts = (c) => {
+    if(onAddChemical) onAddChemical({ name:c.chemicalName, type:"", defaultRate:c.oz||"", unit:c.unit||"L/ac" });
+    setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
+  };
   return(
     <div>
       <div style={S.g2}>
