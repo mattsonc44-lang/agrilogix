@@ -877,7 +877,27 @@ function SprayingForm({v,set,products={},onAddChemical}){
       <div style={{background:"#EEF3FA",border:`1px solid #A8C0DC`,borderRadius:"8px",padding:"14px",marginBottom:"14px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
           <p style={{margin:0,fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>💧 Tank Mix</p>
-          <button style={{...mkBtn("ghost"),padding:"5px 12px",fontSize:"12px",borderColor:"#1E5078",color:"#1E5078"}} onClick={add}>+ Add Chemical</button>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+            {(products.tankMixPresets||[]).length>0&&(
+              <select style={{...S.input,marginBottom:0,fontSize:"12px",color:"#7A3090",borderColor:"#C0A0D8",background:"#F8F0FF",maxWidth:"160px"}}
+                value=""
+                onChange={e=>{
+                  const preset=(products.tankMixPresets||[]).find(p=>p.id===e.target.value);
+                  if(!preset) return;
+                  set({...v,
+                    waterVol: preset.waterVol||v.waterVol||"",
+                    purpose:  preset.purpose||v.purpose||"",
+                    tankMix:  preset.chemicals.map(c=>({...c,id:genId()}))
+                  });
+                }}>
+                <option value="">🧪 Apply preset…</option>
+                {(products.tankMixPresets||[]).map(p=>(
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+            <button style={{...mkBtn("ghost"),padding:"5px 12px",fontSize:"12px",borderColor:"#1E5078",color:"#1E5078"}} onClick={add}>+ Add Chemical</button>
+          </div>
         </div>
         {mix.length===0&&<div style={{textAlign:"center",padding:"18px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px"}}>Click "+ Add Chemical" to build your tank mix</div>}
         {mix.map((c,i)=>(
@@ -2402,10 +2422,19 @@ function PendingLoadsModal({loads,fields,onImport,onClose}){
 function ProductsModal({ products, onSave, onClose }) {
   const [tab, setTab]     = useState("seeds");
   const [items, setItems] = useState({
-    seeds:       (products?.seeds       || []).map(x=>({...x})),
-    chemicals:   (products?.chemicals   || []).map(x=>({...x})),
-    fertilizers: (products?.fertilizers || []).map(x=>({...x})),
+    seeds:           (products?.seeds           || []).map(x=>({...x})),
+    chemicals:       (products?.chemicals       || []).map(x=>({...x})),
+    fertilizers:     (products?.fertilizers     || []).map(x=>({...x})),
+    tankMixPresets:  (products?.tankMixPresets  || []).map(x=>({...x, chemicals:(x.chemicals||[]).map(c=>({...c}))})),
   });
+
+  // Tank mix preset helpers
+  const addPreset = () => setItems(p=>({...p, tankMixPresets:[...p.tankMixPresets, {id:genId(),name:"",waterVol:"",purpose:"",chemicals:[]}]}));
+  const updPreset = (id,k,v) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===id?{...x,[k]:v}:x)}));
+  const delPreset = (id) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.filter(x=>x.id!==id)}));
+  const addPresetChem = (pid) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:[...x.chemicals,{id:genId(),chemical:"",oz:"",unit:"oz/ac",chemicalName:""}]}:x)}));
+  const updPresetChem = (pid,cid,k,v) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:x.chemicals.map(c=>c.id===cid?{...c,[k]:v}:c)}:x)}));
+  const delPresetChem = (pid,cid) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:x.chemicals.filter(c=>c.id!==cid)}:x)}));
 
   const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","g/ac"];
   const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
@@ -2418,9 +2447,10 @@ function ProductsModal({ products, onSave, onClose }) {
   const save = () => { onSave(items); onClose(); };
 
   const TAB_CONFIG = [
-    { id: "seeds",       icon: "🌱", label: "Seeds",       color: "#4A8A4A" },
-    { id: "chemicals",   icon: "💧", label: "Chemicals",   color: "#2563EB" },
-    { id: "fertilizers", icon: "⚗️", label: "Fertilizers", color: "#C07010" },
+    { id: "seeds",          icon: "🌱", label: "Seeds",       color: "#4A8A4A" },
+    { id: "chemicals",      icon: "💧", label: "Chemicals",   color: "#2563EB" },
+    { id: "fertilizers",    icon: "⚗️", label: "Fertilizers", color: "#C07010" },
+    { id: "tankMixPresets", icon: "🧪", label: "Tank Mixes",  color: "#7A3090" },
   ];
 
   return (
@@ -2566,6 +2596,75 @@ function ProductsModal({ products, onSave, onClose }) {
             <button onClick={()=>add("fertilizers",{name:"",analysis:"",defaultRate:"",unit:"lbs/ac"})}
               style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#D8C090",color:"#7A6020",fontSize:"12px" }}>
               + Add Fertilizer
+            </button>
+          </div>
+        )}
+
+        {/* ── Tank Mixes Tab ── */}
+        {tab === "tankMixPresets" && (
+          <div>
+            {items.tankMixPresets.length === 0 && (
+              <div style={{ textAlign:"center",padding:"20px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px",marginBottom:"12px" }}>
+                No presets yet. Create your first tank mix below.
+              </div>
+            )}
+            {items.tankMixPresets.map((preset, pi) => (
+              <div key={preset.id} style={{ background:"#F6F0FC",border:"1px solid #C0A0D8",borderRadius:"8px",padding:"12px",marginBottom:"12px" }}>
+                {/* Preset header row */}
+                <div style={{ display:"flex",gap:"8px",alignItems:"flex-end",marginBottom:"10px",flexWrap:"wrap" }}>
+                  <div style={{ flex:"2 1 160px" }}>
+                    {pi===0&&<label style={S.label}>Preset Name</label>}
+                    <input style={S.input} placeholder='e.g. Pre-spray 2026' value={preset.name} onChange={e=>updPreset(preset.id,"name",e.target.value)}/>
+                  </div>
+                  <div style={{ flex:"1 1 80px" }}>
+                    {pi===0&&<label style={S.label}>Water (gal/ac)</label>}
+                    <input style={S.input} type="number" step="1" placeholder="e.g. 15" value={preset.waterVol||""} onChange={e=>updPreset(preset.id,"waterVol",e.target.value)}/>
+                  </div>
+                  <div style={{ flex:"2 1 140px" }}>
+                    {pi===0&&<label style={S.label}>Target / Purpose</label>}
+                    <input style={S.input} placeholder="e.g. Pre-seed burnoff" value={preset.purpose||""} onChange={e=>updPreset(preset.id,"purpose",e.target.value)}/>
+                  </div>
+                  <button onClick={()=>delPreset(preset.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>🗑</button>
+                </div>
+                {/* Chemicals in this preset */}
+                <div style={{ background:"rgba(255,255,255,0.6)",borderRadius:"6px",padding:"10px" }}>
+                  <div style={{ fontSize:"11px",color:"#7A3090",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px" }}>Chemicals in this mix</div>
+                  {preset.chemicals.length===0 && (
+                    <div style={{ fontSize:"12px",color:T.faint,textAlign:"center",padding:"8px" }}>No chemicals yet — add below</div>
+                  )}
+                  {preset.chemicals.map((c,ci) => (
+                    <div key={c.id} style={{ display:"grid",gridTemplateColumns:"1fr 70px 90px 28px",gap:"5px",marginBottom:"6px",alignItems:"flex-end" }}>
+                      <div>
+                        {ci===0&&<label style={S.label}>Chemical</label>}
+                        <select style={S.input} value={c.chemical} onChange={e=>updPresetChem(preset.id,c.id,"chemical",e.target.value)}>
+                          <option value="">Select…</option>
+                          {(items.chemicals||[]).length>0&&<optgroup label="── My Products ──">{items.chemicals.map(ch=><option key={ch.id} value={ch.name}>{ch.name}</option>)}</optgroup>}
+                          <optgroup label="── Common ──">{CHEMICALS.map(ch=><option key={ch}>{ch}</option>)}</optgroup>
+                          <option value="Other">Other (custom)</option>
+                        </select>
+                        {c.chemical==="Other"&&<input style={{...S.input,marginTop:"4px"}} placeholder="Chemical name" value={c.chemicalName||""} onChange={e=>updPresetChem(preset.id,c.id,"chemicalName",e.target.value)}/>}
+                      </div>
+                      <div>
+                        {ci===0&&<label style={S.label}>Rate</label>}
+                        <input style={S.input} type="number" step="0.1" placeholder="e.g. 32" value={c.oz||""} onChange={e=>updPresetChem(preset.id,c.id,"oz",e.target.value)}/>
+                      </div>
+                      <div>
+                        {ci===0&&<label style={S.label}>Unit</label>}
+                        <select style={S.input} value={c.unit||"oz/ac"} onChange={e=>updPresetChem(preset.id,c.id,"unit",e.target.value)}>
+                          {["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","g/ac"].map(u=><option key={u}>{u}</option>)}
+                        </select>
+                      </div>
+                      <button onClick={()=>delPresetChem(preset.id,c.id)} style={{ background:"none",border:"none",cursor:"pointer",color:T.danger,fontSize:"14px",alignSelf:"flex-end",paddingBottom:"4px" }}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>addPresetChem(preset.id)} style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#C0A0D8",color:"#7A3090",fontSize:"12px",marginTop:"4px" }}>
+                    + Add Chemical
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button onClick={addPreset} style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#C0A0D8",color:"#7A3090",fontSize:"12px" }}>
+              + New Preset Tank Mix
             </button>
           </div>
         )}
@@ -2742,7 +2841,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const[fields,setFields]  =useState([]);
   const[showSettings,setShowSettings]=useState(false);
   const[showProducts,setShowProducts]=useState(false);
-  const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[]});
+  const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]});
 
   const saveProducts = async (newProds) => {
     setProducts(newProds);
