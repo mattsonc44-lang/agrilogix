@@ -945,7 +945,7 @@ function SprayingForm({v,set,products={},onAddChemical}){
               <div style={{flex:"1 1 70px"}}><label style={S.label}>Rate</label><input style={S.input} type="number" step="0.1" placeholder="16" value={c.oz} onChange={e=>upd(c.id,"oz",e.target.value)}/></div>
               <div style={{flex:"1 1 80px"}}><label style={S.label}>Unit</label>
                 <select style={S.input} value={c.unit} onChange={e=>upd(c.id,"unit",e.target.value)}>
-                  {["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac"].map(u=><option key={u}>{u}</option>)}
+                  {["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal"].map(u=><option key={u}>{u}</option>)}
                 </select>
               </div>
               <button style={{...mkBtn("ghost"),padding:"7px 10px",color:T.danger,border:"none",background:"transparent",fontSize:"16px"}} onClick={()=>del(c.id)}>✕</button>
@@ -1191,7 +1191,7 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
     try {
       const fieldMap = {
         seeding:  '{"crop":"","variety":"","seedingRate":"","rowSpacing":"","seedTreatment":"","notes":""}',
-        spraying: `{"waterVol":"","purpose":"","tankMix":[{"chemical":"CHEMICAL_NAME","oz":"RATE_NUMBER","unit":"UNIT"}],"notes":""}\nFor tankMix: extract each chemical. chemical must match one of: ${CHEMICALS.join(", ")}. If not in list use "Other". unit options: oz/ac, fl oz/ac, ml/ac, L/ac, lbs/ac, pt/ac, qt/ac. oz is numeric rate only.`,
+        spraying: `{"waterVol":"","purpose":"","tankMix":[{"chemical":"CHEMICAL_NAME","oz":"RATE_NUMBER","unit":"UNIT"}],"notes":""}\nFor tankMix: extract each chemical. chemical must match one of: ${CHEMICALS.join(", ")}. If not in list use "Other". unit options: oz/ac, fl oz/ac, ml/ac, L/ac, lbs/ac, pt/ac, qt/ac, qt/100 gal. oz is numeric rate only.`,
         scouting: '{"pestsPressure":"","diseaseRisk":"","weedPressure":"","recommendations":"","notes":""}',
         harvest:  '{"crop":"","yieldPerAc":"","moisture":"","testWeight":"","notes":""}',
         tillage:  '{"details":"","depth":"","notes":""}',
@@ -2436,7 +2436,7 @@ function ProductsModal({ products, onSave, onClose }) {
   const updPresetChem = (pid,cid,k,v) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:x.chemicals.map(c=>c.id===cid?{...c,[k]:v}:c)}:x)}));
   const delPresetChem = (pid,cid) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:x.chemicals.filter(c=>c.id!==cid)}:x)}));
 
-  const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","g/ac"];
+  const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","g/ac"];
   const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
   const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
 
@@ -2651,7 +2651,7 @@ function ProductsModal({ products, onSave, onClose }) {
                       <div>
                         {ci===0&&<label style={S.label}>Unit</label>}
                         <select style={S.input} value={c.unit||"oz/ac"} onChange={e=>updPresetChem(preset.id,c.id,"unit",e.target.value)}>
-                          {["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","g/ac"].map(u=><option key={u}>{u}</option>)}
+                          {["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","g/ac"].map(u=><option key={u}>{u}</option>)}
                         </select>
                       </div>
                       <button onClick={()=>delPresetChem(preset.id,c.id)} style={{ background:"none",border:"none",cursor:"pointer",color:T.danger,fontSize:"14px",alignSelf:"flex-end",paddingBottom:"4px" }}>✕</button>
