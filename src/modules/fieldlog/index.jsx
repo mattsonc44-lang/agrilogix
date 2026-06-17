@@ -2847,7 +2847,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     setProducts(newProds);
     skipSSE.current = true;
     try { await dbWrite(`${BASE}/products`, newProds, token); } catch(e) { console.warn("Products save failed",e); }
-    finally { setTimeout(() => { skipSSE.current = false; }, 2000); }
+    finally { setTimeout(() => { skipSSE.current = false; }, 5000); }
   };
   const[settings,setSettings]=useState({
     agriScaleEnabled:false, agriScaleUrl:"", agriScaleMode:"manual",
