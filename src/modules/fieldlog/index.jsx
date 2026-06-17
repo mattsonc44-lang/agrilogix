@@ -2845,7 +2845,9 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
 
   const saveProducts = async (newProds) => {
     setProducts(newProds);
+    skipSSE.current = true;
     try { await dbWrite(`${BASE}/products`, newProds, token); } catch(e) { console.warn("Products save failed",e); }
+    finally { setTimeout(() => { skipSSE.current = false; }, 2000); }
   };
   const[settings,setSettings]=useState({
     agriScaleEnabled:false, agriScaleUrl:"", agriScaleMode:"manual",
@@ -2906,13 +2908,14 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     if(loading||!tenantId) return;
     return dbListen(BASE, token, ({data})=>{
       if(skipSSE.current||!data) return;
-      const f2 = obj2arr(data.fields||{});
-      const a2 = obj2arr(data.activities||{});
-      setFields(f2);
-      setActs(a2);
+      // Only update fields/acts if present — partial snapshots (e.g. products-only write) omit them
+      const f2 = data.fields     ? obj2arr(data.fields)     : null;
+      const a2 = data.activities ? obj2arr(data.activities) : null;
+      if(f2 !== null) setFields(f2);
+      if(a2 !== null) setActs(a2);
       if(data.settings) setSettings(s=>({...s,...data.settings}));
       if(data.products) setProducts(p=>({...p,...data.products}));
-      flSaveCache(f2, a2, data.products||{}, data.settings||{});
+      if(f2 !== null && a2 !== null) flSaveCache(f2, a2, data.products||{}, data.settings||{});
     });
   },[loading,tenantId,token]);
 
