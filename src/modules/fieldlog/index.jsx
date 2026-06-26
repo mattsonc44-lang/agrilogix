@@ -1178,8 +1178,10 @@ function SprayingForm({v,set,products={},onAddChemical}){
                 <select style={S.input} value={c.chemical} onChange={e=>{
                       const name=e.target.value;
                       const saved=(products.chemicals||[]).find(p=>p.name===name);
-                      upd(c.id,"chemical",name);
-                      if(saved){ upd(c.id,"oz",saved.defaultRate||""); upd(c.id,"unit",saved.unit||"L/ac"); }
+                      // Single set call to avoid stale closure overwriting chemical with ""
+                      set({...v, tankMix:mix.map(x=>x.id===c.id
+                        ? {...x, chemical:name, ...(saved?{oz:saved.defaultRate||"",unit:saved.unit||"L/ac"}:{})}
+                        : x)});
                     }}>
                   <option value="">Select chemical…</option>
                   {(products.chemicals||[]).length>0&&<optgroup label="── My Products ──">{(products.chemicals||[]).map(ch=><option key={ch.id} value={ch.name}>{ch.name}{ch.type?` (${ch.type})`:""}</option>)}</optgroup>}
