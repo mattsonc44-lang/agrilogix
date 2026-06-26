@@ -1192,27 +1192,40 @@ function SprayingForm({v,set,products={},onAddChemical}){
                 </select>
                 {c.chemical==="Other"&&(
                     <div>
-                      <input
-                        style={{...S.input,marginTop:"6px"}}
-                        type="text"
-                        placeholder="Chemical name"
-                        value={c.chemicalName||""}
-                        onChange={e=>{
+                      <div style={{display:"flex",gap:"5px",marginTop:"6px",alignItems:"center"}}>
+                        <input
+                          style={{...S.input,marginBottom:0,flex:1}}
+                          type="text"
+                          placeholder="Chemical name (type to look up label)"
+                          value={c.chemicalName||""}
+                          onChange={e=>{
                           upd(c.id,"chemicalName",e.target.value);
                           // Reset prompt if user changes name
                           if(savePrompt[c.id]==="dismissed") setSavePrompt(p=>({...p,[c.id]:undefined}));
                         }}
                       />
-                      {/* Save-to-Products prompt */}
+                      {/* Lookup + Save-to-Products prompt */}
                       {(c.chemicalName||"").trim().length>1 && !savePrompt[c.id] && (
-                        <div style={{marginTop:"5px",padding:"7px 10px",background:"#EEF6EE",border:"1px solid #A8CCA8",borderRadius:"5px",display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-                          <span style={{fontSize:"12px",color:"#2A5A28",flex:1}}>💾 Add <strong>{c.chemicalName}</strong> to your Products list?</span>
-                          <button onClick={()=>handleAddToProducts(c)} style={{background:"#2A6A28",color:"#fff",border:"none",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>Yes</button>
-                          <button onClick={()=>setSavePrompt(p=>({...p,[c.id]:"dismissed"}))} style={{background:"none",border:"1px solid #A8CCA8",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",color:"#5A7A58",fontFamily:"inherit"}}>No</button>
+                        <div style={{marginTop:"5px",padding:"7px 10px",background:"#EEF6EE",border:"1px solid #A8CCA8",borderRadius:"5px",display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
+                          <span style={{fontSize:"12px",color:"#2A5A28",flex:1}}>Add <strong>{c.chemicalName}</strong> to Products?</span>
+                          <button onClick={async()=>{
+                            setSavePrompt(p=>({...p,[c.id]:"loading"}));
+                            try {
+                              const res = await fetch("/.netlify/functions/label-lookup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chemicalName:c.chemicalName.trim()})});
+                              const data = await res.json();
+                              const entry = {name:c.chemicalName, type:data.type||"", defaultRate:data.defaultRate||c.oz||"", unit:data.unit||c.unit||"L/ac", labeledCrops:data.labeledCrops||[], plantback:data.plantback||[]};
+                              if(onAddChemical) onAddChemical(entry);
+                            } catch(e) { if(onAddChemical) onAddChemical({name:c.chemicalName,type:"",defaultRate:c.oz||"",unit:c.unit||"L/ac",labeledCrops:[],plantback:[]}); }
+                            setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
+                          }} style={{background:"#2A6A28",color:"#fff",border:"none",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
+                            {savePrompt[c.id]==="loading"?"⏳ Looking up…":"🔍 Yes + Look up label"}
+                          </button>
+                          <button onClick={()=>{ if(onAddChemical) onAddChemical({name:c.chemicalName,type:"",defaultRate:c.oz||"",unit:c.unit||"L/ac",labeledCrops:[],plantback:[]}); setSavePrompt(p=>({...p,[c.id]:"dismissed"})); }} style={{background:"none",border:"1px solid #A8CCA8",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",color:"#5A7A58",fontFamily:"inherit"}}>Yes (no lookup)</button>
+                          <button onClick={()=>setSavePrompt(p=>({...p,[c.id]:"dismissed"}))} style={{background:"none",border:"none",fontSize:"11px",cursor:"pointer",color:"#888",fontFamily:"inherit"}}>Skip</button>
                         </div>
                       )}
                       {savePrompt[c.id]==="dismissed" && (c.chemicalName||"").trim().length>1 && (
-                        <div style={{marginTop:"4px",fontSize:"11px",color:"#5A7A58",paddingLeft:"2px"}}>✓ Not saved</div>
+                        <div style={{marginTop:"4px",fontSize:"11px",color:"#5A7A58",paddingLeft:"2px"}}>✓ Saved to Products</div>
                       )}
                     </div>
                   )}
@@ -2802,6 +2815,41 @@ function ProductsModal({ products, onSave, onClose }) {
 
   // Tank mix preset helpers
   // Plantback restriction helpers
+  // ── Label lookup state ──
+  const [lookupState, setLookupState] = useState({});  // {[chemId]: 'loading' | 'done' | 'error'}
+
+  const lookupLabel = async (cid, chemName) => {
+    if(!chemName?.trim()) { alert("Enter a chemical name first."); return; }
+    setLookupState(p => ({...p, [cid]: 'loading'}));
+    try {
+      const res = await fetch('/.netlify/functions/label-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chemicalName: chemName.trim() }),
+      });
+      const data = await res.json();
+      if(!data.found) {
+        setLookupState(p => ({...p, [cid]: 'notfound'}));
+        return;
+      }
+      // Apply returned data to this chemical
+      setItems(p => ({...p, chemicals: p.chemicals.map(c => {
+        if(c.id !== cid) return c;
+        const updated = {...c};
+        if(data.type)          updated.type          = data.type;
+        if(data.defaultRate)   updated.defaultRate   = data.defaultRate;
+        if(data.unit)          updated.unit          = data.unit;
+        if(data.labeledCrops?.length) updated.labeledCrops = data.labeledCrops;
+        if(data.plantback?.length)    updated.plantback    = data.plantback;
+        return updated;
+      })}));
+      setLookupState(p => ({...p, [cid]: 'done'}));
+    } catch(e) {
+      console.error('Label lookup error:', e);
+      setLookupState(p => ({...p, [cid]: 'error'}));
+    }
+  };
+
   const addPlantback   = (cid) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,plantback:[...(c.plantback||[]),{crop:"",days:""}]}:c)}));
   const updPlantback   = (cid,idx,k,v) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,plantback:(c.plantback||[]).map((pb,i)=>i===idx?{...pb,[k]:v}:pb)}:c)}));
   const delPlantback   = (cid,idx) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,plantback:(c.plantback||[]).filter((_,i)=>i!==idx)}:c)}));
@@ -2909,7 +2957,26 @@ function ProductsModal({ products, onSave, onClose }) {
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 120px 80px 90px 32px",gap:"6px",alignItems:"flex-end" }}>
                   <div>
                     {i===0&&<label style={S.label}>Product Name</label>}
-                    <input style={S.input} placeholder="e.g. Roundup WeatherMax" value={c.name||""} onChange={e=>upd("chemicals",c.id,"name",e.target.value)}/>
+                    <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+                      <input style={{...S.input,marginBottom:0,flex:1}} placeholder="e.g. Ally XP, Varro, Axial BIA..." value={c.name||""} onChange={e=>upd("chemicals",c.id,"name",e.target.value)}/>
+                      <button
+                        onClick={()=>lookupLabel(c.id, c.name)}
+                        title="Look up label data for this product"
+                        style={{...mkBtn("ghost"),padding:"6px 8px",fontSize:"13px",whiteSpace:"nowrap",borderColor:
+                          lookupState[c.id]==="done"?"#2A8A2A":
+                          lookupState[c.id]==="error"||lookupState[c.id]==="notfound"?"#C04040":"#2563EB",
+                          color:
+                          lookupState[c.id]==="done"?"#2A8A2A":
+                          lookupState[c.id]==="error"||lookupState[c.id]==="notfound"?"#C04040":"#2563EB",
+                          flexShrink:0
+                        }}>
+                        {lookupState[c.id]==="loading" ? "⏳" :
+                         lookupState[c.id]==="done"    ? "✓ Loaded" :
+                         lookupState[c.id]==="notfound"? "? Not found" :
+                         lookupState[c.id]==="error"   ? "✗ Error" :
+                         "🔍 Look up label"}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     {i===0&&<label style={S.label}>Type</label>}
