@@ -17,6 +17,81 @@ if (!document.getElementById("fl-fonts")) {
 const CROPS        = ["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Mustard","Corn","Soybeans","Sunflowers","Alfalfa","Hay","Other"];
 const FERT_BLENDS  = ["28-0-0 (UAN)","46-0-0 (Urea)","11-52-0 (MAP)","18-46-0 (DAP)","0-0-60 (Potash)","10-26-26","34-0-0 (AN)","12-40-0","Custom Blend"];
 const CHEMICALS    = ["Glyphosate (Roundup)","2,4-D Amine","MCPA Amine","Lontrel 360","Infinity","Odyssey","Axial","Puma Super","Buctril M","Muster 75DF","Centurion","Tundra","Refine M","Bumper 418 EC","Stratego YLD","Headline","Priaxor","Trivapro","Dimethoate","Matador","Other"];
+// ── Built-in chemical compliance data (always active, no setup needed) ────────
+// Source: EPA labels, ND/MT Weed Control Guides. Always verify actual label.
+const BUILTIN_CHEM_DATA = {
+  "Glyphosate (Roundup)": {
+    // Non-selective — any standing crop is a concern. Label allows preharvest/burndown only.
+    labeledCrops: [],   // Empty = warn for every crop (crops can't have glyphosate in-season)
+    note: "Non-selective. Only labeled for preharvest/burndown — not safe on growing crops."
+  },
+  "2,4-D Amine": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Flax","Peas","Corn"],
+    plantback: { Canola:30, Lentils:30, Chickpeas:30, Mustard:30, Alfalfa:30, Soybeans:15 }
+  },
+  "2,4-D LV6 (Ester)": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Corn"],
+    plantback: { Canola:30, Flax:30, Peas:30, Lentils:30, Chickpeas:30, Mustard:30, Alfalfa:30 }
+  },
+  "MCPA Amine": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Flax","Peas"],
+    plantback: { Canola:60, Lentils:60, Chickpeas:60, Corn:60, Soybeans:60, Sunflowers:60 }
+  },
+  "Ally XP": {
+    labeledCrops: ["Wheat","Durum","Barley"],
+    plantback: { Canola:670, Flax:670, Lentils:670, Chickpeas:670, Peas:670, Alfalfa:670, Mustard:670, Sunflowers:548, Corn:548, Soybeans:548 }
+  },
+  "Glean": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats"],
+    plantback: { Canola:670, Flax:670, Lentils:670, Chickpeas:670, Peas:670, Alfalfa:548, Sunflowers:365, Corn:365 }
+  },
+  "Finesse": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats"],
+    plantback: { Canola:670, Flax:670, Lentils:670, Chickpeas:670, Peas:548, Alfalfa:548, Sunflowers:548, Corn:365 }
+  },
+  "Dicamba": {
+    labeledCrops: ["Wheat","Durum","Corn"],
+    plantback: { Canola:120, Flax:120, Lentils:120, Chickpeas:120, Peas:120, Sunflowers:120, Alfalfa:120 }
+  },
+  "Buctril M": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Flax","Corn"]
+  },
+  "Lontrel 360": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Canola","Corn","Sunflowers"],
+    plantback: { Peas:365, Lentils:365, Chickpeas:365, Alfalfa:365, Flax:365 }
+  },
+  "Clopyralid (Stinger)": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Canola","Corn","Sunflowers"],
+    plantback: { Peas:365, Lentils:365, Chickpeas:365, Alfalfa:365, Flax:365 }
+  },
+  "Refine M": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats"],
+    plantback: { Canola:60, Mustard:60, Peas:45, Lentils:45, Chickpeas:45, Flax:45, Soybeans:45, Corn:45 }
+  },
+  "Muster 75DF": {
+    labeledCrops: ["Wheat","Durum","Barley"],
+    plantback: { Canola:60, Peas:45, Lentils:45, Chickpeas:45, Flax:45 }
+  },
+  "Infinity": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats"]
+  },
+  "Odyssey": {
+    labeledCrops: ["Peas","Lentils","Chickpeas"]
+  },
+  "Axial": {
+    labeledCrops: ["Wheat","Durum","Barley","Canola","Peas","Lentils","Chickpeas","Flax","Mustard"]
+  },
+  "Puma Super": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Mustard"]
+  },
+  "Centurion": {
+    labeledCrops: ["Canola","Flax","Peas","Lentils","Chickpeas","Sunflowers","Soybeans","Mustard"]
+  },
+  "Tundra": {
+    labeledCrops: ["Wheat","Durum","Barley","Oats"]
+  },
+};
+
 const ACTIVITY_META = {
   seeding:     {label:"Seeding",      icon:"🌱",color:"#C07010"},
   spraying:    {label:"Spraying",     icon:"💧",color:"#1E5078"},
@@ -1396,12 +1471,17 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
         for(const chem of (data.tankMix||[])) {
           const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
           if(!chemName) continue;
+          // Check user's products library first, then fall back to built-in data
           const product = myChems.find(p => p.name === chemName);
-          if(product?.labeledCrops?.length > 0) {
-            const unlabeled = currentCrops.filter(crop => !product.labeledCrops.includes(crop));
+          const labeledCrops = product?.labeledCrops?.length > 0
+            ? product.labeledCrops
+            : BUILTIN_CHEM_DATA[chemName]?.labeledCrops;
+          if(labeledCrops !== undefined) {  // undefined = no data; empty array [] = warn for all
+            const unlabeled = currentCrops.filter(crop => !labeledCrops.includes(crop));
             unlabeled.forEach(crop => {
+              const note = BUILTIN_CHEM_DATA[chemName]?.note;
               warnings.push({ type:"label", chemical:chemName, crop,
-                msg:`⚠️ ${chemName} may not be labeled for ${crop} — verify the product label before applying.` });
+                msg:`⚠️ ${chemName} may not be labeled for ${crop}${note?" — "+note:" — verify the product label before applying."}` });
             });
           }
         }
@@ -1422,13 +1502,21 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
             const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
             if(!chemName) continue;
             const product = myChems.find(p => p.name === chemName);
-            if(!product?.plantback?.length) continue;
+            // Use user's products plantback OR built-in data
+            const getPlantbackDays = (crop) => {
+              if(product?.plantback?.length) {
+                const pb = product.plantback.find(r => r.crop === crop && r.days);
+                return pb ? Number(pb.days) : null;
+              }
+              const builtinDays = BUILTIN_CHEM_DATA[chemName]?.plantback?.[crop];
+              return builtinDays || null;
+            };
             for(const selectedCrop of selectedCrops) {
-              const pb = product.plantback.find(r => r.crop === selectedCrop && r.days);
-              if(pb && daysAgo < Number(pb.days)) {
-                const remaining = Number(pb.days) - daysAgo;
+              const days = getPlantbackDays(selectedCrop);
+              if(days && daysAgo < days) {
+                const remaining = days - daysAgo;
                 warnings.push({ type:"plantback", chemical:chemName, crop:selectedCrop,
-                  msg:`🚫 ${chemName} was applied ${daysAgo} days ago (${act.date?.slice(0,10)}). Min plantback for ${selectedCrop}: ${pb.days} days — ${remaining} days remaining.` });
+                  msg:`🚫 ${chemName} was applied ${daysAgo} days ago (${act.date?.slice(0,10)}). Min plantback for ${selectedCrop}: ${days} days — ${remaining} days remaining.` });
               }
             }
           }
