@@ -311,7 +311,7 @@ function FieldMap({boundary=[],onBoundaryChange,height=350,readOnly=false}){
 // ── Common Hi-Line Herbicide Database (sourced from EPA labels & ND Weed Guide) ──
 const COMMON_CHEMICALS_DB = [
   {
-    name:"Glyphosate (Roundup WeatherMax)", type:"Herbicide",
+    name:"Glyphosate (Roundup)", type:"Herbicide",
     defaultRate:"1.2", unit:"L/ac",
     labeledCrops:["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Corn","Soybeans","Sunflowers","Alfalfa"],
     plantback:[
@@ -364,7 +364,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Ally XP (Metsulfuron)", type:"Herbicide",
+    name:"Ally XP", type:"Herbicide",
     defaultRate:"0.1", unit:"oz/ac",
     labeledCrops:["Wheat","Durum","Barley"],
     plantback:[
@@ -382,7 +382,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Glean (Chlorsulfuron)", type:"Herbicide",
+    name:"Glean", type:"Herbicide",
     defaultRate:"0.33", unit:"oz/ac",
     labeledCrops:["Wheat","Durum","Barley","Oats"],
     plantback:[
@@ -399,7 +399,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Dicamba (Banvel/Clarity)", type:"Herbicide",
+    name:"Dicamba", type:"Herbicide",
     defaultRate:"0.5", unit:"pt/ac",
     labeledCrops:["Wheat","Durum","Corn"],
     plantback:[
@@ -414,13 +414,13 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Bromoxynil (Buctril/Maestro)", type:"Herbicide",
+    name:"Buctril M", type:"Herbicide",
     defaultRate:"1.0", unit:"pt/ac",
     labeledCrops:["Wheat","Durum","Barley","Oats","Flax","Corn"],
     plantback:[] // Contact herbicide — minimal soil residue/plantback
   },
   {
-    name:"Clopyralid (Stinger/Lontrel)", type:"Herbicide",
+    name:"Clopyralid (Stinger)", type:"Herbicide",
     defaultRate:"0.33", unit:"pt/ac",
     labeledCrops:["Wheat","Durum","Barley","Oats","Canola","Corn","Sunflowers"],
     plantback:[
@@ -433,7 +433,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Finesse (Chlorsulfuron + Metsulfuron)", type:"Herbicide",
+    name:"Finesse", type:"Herbicide",
     defaultRate:"0.5", unit:"oz/ac",
     labeledCrops:["Wheat","Durum","Barley","Oats"],
     plantback:[
@@ -448,7 +448,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Harmony Extra (Thifensulfuron)", type:"Herbicide",
+    name:"Refine M", type:"Herbicide",
     defaultRate:"0.5", unit:"oz/ac",
     labeledCrops:["Wheat","Durum","Barley","Oats"],
     plantback:[
@@ -464,7 +464,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Express (Tribenuron)", type:"Herbicide",
+    name:"Muster 75DF", type:"Herbicide",
     defaultRate:"0.5", unit:"oz/ac",
     labeledCrops:["Wheat","Durum","Barley"],
     plantback:[
@@ -476,7 +476,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Edge (Ethalfluralin)", type:"Herbicide",
+    name:"Edge", type:"Herbicide",
     defaultRate:"1.25", unit:"pt/ac",
     labeledCrops:["Canola","Peas","Lentils","Chickpeas","Soybeans","Sunflowers"],
     plantback:[
@@ -489,7 +489,7 @@ const COMMON_CHEMICALS_DB = [
     ]
   },
   {
-    name:"Lontrel (Clopyralid 0.75L)", type:"Herbicide",
+    name:"Lontrel 360", type:"Herbicide",
     defaultRate:"0.2", unit:"L/ac",
     labeledCrops:["Canola","Wheat","Durum","Barley","Oats","Corn","Sunflowers"],
     plantback:[
@@ -1386,28 +1386,31 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
     const myChems = products.chemicals || [];
 
     if(type === "spraying") {
-      // Find the current crop on this field (most recent seeding)
+      // Find all crops on this field from the most recent seeding
       const lastSeeding = [...fieldActivities]
-        .filter(a => a.type === "seeding" && a.data?.crops?.[0]?.crop)
+        .filter(a => a.type === "seeding" && a.data?.crops?.length)
         .sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-      const currentCrop = lastSeeding?.data?.crops?.[0]?.crop;
+      const currentCrops = (lastSeeding?.data?.crops || []).map(c=>c.crop).filter(Boolean);
 
-      if(currentCrop && (data.tankMix||[]).length > 0) {
+      if(currentCrops.length > 0 && (data.tankMix||[]).length > 0) {
         for(const chem of (data.tankMix||[])) {
           const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
           if(!chemName) continue;
           const product = myChems.find(p => p.name === chemName);
-          if(product?.labeledCrops?.length > 0 && !product.labeledCrops.includes(currentCrop)) {
-            warnings.push({ type:"label", chemical:chemName, crop:currentCrop,
-              msg:`⚠️ ${chemName} may not be labeled for ${currentCrop} — verify the product label before applying.` });
+          if(product?.labeledCrops?.length > 0) {
+            const unlabeled = currentCrops.filter(crop => !product.labeledCrops.includes(crop));
+            unlabeled.forEach(crop => {
+              warnings.push({ type:"label", chemical:chemName, crop,
+                msg:`⚠️ ${chemName} may not be labeled for ${crop} — verify the product label before applying.` });
+            });
           }
         }
       }
     }
 
     if(type === "seeding") {
-      const selectedCrop = (data.crops||[])[0]?.crop;
-      if(selectedCrop) {
+      const selectedCrops = (data.crops||[]).map(c=>c.crop).filter(Boolean);
+      if(selectedCrops.length > 0) {
         const today = new Date();
         const sprayingActs = fieldActivities
           .filter(a => a.type === "spraying")
@@ -1420,11 +1423,13 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
             if(!chemName) continue;
             const product = myChems.find(p => p.name === chemName);
             if(!product?.plantback?.length) continue;
-            const pb = product.plantback.find(r => r.crop === selectedCrop && r.days);
-            if(pb && daysAgo < Number(pb.days)) {
-              const remaining = Number(pb.days) - daysAgo;
-              warnings.push({ type:"plantback", chemical:chemName, crop:selectedCrop,
-                msg:`🚫 ${chemName} was applied ${daysAgo} days ago (${act.date}). Min plantback for ${selectedCrop}: ${pb.days} days — ${remaining} days remaining.` });
+            for(const selectedCrop of selectedCrops) {
+              const pb = product.plantback.find(r => r.crop === selectedCrop && r.days);
+              if(pb && daysAgo < Number(pb.days)) {
+                const remaining = Number(pb.days) - daysAgo;
+                warnings.push({ type:"plantback", chemical:chemName, crop:selectedCrop,
+                  msg:`🚫 ${chemName} was applied ${daysAgo} days ago (${act.date?.slice(0,10)}). Min plantback for ${selectedCrop}: ${pb.days} days — ${remaining} days remaining.` });
+              }
             }
           }
         }
