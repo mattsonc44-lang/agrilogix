@@ -1204,6 +1204,7 @@ function SprayingForm({v,set,products={},onAddChemical}){
                           if(savePrompt[c.id]==="dismissed") setSavePrompt(p=>({...p,[c.id]:undefined}));
                         }}
                       />
+                      </div>{/* end flex row */}
                       {/* Lookup + Save-to-Products prompt */}
                       {(c.chemicalName||"").trim().length>1 && !savePrompt[c.id] && (
                         <div style={{marginTop:"5px",padding:"7px 10px",background:"#EEF6EE",border:"1px solid #A8CCA8",borderRadius:"5px",display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
