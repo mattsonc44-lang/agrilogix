@@ -1463,9 +1463,14 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
     if(type === "spraying") {
       // Find all crops on this field from the most recent seeding
       const lastSeeding = [...fieldActivities]
-        .filter(a => a.type === "seeding" && a.data?.crops?.length)
+        .filter(a => a.type === "seeding" && (a.data?.crops?.length || a.data?.crop))
         .sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-      const currentCrops = (lastSeeding?.data?.crops || []).map(c=>c.crop).filter(Boolean);
+      // Handle both old format (data.crop = "Wheat") and new format (data.crops = [{crop:"Wheat",...}])
+      const currentCrops = lastSeeding
+        ? (lastSeeding.data?.crops?.length
+            ? lastSeeding.data.crops.map(c => typeof c === "string" ? c : c.crop).filter(Boolean)
+            : lastSeeding.data?.crop ? [lastSeeding.data.crop] : [])
+        : [];
 
       if(currentCrops.length > 0 && (data.tankMix||[]).length > 0) {
         for(const chem of (data.tankMix||[])) {
@@ -1591,8 +1596,28 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
             ))}
           </div>
         </div>
-        {type==="seeding"  &&<SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct}/>}
-        {type==="spraying" &&<SprayingForm v={data} set={setData} products={products} onAddChemical={onAddChemical}/>}
+        {type==="seeding"  &&<>
+          <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct}/>
+          {complianceWarnings.filter(w=>w.type==="plantback").length > 0 && (
+            <div style={{background:"#FFF0F0",border:"2px solid #C04040",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
+              <div style={{fontWeight:700,color:"#7A0808",fontSize:"12px",marginBottom:"5px"}}>🚫 PLANTBACK RESTRICTION</div>
+              {complianceWarnings.filter(w=>w.type==="plantback").map((w,i)=>(
+                <div key={i} style={{fontSize:"12px",color:"#5A0808",lineHeight:"1.6",borderLeft:"3px solid #C04040",paddingLeft:"8px",marginBottom:"4px"}}>{w.msg}</div>
+              ))}
+            </div>
+          )}
+        </>}
+        {type==="spraying" &&<>
+          <SprayingForm v={data} set={setData} products={products} onAddChemical={onAddChemical}/>
+          {complianceWarnings.filter(w=>w.type==="label").length > 0 && (
+            <div style={{background:"#FFF8E8",border:"2px solid #D09020",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
+              <div style={{fontWeight:700,color:"#7A4A08",fontSize:"12px",marginBottom:"5px"}}>⚠️ COMPLIANCE NOTICE</div>
+              {complianceWarnings.filter(w=>w.type==="label").map((w,i)=>(
+                <div key={i} style={{fontSize:"12px",color:"#5A3A08",lineHeight:"1.6",borderLeft:"3px solid #D09020",paddingLeft:"8px",marginBottom:"4px"}}>{w.msg}</div>
+              ))}
+            </div>
+          )}
+        </>}
         {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
         {type==="harvest"  &&<HarvestForm v={data} set={setData}/>}
         {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
@@ -1623,16 +1648,6 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
         {err&&<p style={{color:"#E05050",fontSize:"13px",margin:"0 0 10px"}}>{err}</p>}
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
           <button style={mkBtn("ghost")} onClick={onClose}>Cancel</button>
-          {complianceWarnings.length > 0 && (
-            <div style={{ background:"#FFF8E8",border:"2px solid #D09020",borderRadius:"6px",padding:"12px 14px",marginBottom:"10px" }}>
-              <div style={{ fontWeight:700,color:"#7A4A08",fontSize:"12px",marginBottom:"6px" }}>
-                ⚠️ COMPLIANCE NOTICE — <span style={{ fontSize:"10px",fontWeight:400,color:"#9A6A28" }}>Always verify product labels before proceeding.</span>
-              </div>
-              {complianceWarnings.map((w,i)=>(
-                <div key={i} style={{ fontSize:"12px",color:"#5A3A08",lineHeight:"1.6",padding:"4px 0 4px 10px",borderLeft:"3px solid #D09020",marginBottom:i<complianceWarnings.length-1?"6px":0 }}>{w.msg}</div>
-              ))}
-            </div>
-          )}
           <button style={mkBtn("primary")} onClick={save} disabled={!type}>{isEdit?"Save Changes":"Save Activity"}</button>
         </div>
       </div>
