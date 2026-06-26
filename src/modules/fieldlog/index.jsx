@@ -307,6 +307,201 @@ function FieldMap({boundary=[],onBoundaryChange,height=350,readOnly=false}){
   );
 }
 
+
+// ── Common Hi-Line Herbicide Database (sourced from EPA labels & ND Weed Guide) ──
+const COMMON_CHEMICALS_DB = [
+  {
+    name:"Glyphosate (Roundup WeatherMax)", type:"Herbicide",
+    defaultRate:"1.2", unit:"L/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Corn","Soybeans","Sunflowers","Alfalfa"],
+    plantback:[
+      // Glyphosate is non-residual — minimal plantback (hours for annual weeds, 72h for perennials)
+      // Label: 30 days for any crop NOT listed
+    ]
+  },
+  {
+    name:"2,4-D LV6 (Ester)", type:"Herbicide",
+    defaultRate:"0.75", unit:"pt/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats","Corn"],
+    plantback:[
+      {crop:"Canola",   days:30},
+      {crop:"Flax",     days:30},
+      {crop:"Peas",     days:30},
+      {crop:"Lentils",  days:30},
+      {crop:"Chickpeas",days:30},
+      {crop:"Mustard",  days:30},
+      {crop:"Alfalfa",  days:30},
+      {crop:"Soybeans", days:15},
+    ]
+  },
+  {
+    name:"2,4-D Amine", type:"Herbicide",
+    defaultRate:"0.75", unit:"pt/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats","Flax","Peas","Corn"],
+    plantback:[
+      {crop:"Canola",   days:30},
+      {crop:"Lentils",  days:30},
+      {crop:"Chickpeas",days:30},
+      {crop:"Mustard",  days:30},
+      {crop:"Alfalfa",  days:30},
+      {crop:"Soybeans", days:15},
+      {crop:"Corn",     days:14},
+    ]
+  },
+  {
+    name:"MCPA Amine", type:"Herbicide",
+    defaultRate:"0.5", unit:"pt/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats","Flax","Peas"],
+    plantback:[
+      // Label: crops NOT on MCPA label require 60-day plantback
+      {crop:"Canola",   days:60},
+      {crop:"Lentils",  days:60},
+      {crop:"Chickpeas",days:60},
+      {crop:"Corn",     days:60},
+      {crop:"Soybeans", days:60},
+      {crop:"Sunflowers",days:60},
+      {crop:"Mustard",  days:60},
+    ]
+  },
+  {
+    name:"Ally XP (Metsulfuron)", type:"Herbicide",
+    defaultRate:"0.1", unit:"oz/ac",
+    labeledCrops:["Wheat","Durum","Barley"],
+    plantback:[
+      // Ally can persist 22+ months in high-pH, low-rainfall soils (Hi-Line concern!)
+      {crop:"Canola",    days:670}, // 22 months
+      {crop:"Flax",      days:670},
+      {crop:"Lentils",   days:670},
+      {crop:"Chickpeas", days:670},
+      {crop:"Peas",      days:670},
+      {crop:"Alfalfa",   days:670},
+      {crop:"Mustard",   days:670},
+      {crop:"Sunflowers",days:548}, // 18 months
+      {crop:"Corn",      days:548},
+      {crop:"Soybeans",  days:548},
+    ]
+  },
+  {
+    name:"Glean (Chlorsulfuron)", type:"Herbicide",
+    defaultRate:"0.33", unit:"oz/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats"],
+    plantback:[
+      // Similar persistence to Ally in high-pH soils
+      {crop:"Canola",    days:670},
+      {crop:"Flax",      days:670},
+      {crop:"Lentils",   days:670},
+      {crop:"Chickpeas", days:670},
+      {crop:"Peas",      days:670},
+      {crop:"Alfalfa",   days:548},
+      {crop:"Mustard",   days:548},
+      {crop:"Sunflowers",days:365},
+      {crop:"Corn",      days:365},
+    ]
+  },
+  {
+    name:"Dicamba (Banvel/Clarity)", type:"Herbicide",
+    defaultRate:"0.5", unit:"pt/ac",
+    labeledCrops:["Wheat","Durum","Corn"],
+    plantback:[
+      // 4 months after 1 pt/A for most sensitive crops
+      {crop:"Canola",    days:120},
+      {crop:"Flax",      days:120},
+      {crop:"Lentils",   days:120},
+      {crop:"Chickpeas", days:120},
+      {crop:"Peas",      days:120},
+      {crop:"Sunflowers",days:120},
+      {crop:"Alfalfa",   days:120},
+    ]
+  },
+  {
+    name:"Bromoxynil (Buctril/Maestro)", type:"Herbicide",
+    defaultRate:"1.0", unit:"pt/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats","Flax","Corn"],
+    plantback:[] // Contact herbicide — minimal soil residue/plantback
+  },
+  {
+    name:"Clopyralid (Stinger/Lontrel)", type:"Herbicide",
+    defaultRate:"0.33", unit:"pt/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats","Canola","Corn","Sunflowers"],
+    plantback:[
+      // Legumes are very sensitive to clopyralid
+      {crop:"Peas",      days:365},
+      {crop:"Lentils",   days:365},
+      {crop:"Chickpeas", days:365},
+      {crop:"Alfalfa",   days:365},
+      {crop:"Flax",      days:365},
+    ]
+  },
+  {
+    name:"Finesse (Chlorsulfuron + Metsulfuron)", type:"Herbicide",
+    defaultRate:"0.5", unit:"oz/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats"],
+    plantback:[
+      {crop:"Canola",    days:670},
+      {crop:"Flax",      days:670},
+      {crop:"Lentils",   days:670},
+      {crop:"Chickpeas", days:670},
+      {crop:"Peas",      days:548},
+      {crop:"Alfalfa",   days:548},
+      {crop:"Sunflowers",days:548},
+      {crop:"Corn",      days:365},
+    ]
+  },
+  {
+    name:"Harmony Extra (Thifensulfuron)", type:"Herbicide",
+    defaultRate:"0.5", unit:"oz/ac",
+    labeledCrops:["Wheat","Durum","Barley","Oats"],
+    plantback:[
+      // Shorter plantback than Ally/Glean
+      {crop:"Canola",    days:60},
+      {crop:"Mustard",   days:60},
+      {crop:"Peas",      days:45},
+      {crop:"Lentils",   days:45},
+      {crop:"Chickpeas", days:45},
+      {crop:"Flax",      days:45},
+      {crop:"Soybeans",  days:45},
+      {crop:"Corn",      days:45},
+    ]
+  },
+  {
+    name:"Express (Tribenuron)", type:"Herbicide",
+    defaultRate:"0.5", unit:"oz/ac",
+    labeledCrops:["Wheat","Durum","Barley"],
+    plantback:[
+      {crop:"Canola",    days:60},
+      {crop:"Peas",      days:45},
+      {crop:"Lentils",   days:45},
+      {crop:"Chickpeas", days:45},
+      {crop:"Flax",      days:45},
+    ]
+  },
+  {
+    name:"Edge (Ethalfluralin)", type:"Herbicide",
+    defaultRate:"1.25", unit:"pt/ac",
+    labeledCrops:["Canola","Peas","Lentils","Chickpeas","Soybeans","Sunflowers"],
+    plantback:[
+      {crop:"Wheat",   days:7},
+      {crop:"Durum",   days:7},
+      {crop:"Barley",  days:7},
+      {crop:"Oats",    days:7},
+      {crop:"Corn",    days:7},
+      {crop:"Flax",    days:7},
+    ]
+  },
+  {
+    name:"Lontrel (Clopyralid 0.75L)", type:"Herbicide",
+    defaultRate:"0.2", unit:"L/ac",
+    labeledCrops:["Canola","Wheat","Durum","Barley","Oats","Corn","Sunflowers"],
+    plantback:[
+      {crop:"Peas",      days:365},
+      {crop:"Lentils",   days:365},
+      {crop:"Chickpeas", days:365},
+      {crop:"Alfalfa",   days:365},
+      {crop:"Flax",      days:365},
+    ]
+  },
+];
+
 // ── Reusable "Save to Products?" prompt ───────────────────────────────────
 function SavePrompt({name, dismissed, onYes, onNo}) {
   if(!name || name.trim().length < 2 || dismissed) return null;
@@ -1174,7 +1369,7 @@ function useVoiceInput() {
   return { listening, toggle, stop };
 }
 
-function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct}){
+function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[]}){
   const[type,setType]=useState(initial?.type||"");
   const[date,setDate]=useState(initial?.date||nowLocal());
   const[data,setData]=useState(initial?.data||{});
@@ -1184,6 +1379,60 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
   const{listening:voiceListening,toggle:voiceToggle,stop:voiceStop}=useVoiceInput();
   const activityType=type;
   const isEdit = !!initial;
+
+  // ── Compliance checks ─────────────────────────────────────────────────
+  const complianceWarnings = (() => {
+    const warnings = [];
+    const myChems = products.chemicals || [];
+
+    if(type === "spraying") {
+      // Find the current crop on this field (most recent seeding)
+      const lastSeeding = [...fieldActivities]
+        .filter(a => a.type === "seeding" && a.data?.crops?.[0]?.crop)
+        .sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+      const currentCrop = lastSeeding?.data?.crops?.[0]?.crop;
+
+      if(currentCrop && (data.tankMix||[]).length > 0) {
+        for(const chem of (data.tankMix||[])) {
+          const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
+          if(!chemName) continue;
+          const product = myChems.find(p => p.name === chemName);
+          if(product?.labeledCrops?.length > 0 && !product.labeledCrops.includes(currentCrop)) {
+            warnings.push({ type:"label", chemical:chemName, crop:currentCrop,
+              msg:`⚠️ ${chemName} may not be labeled for ${currentCrop} — verify the product label before applying.` });
+          }
+        }
+      }
+    }
+
+    if(type === "seeding") {
+      const selectedCrop = (data.crops||[])[0]?.crop;
+      if(selectedCrop) {
+        const today = new Date();
+        const sprayingActs = fieldActivities
+          .filter(a => a.type === "spraying")
+          .sort((a,b) => new Date(b.date) - new Date(a.date));
+
+        for(const act of sprayingActs) {
+          const daysAgo = Math.floor((today - new Date(act.date)) / 86400000);
+          for(const chem of (act.data?.tankMix || [])) {
+            const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
+            if(!chemName) continue;
+            const product = myChems.find(p => p.name === chemName);
+            if(!product?.plantback?.length) continue;
+            const pb = product.plantback.find(r => r.crop === selectedCrop && r.days);
+            if(pb && daysAgo < Number(pb.days)) {
+              const remaining = Number(pb.days) - daysAgo;
+              warnings.push({ type:"plantback", chemical:chemName, crop:selectedCrop,
+                msg:`🚫 ${chemName} was applied ${daysAgo} days ago (${act.date}). Min plantback for ${selectedCrop}: ${pb.days} days — ${remaining} days remaining.` });
+            }
+          }
+        }
+      }
+    }
+
+    return warnings;
+  })();
 
   const aiSmartFill = async () => {
     if(!notes.trim()||!type) return;
@@ -1281,6 +1530,16 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
         {err&&<p style={{color:"#E05050",fontSize:"13px",margin:"0 0 10px"}}>{err}</p>}
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
           <button style={mkBtn("ghost")} onClick={onClose}>Cancel</button>
+          {complianceWarnings.length > 0 && (
+            <div style={{ background:"#FFF8E8",border:"2px solid #D09020",borderRadius:"6px",padding:"12px 14px",marginBottom:"10px" }}>
+              <div style={{ fontWeight:700,color:"#7A4A08",fontSize:"12px",marginBottom:"6px" }}>
+                ⚠️ COMPLIANCE NOTICE — <span style={{ fontSize:"10px",fontWeight:400,color:"#9A6A28" }}>Always verify product labels before proceeding.</span>
+              </div>
+              {complianceWarnings.map((w,i)=>(
+                <div key={i} style={{ fontSize:"12px",color:"#5A3A08",lineHeight:"1.6",padding:"4px 0 4px 10px",borderLeft:"3px solid #D09020",marginBottom:i<complianceWarnings.length-1?"6px":0 }}>{w.msg}</div>
+              ))}
+            </div>
+          )}
           <button style={mkBtn("primary")} onClick={save} disabled={!type}>{isEdit?"Save Changes":"Save Activity"}</button>
         </div>
       </div>
@@ -2429,6 +2688,12 @@ function ProductsModal({ products, onSave, onClose }) {
   });
 
   // Tank mix preset helpers
+  // Plantback restriction helpers
+  const addPlantback   = (cid) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,plantback:[...(c.plantback||[]),{crop:"",days:""}]}:c)}));
+  const updPlantback   = (cid,idx,k,v) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,plantback:(c.plantback||[]).map((pb,i)=>i===idx?{...pb,[k]:v}:pb)}:c)}));
+  const delPlantback   = (cid,idx) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,plantback:(c.plantback||[]).filter((_,i)=>i!==idx)}:c)}));
+  const toggleCropLabel = (cid,crop,checked) => setItems(p=>({...p, chemicals:p.chemicals.map(c=>c.id===cid?{...c,labeledCrops:checked?[...(c.labeledCrops||[]),crop]:(c.labeledCrops||[]).filter(x=>x!==crop)}:c)}));
+
   const addPreset = () => setItems(p=>({...p, tankMixPresets:[...p.tankMixPresets, {id:genId(),name:"",waterVol:"",purpose:"",chemicals:[]}]}));
   const updPreset = (id,k,v) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===id?{...x,[k]:v}:x)}));
   const delPreset = (id) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.filter(x=>x.id!==id)}));
@@ -2527,6 +2792,7 @@ function ProductsModal({ products, onSave, onClose }) {
             )}
             {items.chemicals.map((c, i) => (
               <div key={c.id} style={{ background:"#EEF3FC",border:"1px solid #A8C0E8",borderRadius:"7px",padding:"10px",marginBottom:"8px" }}>
+                {/* Row 1: name / type / rate / unit */}
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 120px 80px 90px 32px",gap:"6px",alignItems:"flex-end" }}>
                   <div>
                     {i===0&&<label style={S.label}>Product Name</label>}
@@ -2551,12 +2817,54 @@ function ProductsModal({ products, onSave, onClose }) {
                   </div>
                   <button onClick={()=>del("chemicals",c.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>✕</button>
                 </div>
+                {/* Row 2: Labeled crops */}
+                <div style={{ marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #C8D8F0" }}>
+                  <div style={{ fontSize:"11px",color:"#2563EB",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px" }}>✅ Labeled for crops (check all that apply)</div>
+                  <div style={{ display:"flex",flexWrap:"wrap",gap:"4px" }}>
+                    {CROPS.filter(cr=>cr!=="Other").map(crop=>(
+                      <label key={crop} style={{ display:"flex",alignItems:"center",gap:"3px",fontSize:"11px",cursor:"pointer",padding:"2px 7px",borderRadius:"4px",border:`1px solid ${(c.labeledCrops||[]).includes(crop)?"#2563EB":"#C8D8F0"}`,background:(c.labeledCrops||[]).includes(crop)?"#DBEAFE":"transparent",userSelect:"none" }}>
+                        <input type="checkbox" checked={(c.labeledCrops||[]).includes(crop)} onChange={e=>toggleCropLabel(c.id,crop,e.target.checked)} style={{ accentColor:"#2563EB",width:"11px",height:"11px" }}/>
+                        {crop}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* Row 3: Plantback restrictions */}
+                <div style={{ marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #C8D8F0" }}>
+                  <div style={{ fontSize:"11px",color:"#B05010",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px" }}>⏳ Plantback restrictions</div>
+                  {(c.plantback||[]).map((pb,pbi)=>(
+                    <div key={pbi} style={{ display:"grid",gridTemplateColumns:"1fr 90px 26px",gap:"5px",marginBottom:"5px",alignItems:"center" }}>
+                      <select style={{...S.input,marginBottom:0,fontSize:"12px"}} value={pb.crop||""} onChange={e=>updPlantback(c.id,pbi,"crop",e.target.value)}>
+                        <option value="">Select crop…</option>
+                        {CROPS.filter(cr=>cr!=="Other").map(cr=><option key={cr}>{cr}</option>)}
+                      </select>
+                      <div style={{ position:"relative" }}>
+                        <input style={{...S.input,marginBottom:0,fontSize:"12px",paddingRight:"32px"}} type="number" min="1" placeholder="days" value={pb.days||""} onChange={e=>updPlantback(c.id,pbi,"days",e.target.value)}/>
+                        <span style={{ position:"absolute",right:"6px",top:"50%",transform:"translateY(-50%)",fontSize:"10px",color:T.muted }}>days</span>
+                      </div>
+                      <button onClick={()=>delPlantback(c.id,pbi)} style={{ background:"none",border:"none",cursor:"pointer",color:T.danger,fontSize:"14px" }}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>addPlantback(c.id)} style={{ ...mkBtn("ghost"),fontSize:"11px",padding:"3px 10px",borderColor:"#E0A080",color:"#B05010",marginTop:"2px" }}>+ Add restriction</button>
+                </div>
               </div>
             ))}
-            <button onClick={()=>add("chemicals",{name:"",type:"",defaultRate:"",unit:"L/ac"})}
-              style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#A8C0E8",color:"#2563EB",fontSize:"12px" }}>
-              + Add Chemical
-            </button>
+            <div style={{ display:"flex",gap:"8px",marginTop:"4px" }}>
+              <button onClick={()=>add("chemicals",{name:"",type:"",defaultRate:"",unit:"L/ac"})}
+                style={{ ...mkBtn("ghost"),flex:1,justifyContent:"center",borderColor:"#A8C0E8",color:"#2563EB",fontSize:"12px" }}>
+                + Add Chemical
+              </button>
+              <button onClick={()=>{
+                const existing = new Set(items.chemicals.map(c=>c.name));
+                const toAdd = COMMON_CHEMICALS_DB.filter(c=>!existing.has(c.name)).map(c=>({...c,id:genId()}));
+                if(toAdd.length===0){ alert("All common chemicals are already in your list."); return; }
+                setItems(p=>({...p,chemicals:[...p.chemicals,...toAdd]}));
+              }}
+                style={{ ...mkBtn("ghost"),justifyContent:"center",borderColor:"#7A3090",color:"#7A3090",fontSize:"12px",whiteSpace:"nowrap" }}
+                title="Pre-fill with common Hi-Line herbicides including label info and plantback restrictions">
+                📥 Load Common Chemicals
+              </button>
+            </div>
           </div>
         )}
 
@@ -3196,6 +3504,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       {showAdd&&curField&&<AddActivityModal
         field={curField}
         products={products}
+        fieldActivities={activities.filter(a=>a.fieldId===curField.id)}
         onAddChemical={chem=>saveProducts({...products,chemicals:[...(products.chemicals||[]),{id:genId(),...chem}]})}
         onAddProduct={(cat,item)=>{
           const {_id,...clean}=item;
