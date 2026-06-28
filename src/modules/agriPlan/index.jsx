@@ -2368,11 +2368,10 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
-// AgriPlan module — accepts Agri Logix module props but uses its own Firebase
+// AgriPlan module — tenant-isolated, starts blank inside Agri Logix
 export default function AgriPlanModule({ tenantId, token, userProfile, persist } = {}){
-  // Configure Firebase for this tenant context (must be before any hooks)
+  // Configure Firebase for this tenant (before any hooks)
   initAgriPlan(tenantId, token);
-  // When running inside Agri Logix (tenantId set), start blank — data comes from Firebase
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
   const[fields,setFields]=useState(()=>tenantId?[]:loadFields(loadYears().slice(-1)[0]));
@@ -2427,8 +2426,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
             setFields(fbFields);
           }
           firstLoad = false;
-          if(!tenantId) localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields));
-          localStorage.setItem('agriplan_data_version',DATA_VERSION);
+          if(!tenantId){ localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields)); localStorage.setItem('agriplan_data_version',DATA_VERSION); }
         }
         setDbLoaded(true);
       });
