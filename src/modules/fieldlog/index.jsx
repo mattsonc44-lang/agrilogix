@@ -95,6 +95,20 @@ const BUILTIN_CHEM_DATA = {
 // Bump this whenever chemical names/schema change — forces all tenants to reset products
 const PRODUCTS_VERSION = "2";
 
+// ── Crop rotation rules (based on crop insurance eligibility, Hi-Line MT) ─────
+// selfGap: years you must wait before planting same crop again
+// conflictGap: years you must wait after a conflicting crop
+const CROP_ROTATION_RULES = {
+  "Lentils":      { selfGap:2, conflictGap:1, conflicts:["Chickpeas","Green Peas","Yellow Peas","Austrians"] },
+  "Chickpeas":    { selfGap:3, conflictGap:0, conflicts:[] },
+  "Austrians":    { selfGap:2, conflictGap:1, conflicts:["Chickpeas","Lentils","Green Peas","Yellow Peas"] },
+  "Green Peas":   { selfGap:2, conflictGap:1, conflicts:["Chickpeas","Lentils","Yellow Peas","Austrians"] },
+  "Yellow Peas":  { selfGap:2, conflictGap:1, conflicts:["Chickpeas","Lentils","Green Peas","Austrians"] },
+  "Mustard":      { selfGap:1, conflictGap:1, conflicts:["Canola","Sunflowers"] },
+  "Canola":       { selfGap:1, conflictGap:1, conflicts:["Mustard","Sunflowers"] },
+  "Flax":         { selfGap:2, conflictGap:0, conflicts:[] },
+};
+
 const ACTIVITY_META = {
   seeding:     {label:"Seeding",      icon:"🌱",color:"#C07010"},
   spraying:    {label:"Spraying",     icon:"💧",color:"#1E5078"},
@@ -1516,6 +1530,50 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
       const selectedCrops = (data.crops||[]).map(c=>c.crop).filter(Boolean);
       if(selectedCrops.length > 0) {
         const today = new Date();
+
+        // ── Rotation check (crop insurance eligibility) ──────────────────────
+        const seedingYear = new Date(date).getFullYear();
+        // Build a map of year → [crops seeded that year] from prior activities
+        const seedingsByYear = {};
+        fieldActivities
+          .filter(a => a.type === "seeding")
+          .forEach(a => {
+            const yr = new Date(a.date).getFullYear();
+            if(yr >= seedingYear) return; // only look at past years
+            if(!seedingsByYear[yr]) seedingsByYear[yr] = [];
+            const crops = a.data?.crops?.map(c => typeof c==="string"?c:c.crop).filter(Boolean)
+                       || (a.data?.crop ? [a.data.crop] : []);
+            seedingsByYear[yr].push(...crops);
+          });
+
+        for(const crop of selectedCrops) {
+          const rule = CROP_ROTATION_RULES[crop];
+          if(!rule) continue;
+          // Self-gap check
+          for(let gap = 1; gap <= rule.selfGap; gap++) {
+            const yr = seedingYear - gap;
+            if(seedingsByYear[yr]?.includes(crop)) {
+              warnings.push({ type:"rotation", crop,
+                msg:`🔄 ${crop} was seeded in ${yr} (${gap} yr ago). Crop insurance requires a ${rule.selfGap}-year gap between ${crop} crops.` });
+            }
+          }
+          // Conflict-gap check
+          if(rule.conflictGap > 0) {
+            for(let gap = 1; gap <= rule.conflictGap; gap++) {
+              const yr = seedingYear - gap;
+              if(seedingsByYear[yr]) {
+                rule.conflicts.forEach(conflict => {
+                  if(seedingsByYear[yr].includes(conflict)) {
+                    warnings.push({ type:"rotation", crop,
+                      msg:`🔄 ${conflict} was seeded in ${yr}. ${crop} after ${conflict} may affect crop insurance eligibility.` });
+                  }
+                });
+              }
+            }
+          }
+        }
+
+        // ── Plantback check (prior spraying restrictions) ────────────────────
         const sprayingActs = fieldActivities
           .filter(a => a.type === "spraying")
           .sort((a,b) => new Date(b.date) - new Date(a.date));
@@ -1617,6 +1675,14 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
         </div>
         {type==="seeding"  &&<>
           <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct}/>
+          {complianceWarnings.filter(w=>w.type==="rotation").length > 0 && (
+            <div style={{background:"#F0F4FF",border:"2px solid #4060C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
+              <div style={{fontWeight:700,color:"#1A2A80",fontSize:"12px",marginBottom:"5px"}}>🔄 ROTATION CHECK — Crop Insurance Eligibility</div>
+              {complianceWarnings.filter(w=>w.type==="rotation").map((w,i)=>(
+                <div key={i} style={{fontSize:"12px",color:"#1A2A60",lineHeight:"1.6",borderLeft:"3px solid #4060C0",paddingLeft:"8px",marginBottom:"4px"}}>{w.msg}</div>
+              ))}
+            </div>
+          )}
           {complianceWarnings.filter(w=>w.type==="plantback").length > 0 && (
             <div style={{background:"#FFF0F0",border:"2px solid #C04040",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
               <div style={{fontWeight:700,color:"#7A0808",fontSize:"12px",marginBottom:"5px"}}>🚫 PLANTBACK RESTRICTION</div>
