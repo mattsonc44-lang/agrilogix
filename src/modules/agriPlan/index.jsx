@@ -1312,7 +1312,7 @@ function exportCSV(fields){
 
 // ── Print / PDF ───────────────────────────────────────────────────────────────
 function openPrint(fields,entityFilter){
-  const title=entityFilter==="all"?"Flat Acre Farms & Via Terra Inc.":entityFilter;
+  const title=entityFilter==="all"?(_isAgriLogixTenant?"Farm Budget":"Flat Acre Farms & Via Terra Inc."):entityFilter;
   const totAc=fields.reduce((s,f)=>s+f.acres,0);const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
   const totGuar=fields.reduce((s,f)=>s+calc(f).guarantee,0);const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);const totNet=totRev-totExp;
   const fmt=n=>"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
@@ -2442,7 +2442,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       setDbLoaded(true);
     }
 
-    return ()=>{ if(unsubFields) unsubFields(); };
+    // Safety net: unblock after 8s even if SSE never fires
+    const fallbackTimer = setTimeout(() => setDbLoaded(true), 8000);
+
+    return ()=>{ if(unsubFields) unsubFields(); clearTimeout(fallbackTimer); };
   },[activeYear]);
 
   const isSavingRef = useRef(false);
@@ -2569,7 +2572,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
         {saveStatus==='error'&&<span style={{fontSize:10,color:"#ff8870"}} title="Check Firebase rules">⚠ Save failed — check database rules</span>}
         <button onClick={()=>{setMainView("table");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
-        <button onClick={()=>{setMainView("history");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>
+        {!tenantId&&<button onClick={()=>{setMainView("history");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
         <button onClick={()=>{setMainView("expenses");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedId(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
@@ -2626,7 +2629,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
           <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
-          :mainView==="history"?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} />)
+          :mainView==="history"&&!tenantId?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear}/>)
           :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)}/>)}
