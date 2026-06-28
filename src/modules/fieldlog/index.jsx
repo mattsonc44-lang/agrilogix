@@ -1477,7 +1477,7 @@ function useVoiceInput() {
   return { listening, toggle, stop };
 }
 
-function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[]}){
+function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[],tenantId="",token=""}){
   const[type,setType]=useState(initial?.type||"");
   const[date,setDate]=useState(initial?.date||nowLocal());
   const[data,setData]=useState(initial?.data||{});
@@ -1487,6 +1487,23 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
   const{listening:voiceListening,toggle:voiceToggle,stop:voiceStop}=useVoiceInput();
   const activityType=type;
   const isEdit = !!initial;
+
+  // AgriPlan integration — fetch planned crop when seeding modal opens
+  const [agriPlanSuggestion, setAgriPlanSuggestion] = useState(null);
+  const [agriPlanApplied,    setAgriPlanApplied]    = useState(false);
+  useEffect(() => {
+    if(type !== "seeding" || !tenantId || !token || !field?.name) return;
+    setAgriPlanSuggestion(null); setAgriPlanApplied(false);
+    const year = new Date().getFullYear();
+    fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fields/${year}.json?auth=${token}`)
+      .then(r => r.json())
+      .then(d => {
+        if(!d) return;
+        const match = Object.values(d).find(f => f.common === field.name);
+        if(match?.crop) setAgriPlanSuggestion(match);
+      })
+      .catch(() => {});
+  }, [type, tenantId, token, field?.name]);
 
   // ── Compliance checks ─────────────────────────────────────────────────
   const complianceWarnings = (() => {
@@ -1674,6 +1691,30 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
           </div>
         </div>
         {type==="seeding"  &&<>
+          {agriPlanSuggestion && !agriPlanApplied && (
+            <div style={{background:"#EAF5E0",border:"2px solid #2A7010",borderRadius:"8px",padding:"10px 14px",margin:"4px 0 10px",display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
+              <span style={{fontSize:"13px",color:"#1A4A08",flex:1}}>
+                📋 <strong>AgriPlan</strong> has <strong>{agriPlanSuggestion.crop}</strong> planned for <strong>{field.name}</strong> in {new Date().getFullYear()}
+              </span>
+              <button onClick={()=>{
+                const newCrops = (data.crops||[]).length > 0
+                  ? data.crops.map((c,i)=>i===0?{...c,crop:agriPlanSuggestion.crop}:c)
+                  : [{id:String(Date.now()),crop:agriPlanSuggestion.crop,seedRate:"",totalSeed:"",variety:"",rowSpacing:"",seedTreatment:""}];
+                setData(d=>({...d,crops:newCrops}));
+                setAgriPlanApplied(true);
+              }} style={{background:"#2A7010",color:"#fff",border:"none",borderRadius:"5px",padding:"6px 16px",fontSize:"12px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                ✓ Use this crop
+              </button>
+              <button onClick={()=>setAgriPlanApplied(true)} style={{background:"none",border:"1px solid #5A9040",borderRadius:"5px",padding:"6px 12px",fontSize:"11px",cursor:"pointer",color:"#5A9040",fontFamily:"inherit"}}>
+                Dismiss
+              </button>
+            </div>
+          )}
+          {agriPlanApplied && agriPlanSuggestion && (
+            <div style={{fontSize:"11px",color:"#3A7020",padding:"4px 8px",marginBottom:"6px"}}>
+              ✓ AgriPlan crop applied — <span style={{cursor:"pointer",textDecoration:"underline"}} onClick={()=>setAgriPlanApplied(false)}>undo</span>
+            </div>
+          )}
           <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct}/>
           {complianceWarnings.filter(w=>w.type==="rotation").length > 0 && (
             <div style={{background:"#F0F4FF",border:"2px solid #4060C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
@@ -3759,6 +3800,8 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         field={curField}
         products={products}
         fieldActivities={activities.filter(a=>a.fieldId===curField.id)}
+        tenantId={tenantId}
+        token={token}
         onAddChemical={chem=>saveProducts({...products,chemicals:[...(products.chemicals||[]),{id:genId(),...chem}]})}
         onAddProduct={(cat,item)=>{
           const {_id,...clean}=item;
