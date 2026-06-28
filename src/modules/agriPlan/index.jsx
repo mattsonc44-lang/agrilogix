@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
+import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
 
 const HISTORY_DATA = {
   "Akey Yard|1,2":{"common":"Akey Yard","farm":"Nuxoll Land","fieldNum":"1,2","acres":11.83,"history":{"2025":"CC WW","2026":"Austrians"}},
@@ -2370,9 +2370,12 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 // ── Main App ──────────────────────────────────────────────────────────────────
 // AgriPlan module — accepts Agri Logix module props but uses its own Firebase
 export default function AgriPlanModule({ tenantId, token, userProfile, persist } = {}){
-  const[years,setYears]=useState(()=>loadYears());
-  const[activeYear,setActiveYear]=useState(()=>{const ys=loadYears();return ys[ys.length-1];});
-  const[fields,setFields]=useState(()=>loadFields(loadYears().slice(-1)[0]));
+  // Configure Firebase for this tenant context (must be before any hooks)
+  initAgriPlan(tenantId, token);
+  // When running inside Agri Logix (tenantId set), start blank — data comes from Firebase
+  const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
+  const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
+  const[fields,setFields]=useState(()=>tenantId?[]:loadFields(loadYears().slice(-1)[0]));
   const[selectedId,setSelectedId]=useState(null);
   const[entityFilter,setEntityFilter]=useState("all");
   const[expanded,setExpanded]=useState(()=>new Set(["Flat Acre::Home","Flat Acre::Hunnewell","Via Terra::Chris Kolstad"]));
@@ -2424,7 +2427,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
             setFields(fbFields);
           }
           firstLoad = false;
-          localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields));
+          if(!tenantId) localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields));
           localStorage.setItem('agriplan_data_version',DATA_VERSION);
         }
         setDbLoaded(true);
