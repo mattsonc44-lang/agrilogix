@@ -92,8 +92,14 @@ export function fbWatchFields(year, callback) {
   sse.addEventListener("put", (e) => {
     try {
       const { data } = JSON.parse(e.data);
-      if (data) callback(Object.values(data).sort((a, b) => (a.excelRow || 0) - (b.excelRow || 0)));
+      // Always call callback — pass [] when data is null so dbLoaded still gets set
+      const fields = data
+        ? Object.values(data).sort((a, b) => (a.excelRow || 0) - (b.excelRow || 0))
+        : [];
+      callback(fields);
     } catch (_) {}
   });
+  // Also unblock on SSE error (e.g. network issue or empty path)
+  sse.onerror = () => callback([]);
   return () => sse.close();
 }
