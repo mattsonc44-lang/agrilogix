@@ -2882,7 +2882,7 @@ function ProductsModal({ products, onSave, onClose }) {
 
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:400,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 12px",overflowY:"auto" }}>
-      <div style={{ background:"#FDFAF4",border:`1px solid ${T.borderHi}`,borderRadius:"12px",width:"100%",maxWidth:"580px",padding:"24px",marginTop:"10px" }}>
+      <div style={{ background:"#FDFAF4",border:`1px solid ${T.borderHi}`,borderRadius:"12px",width:"100%",maxWidth:"860px",padding:"24px",marginTop:"10px" }}>
 
         {/* Header */}
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"18px" }}>
@@ -2954,31 +2954,30 @@ function ProductsModal({ products, onSave, onClose }) {
             )}
             {items.chemicals.map((c, i) => (
               <div key={c.id} style={{ background:"#EEF3FC",border:"1px solid #A8C0E8",borderRadius:"7px",padding:"10px",marginBottom:"8px" }}>
-                {/* Row 1: name / type / rate / unit */}
-                <div style={{ display:"grid",gridTemplateColumns:"1fr 120px 80px 90px 32px",gap:"6px",alignItems:"flex-end" }}>
-                  <div>
+                {/* Row 1: Product name + lookup button — full width */}
+                <div style={{ display:"flex",gap:"8px",alignItems:"flex-end",marginBottom:"6px" }}>
+                  <div style={{flex:1}}>
                     {i===0&&<label style={S.label}>Product Name</label>}
-                    <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-                      <input style={{...S.input,marginBottom:0,flex:1}} placeholder="e.g. Ally XP, Varro, Axial BIA..." value={c.name||""} onChange={e=>upd("chemicals",c.id,"name",e.target.value)}/>
-                      <button
-                        onClick={()=>lookupLabel(c.id, c.name)}
-                        title="Look up label data for this product"
-                        style={{...mkBtn("ghost"),padding:"6px 8px",fontSize:"13px",whiteSpace:"nowrap",borderColor:
-                          lookupState[c.id]==="done"?"#2A8A2A":
-                          lookupState[c.id]==="error"||lookupState[c.id]==="notfound"?"#C04040":"#2563EB",
-                          color:
-                          lookupState[c.id]==="done"?"#2A8A2A":
-                          lookupState[c.id]==="error"||lookupState[c.id]==="notfound"?"#C04040":"#2563EB",
-                          flexShrink:0
-                        }}>
-                        {lookupState[c.id]==="loading" ? "⏳" :
-                         lookupState[c.id]==="done"    ? "✓ Loaded" :
-                         lookupState[c.id]==="notfound"? "? Not found" :
-                         lookupState[c.id]==="error"   ? "✗ Error" :
-                         "🔍 Look up label"}
-                      </button>
-                    </div>
+                    <input style={{...S.input,marginBottom:0}} placeholder="e.g. Ally XP, Varro, Axial BIA, Roundup WeatherMax..." value={c.name||""} onChange={e=>upd("chemicals",c.id,"name",e.target.value)}/>
                   </div>
+                  <button
+                    onClick={()=>lookupLabel(c.id, c.name)}
+                    title="Look up label data for this product using AI"
+                    style={{...mkBtn("ghost"),padding:"7px 14px",fontSize:"13px",whiteSpace:"nowrap",flexShrink:0,
+                      borderColor: lookupState[c.id]==="done"?"#2A8A2A": lookupState[c.id]==="error"||lookupState[c.id]==="notfound"?"#C04040":"#2563EB",
+                      color:       lookupState[c.id]==="done"?"#2A8A2A": lookupState[c.id]==="error"||lookupState[c.id]==="notfound"?"#C04040":"#2563EB",
+                      background:  lookupState[c.id]==="done"?"#F0FAF0": lookupState[c.id]==="loading"?"#EEF4FF":"transparent",
+                    }}>
+                    {lookupState[c.id]==="loading"  ? "⏳ Looking up…" :
+                     lookupState[c.id]==="done"     ? "✓ Label loaded" :
+                     lookupState[c.id]==="notfound" ? "? Not found"    :
+                     lookupState[c.id]==="error"    ? "✗ Error"        :
+                     "🔍 Look up label"}
+                  </button>
+                  <button onClick={()=>del("chemicals",c.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",flexShrink:0 }}>✕</button>
+                </div>
+                {/* Row 2: Type / Rate / Unit */}
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 100px 110px",gap:"6px",alignItems:"flex-end" }}>
                   <div>
                     {i===0&&<label style={S.label}>Type</label>}
                     <select style={S.input} value={c.type||""} onChange={e=>upd("chemicals",c.id,"type",e.target.value)}>
@@ -2987,7 +2986,7 @@ function ProductsModal({ products, onSave, onClose }) {
                     </select>
                   </div>
                   <div>
-                    {i===0&&<label style={S.label}>Rate</label>}
+                    {i===0&&<label style={S.label}>Default Rate</label>}
                     <input style={S.input} type="number" step="0.1" placeholder="e.g. 1.2" value={c.defaultRate||""} onChange={e=>upd("chemicals",c.id,"defaultRate",e.target.value)}/>
                   </div>
                   <div>
@@ -2996,7 +2995,6 @@ function ProductsModal({ products, onSave, onClose }) {
                       {UNITS_CHEM.map(u=><option key={u}>{u}</option>)}
                     </select>
                   </div>
-                  <button onClick={()=>del("chemicals",c.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>✕</button>
                 </div>
                 {/* Row 2: Labeled crops */}
                 <div style={{ marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #C8D8F0" }}>
