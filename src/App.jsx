@@ -10,6 +10,7 @@ import OrgPanel    from "./admin/OrgPanel.jsx";
 import FieldLogModule   from "./modules/fieldlog/index.jsx";
 import ServiceLogModule from "./modules/serviceLog/index.jsx";
 import AgriScaleModule  from "./modules/agriScale/index.jsx";
+import AgriPlanModule  from "./modules/agriPlan/index.jsx";
 
 // ── Farm colors ───────────────────────────────────────────────────
 const FARM_COLORS = [
@@ -304,6 +305,7 @@ export default function App() {
         {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
         {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
         {module === "serviceLog" && <ServiceLogModule tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
+        {module === "agriPlan"   && <AgriPlanModule  tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>

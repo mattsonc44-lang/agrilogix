@@ -31,6 +31,14 @@ export const MODULES = {
     price: 150,
     color: "#1E5078",
   },
+  agriPlan: {
+    id:    "agriPlan",
+    label: "AgriPlan",
+    icon:  "📋",
+    desc:  "Farm planning — crop rotation, field budgets, expense tracking",
+    price: 150,
+    color: "#2A6A18",
+  },
 };
 
 // ── Roles ─────────────────────────────────────────────────────────
