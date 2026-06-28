@@ -3376,18 +3376,11 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       if(data){
         const f = obj2arr(data.fields||{});
         const a = obj2arr(data.activities||{});
+        const p = data.products || {seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]};
         const s = data.settings || {};
         setFields(f); setActs(a);
         if(data.settings) setSettings(prev=>({...prev,...s}));
-        // Version-gate products: wipe saved products if schema changed
-        let p = data.products || {seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]};
-        if(data.products && data.products._v !== PRODUCTS_VERSION) {
-          // Old format — clear chemicals (names/schema changed) but keep seeds + presets
-          p = { seeds: data.products.seeds||[], chemicals:[], fertilizers: data.products.fertilizers||[], tankMixPresets: data.products.tankMixPresets||[], _v: PRODUCTS_VERSION };
-          dbWrite(`${BASE}/products`, p, token).catch(()=>{});
-          console.info("[AgriField] Products schema updated — chemicals reset. Use 📥 Load Common Chemicals to repopulate.");
-        }
-        if(data.products || true) setProducts(prev=>({...prev,...p}));
+        if(data.products) setProducts(prev=>({...prev,...p}));
         // Save to local cache for offline use
         try{ localStorage.setItem(`fl_cache_${tenantId}_${farmId||"default"}`, JSON.stringify({fields:f,activities:a,products:p,settings:s,_at:Date.now()})); }catch(e){}
       }
