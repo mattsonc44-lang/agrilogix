@@ -867,20 +867,42 @@ function cropColor(crop) { return CROP_COLORS[crop] || "#aabbaa"; }
 // ─── HISTORY VIEW ─────────────────────────────────────────────────────────────
 const HIST_YEARS = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
 
-function HistoryView({ fields, allFields, onSelectField }) {
+function HistoryView({ fields, allFields, onSelectField, aphData=null }) {
   const [year, setYear] = useState("2026");
   const [search, setSearch] = useState("");
   const [filterViol, setFilterViol] = useState(false);
   const [sortKey, setSortKey] = useState("farm");
 
+  // Build dynamic history data from aphData when in Agri Logix mode
+  const histData = useMemo(() => {
+    if (!aphData) return HISTORY_DATA;
+    // Convert aphData shape: {fieldCommon: {crop: {years: {year: {yield,acres}}}}}
+    // Into HISTORY_DATA shape: {key: {common, farm, fieldNum, acres, history: {year: crop}}}
+    const built = {};
+    Object.entries(aphData).forEach(([fieldCommon, crops]) => {
+      const apField = allFields.find(f => f.common === fieldCommon);
+      const key = `${fieldCommon}|${apField?.fieldNum||""}`;
+      if(!built[key]) built[key] = {
+        common: fieldCommon, farm: apField?.farm||"", fieldNum: apField?.fieldNum||"",
+        acres: apField?.acres||0, history: {}
+      };
+      Object.entries(crops).forEach(([crop, cropData]) => {
+        Object.keys(cropData.years||{}).forEach(yr => {
+          if(!built[key].history[yr]) built[key].history[yr] = crop;
+        });
+      });
+    });
+    return Object.keys(built).length > 0 ? built : HISTORY_DATA;
+  }, [aphData, allFields]);
+
   const [, forceUpdate] = useState(0);
-  const violations = useMemo(() => checkRotationViolations(HISTORY_DATA, year), [year, forceUpdate]);
+  const violations = useMemo(() => checkRotationViolations(histData, year), [histData, year, forceUpdate]);
   const violKeys = useMemo(() => new Set(violations.map(v => v.key)), [violations]);
 
   // Build rows for selected year
   const rows = useMemo(() => {
     const yr = year;
-    return Object.entries(HISTORY_DATA)
+    return Object.entries(histData)
       .filter(([key, d]) => {
         if (!d.history[yr]) return false;
         if (filterViol && !violKeys.has(key)) return false;
@@ -901,7 +923,7 @@ function HistoryView({ fields, allFields, onSelectField }) {
   // Crop summary for year
   const cropSummary = useMemo(() => {
     const cm = {};
-    Object.values(HISTORY_DATA).forEach(d => {
+    Object.values(histData).forEach(d => {
       const crop = d.history[year];
       if (!crop) return;
       if (!cm[crop]) cm[crop] = { acres: 0, fields: 0 };
@@ -1046,7 +1068,7 @@ function HistoryView({ fields, allFields, onSelectField }) {
           <div style={{fontSize:11,fontWeight:600,color:"#3a6020",textTransform:"uppercase",letterSpacing:0.8,marginBottom:10}}>{year} Crop Summary</div>
           {[["All",null],...([...new Set(INITIAL_FIELDS.map(f=>f.entity))].filter(Boolean).map(e=>[e,e]))].map(([label,entityFilter])=>{
             // Build crop summary for this entity filter
-            const filtered = Object.values(HISTORY_DATA).filter(d=>{
+            const filtered = Object.values(histData).filter(d=>{
               if(!d.history[year]) return false;
               if(!entityFilter) return true;
               // Match entity by checking INITIAL_FIELDS
@@ -2307,6 +2329,195 @@ function saveHistRevCache(data){
   try{ localStorage.setItem('agriplan_hist_revenue',JSON.stringify(data)); }catch{}
 }
 
+
+// ── APH Import Modal ──────────────────────────────────────────────────────────
+function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
+  const [stage, setStage] = useState("upload"); // upload | parsing | review | saving | done
+  const [error, setError] = useState("");
+  const [parsed, setParsed] = useState(null);   // raw Claude output
+  const [matches, setMatches] = useState({});   // unitIndex → fieldId
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(""); setStage("parsing");
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("File read failed"));
+        r.readAsDataURL(file);
+      });
+      const resp = await fetch("/.netlify/functions/aph-parse", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pdf: base64 })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      if (!data.units?.length) throw new Error("No APH units found in PDF — check the file and try again");
+      setParsed(data);
+      // Auto-match units to AgriPlan fields by common name similarity
+      const auto = {};
+      (data.units || []).forEach((unit, i) => {
+        const name = (unit.fieldName || "").toLowerCase().trim();
+        // Exact match first, then partial
+        let match = fields.find(f => f.common?.toLowerCase() === name);
+        if (!match) match = fields.find(f =>
+          name.includes(f.common?.toLowerCase()) || f.common?.toLowerCase().includes(name.split("|")[0].trim())
+        );
+        auto[i] = match?.id || "";
+      });
+      setMatches(auto);
+      setStage("review");
+    } catch (err) { setError(err.message); setStage("upload"); }
+  };
+
+  const matchedCount = Object.values(matches).filter(Boolean).length;
+
+  const handleSave = async () => {
+    setStage("saving");
+    try {
+      // Build aphData: { [fieldCommon]: { [year]: { [crop]: {acres, yield, production} }, aphYield, aphYears } }
+      const aphData = {};
+      (parsed.units || []).forEach((unit, i) => {
+        const fieldId = matches[i]; if (!fieldId) return;
+        const field = fields.find(f => f.id === fieldId); if (!field) return;
+        const key = field.common;
+        if (!aphData[key]) aphData[key] = {};
+        const crop = unit.crop;
+        if (!aphData[key][crop]) aphData[key][crop] = { years: {}, aphYield: unit.aphYield, aphYears: unit.aphYears };
+        (unit.years || []).forEach(y => {
+          aphData[key][crop].years[String(y.year)] = { acres: y.acres, yield: y.yield, production: y.production };
+        });
+      });
+      const url = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`;
+      const res = await fetch(url, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aphData)
+      });
+      if (!res.ok) throw new Error(`Firebase save failed: ${res.status}`);
+      onImported(aphData);
+      setStage("done");
+    } catch (err) { setError(err.message); setStage("review"); }
+  };
+
+  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:4000 };
+  const box = { background:"#fff", borderRadius:12, padding:28, width:720, maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)", border:"1px solid #ccdda0", fontFamily:"'Barlow',sans-serif" };
+  const hdr = { fontFamily:"'Playfair Display',serif", fontSize:20, color:"#1a3010", marginBottom:4 };
+  const sub = { fontSize:12, color:"#7a9260", marginBottom:20 };
+  const btn = (bg, fg) => ({ background:bg, color:fg, border:"none", borderRadius:6, padding:"8px 20px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" });
+
+  return (
+    <div style={overlay}>
+      <div style={box}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+          <div>
+            <div style={hdr}>📥 Import APH Data</div>
+            <div style={sub}>Upload your Actual Production History PDF from your crop insurance agent</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"1px solid #ccdda0", borderRadius:6, padding:"4px 12px", cursor:"pointer", color:"#7a9260", fontSize:13 }}>✕</button>
+        </div>
+
+        {error && <div style={{ background:"#fff0f0", border:"1px solid #e08080", borderRadius:6, padding:"8px 12px", marginBottom:12, fontSize:12, color:"#c02020" }}>⚠ {error}</div>}
+
+        {stage === "upload" && (
+          <div style={{ textAlign:"center", padding:"40px 20px", border:"2px dashed #b8d09a", borderRadius:8, background:"#f8fbf5" }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>📄</div>
+            <div style={{ fontSize:14, color:"#3a6020", marginBottom:16, fontWeight:600 }}>Select your APH PDF</div>
+            <div style={{ fontSize:12, color:"#7a9260", marginBottom:20 }}>PDF from your crop insurance agent — covers 10 years of yield history per field unit</div>
+            <label style={{ ...btn("#2a7a18","#fff"), display:"inline-block", cursor:"pointer" }}>
+              Choose PDF
+              <input type="file" accept="application/pdf,.pdf" onChange={handleFile} style={{ display:"none" }} />
+            </label>
+          </div>
+        )}
+
+        {stage === "parsing" && (
+          <div style={{ textAlign:"center", padding:"60px 20px" }}>
+            <div style={{ fontSize:36, marginBottom:16, animation:"spin 1.5s linear infinite" }}>⏳</div>
+            <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Reading APH data...</div>
+            <div style={{ fontSize:12, color:"#7a9260", marginTop:8 }}>Claude is extracting field units, crops, and yield history from your PDF</div>
+          </div>
+        )}
+
+        {stage === "review" && parsed && (
+          <>
+            <div style={{ background:"#f0f8e8", border:"1px solid #a8d880", borderRadius:6, padding:"8px 14px", marginBottom:16, fontSize:12, color:"#2a6010" }}>
+              Found <strong>{parsed.units?.length}</strong> field unit{parsed.units?.length !== 1 ? "s" : ""} for <strong>{parsed.insured || "Unknown"}</strong>
+              {parsed.county ? ` — ${parsed.county}` : ""}.
+              {" "}<strong>{matchedCount}</strong> matched to AgriPlan fields.
+            </div>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:16 }}>
+              <thead>
+                <tr style={{ background:"#1e3a18", color:"#c8e8a0" }}>
+                  {["APH Field Name","Crop","Years","APH Yield","↔ Match to AgriPlan Field"].map(h => (
+                    <th key={h} style={{ padding:"6px 10px", textAlign:"left", fontSize:10, textTransform:"uppercase", letterSpacing:0.6 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(parsed.units || []).map((unit, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? "#f6f9f0" : "#fff", borderBottom:"1px solid #e0eccc" }}>
+                    <td style={{ padding:"6px 10px", color:"#1a3010", fontWeight:600 }}>{unit.fieldName || "—"}{unit.legal ? <div style={{ fontSize:10, color:"#7a9260", fontWeight:400 }}>{unit.legal}</div> : null}</td>
+                    <td style={{ padding:"6px 10px" }}>
+                      <span style={{ background:"#d4ecc0", color:"#1a4010", padding:"1px 7px", borderRadius:3, fontSize:11, fontWeight:600 }}>{unit.crop || "—"}</span>
+                    </td>
+                    <td style={{ padding:"6px 10px", color:"#527a38", fontFamily:"'IBM Plex Mono',monospace", fontSize:11 }}>
+                      {unit.years?.length || 0} yrs
+                      <div style={{ fontSize:10, color:"#8a9a70" }}>
+                        {unit.years?.length ? `${Math.min(...unit.years.map(y=>y.year))}–${Math.max(...unit.years.map(y=>y.year))}` : ""}
+                      </div>
+                    </td>
+                    <td style={{ padding:"6px 10px", fontFamily:"'IBM Plex Mono',monospace", fontSize:11, color:"#2a6010", fontWeight:600 }}>
+                      {unit.aphYield ? `${unit.aphYield} bu/ac` : "—"}
+                    </td>
+                    <td style={{ padding:"6px 10px" }}>
+                      <select
+                        value={matches[i] || ""}
+                        onChange={e => setMatches(m => ({ ...m, [i]: e.target.value }))}
+                        style={{ width:"100%", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 6px", fontSize:11, background:"#f8fbf5", color:"#1a3010" }}>
+                        <option value="">— skip —</option>
+                        {fields.map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+              <button onClick={onClose} style={{ ...btn("#f8fbf5","#7a9260"), border:"1px solid #ccdda0" }}>Cancel</button>
+              <button
+                onClick={handleSave}
+                disabled={matchedCount === 0}
+                style={{ ...btn(matchedCount > 0 ? "#2a7a18" : "#aac890", "#fff") }}>
+                Import {matchedCount} Field{matchedCount !== 1 ? "s" : ""}
+              </button>
+            </div>
+          </>
+        )}
+
+        {stage === "saving" && (
+          <div style={{ textAlign:"center", padding:"40px 20px" }}>
+            <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Saving to database...</div>
+          </div>
+        )}
+
+        {stage === "done" && (
+          <div style={{ textAlign:"center", padding:"40px 20px" }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
+            <div style={{ fontSize:16, color:"#2a6010", fontWeight:700, marginBottom:8 }}>APH data imported!</div>
+            <div style={{ fontSize:12, color:"#7a9260", marginBottom:24 }}>
+              {matchedCount} field unit{matchedCount !== 1 ? "s" : ""} imported. History tab is now available with crop rotation and yield data.
+            </div>
+            <button onClick={onClose} style={btn("#2a7a18","#fff")}>Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 // ── New Year Modal ────────────────────────────────────────────────────────────
 function NewYearModal({existingYears,onConfirm,onClose}){
   const nextYr = String(Math.max(...existingYears.map(Number))+1);
@@ -2390,6 +2601,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
 
   const [dbLoaded, setDbLoaded] = useState(false);
   const [showRulesEditor, setShowRulesEditor] = useState(false);
+  const [showImportAPH,   setShowImportAPH]   = useState(false);
+  const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
   const undoStack = useRef([]);
@@ -2421,6 +2634,12 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       }catch(e){ console.warn("Firebase load failed:",e); }
     }
     loadOnce();
+
+    // Load APH data if it exists
+    if(tenantId && token) {
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d) setAphData(d); }).catch(()=>{});
+    }
 
     // Real-time listener for fields — fires immediately on connect, then on every change
     try{
@@ -2530,7 +2749,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"#2a5a18"}}>Loading AgriPlan...</div>
       <div style={{fontSize:12,color:"#7a9260"}}>Syncing with database</div>
     </div>}
-    {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/>}
+    {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/> }
+    {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} fields={fields} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
     {/* Header */}
     <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
       <span style={{fontFamily:"'Playfair Display',serif",fontSize:19,color:"#c8e8a0",letterSpacing:0.5}}>🌾 AgriPlan</span>
@@ -2572,9 +2792,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
         {saveStatus==='error'&&<span style={{fontSize:10,color:"#ff8870"}} title="Check Firebase rules">⚠ Save failed — check database rules</span>}
         <button onClick={()=>{setMainView("table");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
-        {!tenantId&&<button onClick={()=>{setMainView("history");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
+        {(!tenantId||aphData)&&<button onClick={()=>{setMainView("history");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
         <button onClick={()=>{setMainView("expenses");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedId(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
+        {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
         <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
         <button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>
       </div>
@@ -2629,7 +2850,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
           <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
-          :mainView==="history"&&!tenantId?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} />)
+          :mainView==="history"&&(!tenantId||aphData)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear}/>)
           :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)}/>)}
