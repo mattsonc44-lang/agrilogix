@@ -2256,6 +2256,9 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint}){
 const DATA_VERSION = "2026-v6";
 
 // ── Sync helpers — write to Firebase, mirror to localStorage as offline cache ──
+// Set to true when running inside Agri Logix (tenantId present) — skips localStorage
+let _isAgriLogixTenant = false;
+
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
 function loadYears(){
@@ -2267,6 +2270,7 @@ function saveYears(years){
   fbSaveYears(years).catch(()=>{});
 }
 function loadFields(year){
+  if(_isAgriLogixTenant) return [];
   // Try localStorage cache first (fast/offline)
   try{
     const raw=localStorage.getItem(lsKey(year));
@@ -2288,7 +2292,7 @@ function loadFields(year){
   return [];
 }
 function saveFields(year, fields, onStatus){
-  try{ localStorage.setItem(lsKey(year),JSON.stringify(fields)); }catch{}
+  if(!_isAgriLogixTenant){ try{ localStorage.setItem(lsKey(year),JSON.stringify(fields)); }catch{} }
   if(onStatus) onStatus('saving');
   fbSaveFields(year, fields)
     .then(()=>{ if(onStatus) onStatus('saved'); })
@@ -2370,7 +2374,8 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 // ── Main App ──────────────────────────────────────────────────────────────────
 // AgriPlan module — tenant-isolated, starts blank inside Agri Logix
 export default function AgriPlanModule({ tenantId, token, userProfile, persist } = {}){
-  // Configure Firebase for this tenant (before any hooks)
+  // Configure Firebase and localStorage mode for this tenant
+  _isAgriLogixTenant = !!tenantId;
   initAgriPlan(tenantId, token);
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
@@ -2484,13 +2489,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     const updatedYears=years.filter(y=>y!==yr);
     saveYears(updatedYears);
     setYears(updatedYears);
-    // Clear localStorage for this year
-    try{ localStorage.removeItem(lsKey(yr)); }catch{}
-    // Remove from Firebase
-    try{
-      const fb=window.firebase;
-      if(fb&&fb.apps.length) fb.database().ref("agriplan/fields/"+yr).remove();
-    }catch{}
+    // Clear localStorage for this year (standalone only)
+    if(!_isAgriLogixTenant){ try{ localStorage.removeItem(lsKey(yr)); }catch{} }
     // Switch to most recent remaining year
     const switchTo=updatedYears[updatedYears.length-1];
     setActiveYear(switchTo);
