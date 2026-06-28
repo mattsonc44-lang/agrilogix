@@ -2422,7 +2422,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       unsubFields = fbWatchFields(activeYear, (fbFields)=>{
         if(fbFields&&fbFields.length>0){
           // Skip our own saves (debounce: if we just saved, don't overwrite with stale data)
-          if(!firstLoad){
+          // Agri Logix: always load from Firebase (fields start blank, first SSE = source of truth)
+          // Standalone: skip first SSE to preserve localStorage-loaded data
+          if(!firstLoad || tenantId){
             setFields(fbFields);
           }
           firstLoad = false;
