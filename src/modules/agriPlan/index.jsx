@@ -1044,7 +1044,7 @@ function HistoryView({ fields, allFields, onSelectField }) {
         {/* Crop summary sidebar */}
         <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"14px",position:"sticky",top:0,maxHeight:"90vh",overflowY:"auto"}}>
           <div style={{fontSize:11,fontWeight:600,color:"#3a6020",textTransform:"uppercase",letterSpacing:0.8,marginBottom:10}}>{year} Crop Summary</div>
-          {[["All",null],["Flat Acre","Flat Acre"],["Via Terra","Via Terra"]].map(([label,entityFilter])=>{
+          {[["All",null],...([...new Set(INITIAL_FIELDS.map(f=>f.entity))].filter(Boolean).map(e=>[e,e]))].map(([label,entityFilter])=>{
             // Build crop summary for this entity filter
             const filtered = Object.values(HISTORY_DATA).filter(d=>{
               if(!d.history[year]) return false;
@@ -1065,9 +1065,9 @@ function HistoryView({ fields, allFields, onSelectField }) {
             if(sorted.length===0) return null;
             return(
               <div key={label} style={{marginBottom:16}}>
-                <div style={{fontSize:10,color:label==="Flat Acre"?"#2a7010":label==="Via Terra"?"#1a4a80":"#3a6020",
+                <div style={{fontSize:10,color:"#3a6020",
                   textTransform:"uppercase",letterSpacing:0.8,fontWeight:700,marginBottom:8,
-                  background:label==="Flat Acre"?"#e8f8e0":label==="Via Terra"?"#e0ecf8":"transparent",
+                  background:entityFilter?"#e8f8e0":"transparent",
                   padding:label!=="All"?"3px 7px":"0",borderRadius:3,display:"inline-block"}}>
                   {label} — {totalAc.toFixed(0)} ac
                 </div>
@@ -1099,8 +1099,8 @@ function HistoryView({ fields, allFields, onSelectField }) {
 
 // ── Farm Expenses View ────────────────────────────────────────────────────────
 function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
-  const entities = ["Flat Acre", "Via Terra"];
-  const [activeEntity, setActiveEntity] = useState("Flat Acre");
+  const entities = [...new Set(fields.map(f=>f.entity).filter(Boolean))];
+  const [activeEntity, setActiveEntity] = useState(()=>entities[0]||"");
   const [totals, setTotals] = useState(() => {
     // Initialize from current field expense overrides × acres
     const t = {};
@@ -1189,8 +1189,8 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
         {entities.map(e => (
           <button key={e} onClick={()=>{setActiveEntity(e);setApplied(false);}}
             style={{padding:"6px 18px",borderRadius:5,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-              background:e===activeEntity?(e==="Flat Acre"?"#2a7010":"#1a4a80"):"#e8f0d8",
-              color:e===activeEntity?"#fff":e==="Flat Acre"?"#2a7010":"#1a4a80"}}>
+              background:e===activeEntity?"#2a7010":"#e8f0d8",
+              color:e===activeEntity?"#fff":"#2a7010"}}>
             {e} — {fields.filter(f=>f.entity===e).reduce((s,f)=>s+f.acres,0).toFixed(0)} ac
           </button>
         ))}
@@ -2052,7 +2052,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       <div>
         <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700,color:"#1a3010"}}>{field.common}{field.fieldNum&&<span style={{fontSize:14,color:"#6a8a50"}}> — Field #{field.fieldNum}</span>}</div>
         <div style={{fontSize:12,color:"#6a8a50",marginTop:2}}>
-          <span style={{background:field.entity==="Flat Acre"?"#d4ecc0":"#d0e4f8",padding:"1px 7px",borderRadius:3,fontSize:10,color:field.entity==="Flat Acre"?"#2a7010":"#1a4a80",marginRight:6}}>{field.entity}</span>
+          <span style={{background:"#d4ecc0",padding:"1px 7px",borderRadius:3,fontSize:10,color:"#2a7010",marginRight:6}}>{field.entity}</span>
           {field.farm} · {field.legal||"—"} · {field.acres.toLocaleString()} ac
         </div>
       </div>
@@ -2162,7 +2162,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
 
 // ── Add Field Form ────────────────────────────────────────────────────────────
 function AddFieldForm({onSave,onCancel}){
-  const[d,setD]=useState({farmNumber:"",entity:"Flat Acre",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25});
+  const[d,setD]=useState({farmNumber:"",entity:"",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25});
   const[eligibleCrops,setEligibleCrops]=useState([...FA_ELIG]);
   const upd=(k,v)=>setD(p=>({...p,[k]:v}));
   const inp=(label,key,type="text")=>(<label style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -2173,7 +2173,7 @@ function AddFieldForm({onSave,onCancel}){
     <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a4010",marginBottom:20}}>Add New Field</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
       <label style={{display:"flex",flexDirection:"column",gap:4}}><span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Entity</span>
-        <select value={d.entity} onChange={e=>upd("entity",e.target.value)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:"'Barlow',sans-serif",fontSize:13}}><option>Flat Acre</option><option>Via Terra</option></select>
+        <input value={d.entity} onChange={e=>upd("entity",e.target.value)} placeholder="e.g. Flat Acre" style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:"'Barlow',sans-serif",fontSize:13,outline:"none",width:"100%"}}/>
       </label>
       {inp("Farm / Landlord","farm")}{inp("Farm Number","farmNumber")}
     </div>
@@ -2229,7 +2229,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint}){
       <tbody>
         {sorted.map((f,i)=>{const c=calc(f);const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
           return(<tr key={f.id} onClick={()=>onSelect(f.id)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
-            <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:f.entity==="Flat Acre"?"#d4ecc0":"#d0e4f8",padding:"1px 5px",borderRadius:2,fontSize:9,color:f.entity==="Flat Acre"?"#2a7010":"#1a4a80"}}>{f.entity==="Flat Acre"?"FA":"VT"}</span></td>
+            <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #141e14"}}>{f.farm}</td>
             <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #141e14"}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
             <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",background:inelig?"#fff0f0":"#dce8c6",borderRadius:3,fontSize:11,color:inelig?"#c02020":"#2a7010"}}><span style={{width:5,height:5,borderRadius:"50%",background:inelig?"#c02020":"#3a9020"}}/>{f.crop}</span></td>
@@ -2377,7 +2377,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const[fields,setFields]=useState(()=>tenantId?[]:loadFields(loadYears().slice(-1)[0]));
   const[selectedId,setSelectedId]=useState(null);
   const[entityFilter,setEntityFilter]=useState("all");
-  const[expanded,setExpanded]=useState(()=>new Set(["Flat Acre::Home","Flat Acre::Hunnewell","Via Terra::Chris Kolstad"]));
+  const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set(["Flat Acre::Home","Flat Acre::Hunnewell","Via Terra::Chris Kolstad"]));
   const[addMode,setAddMode]=useState(false);
   const[searchQ,setSearchQ]=useState("");
   const[mainView,setMainView]=useState("table");
@@ -2579,7 +2579,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       {/* Sidebar */}
       <div style={{width:235,background:"#e6eed8",borderRight:"1px solid #162016",overflowY:"auto",flexShrink:0,display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",gap:4,padding:"8px 10px",borderBottom:"1px solid #162016"}}>
-          {[["all","All"],["Flat Acre","FA"],["Via Terra","VT"]].map(([v,l])=>(<button key={v} onClick={()=>setEntityFilter(v)} style={{flex:1,fontSize:10,padding:"4px 0",borderRadius:3,border:"none",cursor:"pointer",background:entityFilter===v?"#2a7a18":"#eef4e6",color:entityFilter===v?"#1a7010":"#6a8a50",fontFamily:"'Barlow',sans-serif"}}>{l}</button>))}
+          {[["all","All"],...([...new Set(fields.map(f=>f.entity))].filter(Boolean).map(e=>[e,e.length>8?e.slice(0,7)+"…":e]))].map(([v,l])=>(<button key={v} onClick={()=>setEntityFilter(v)} style={{flex:1,fontSize:10,padding:"4px 0",borderRadius:3,border:"none",cursor:"pointer",background:entityFilter===v?"#2a7a18":"#eef4e6",color:entityFilter===v?"#1a7010":"#6a8a50",fontFamily:"'Barlow',sans-serif"}}>{l}</button>))}
         </div>
         <div style={{padding:"6px 10px",borderBottom:"1px solid #162016"}}>
           <input placeholder="🔍 search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"4px 8px",color:"#1a7010",fontFamily:"'Barlow',sans-serif",fontSize:11,width:"100%",outline:"none"}}/>
