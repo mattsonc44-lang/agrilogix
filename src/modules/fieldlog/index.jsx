@@ -3762,6 +3762,46 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     }
   },[token, BASE]);
 
+  // ── Chemical restriction writer ──────────────────────────────────────────────
+  // Called after any spraying activity is saved — writes plantback data to a shared
+  // Firebase path that AgriPlan can read when planning crops
+  const writeChemRestrictions = useCallback(async (activity) => {
+    if(!tenantId || !token) return;
+    const field = fields.find(f => f.id === activity.fieldId);
+    if(!field) return;
+    // Firebase-safe key from field name
+    const safeKey = field.name.replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
+    const chems = {};
+    for(const chem of (activity.data?.tankMix || [])){
+      const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
+      if(!chemName) continue;
+      // Check built-in data first, then user products library
+      const builtinPB = BUILTIN_CHEM_DATA[chemName]?.plantback;
+      const userProduct = (products.chemicals||[]).find(p=>p.name===chemName);
+      const userPB = userProduct?.plantback?.length
+        ? Object.fromEntries(userProduct.plantback.filter(r=>r.crop&&r.days).map(r=>[r.crop,Number(r.days)]))
+        : null;
+      const plantback = builtinPB || userPB;
+      if(plantback && Object.keys(plantback).length > 0){
+        chems[chemName] = { date: activity.date, plantback };
+      }
+    }
+    if(Object.keys(chems).length === 0) return;
+    try{
+      // Merge with existing — keep most recent application date per chemical
+      const path = `tenants/${tenantId}/fieldRestrictions/${safeKey}`;
+      const existing = await dbRead(path, token).catch(()=>null);
+      const merged = { fieldName: field.name, chemicals: {...(existing?.chemicals||{})} };
+      for(const [chemName, data] of Object.entries(chems)){
+        const exDate = merged.chemicals[chemName]?.date;
+        if(!exDate || new Date(data.date) >= new Date(exDate)){
+          merged.chemicals[chemName] = data;
+        }
+      }
+      await dbWrite(path, merged, token);
+    }catch(e){ console.warn("Chem restriction write failed:", e); }
+  }, [tenantId, token, fields, products]);
+
   // ── Mutations ─────────────────────────────────────────────
   const addField=(f)=>{
     const nf=[...fields,f]; setFields(nf); persist(nf,activities); setView("home");
@@ -3774,9 +3814,11 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   };
   const addActivity=(a)=>{
     const na=[...activities,a]; setActs(na); persist(fields,na);
+    if(a.type==="spraying") writeChemRestrictions(a);
   };
   const editActivity=(a)=>{
     const na=activities.map(x=>x.id===a.id?a:x); setActs(na); persist(fields,na);
+    if(a.type==="spraying") writeChemRestrictions(a);
   };
   const delActivity=(id)=>{
     const na=activities.filter(a=>a.id!==id); setActs(na); persist(fields,na);

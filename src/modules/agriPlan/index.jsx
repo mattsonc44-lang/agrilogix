@@ -2062,7 +2062,30 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={}}){
+  // ── Chemical plantback warnings ────────────────────────────────────────────
+  const chemWarnings = useMemo(() => {
+    if(!field.crop || !fieldRestrictions) return [];
+    const safeKey = field.common.replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
+    const fieldData = fieldRestrictions[safeKey];
+    if(!fieldData?.chemicals) return [];
+    const today = Date.now();
+    const warnings = [];
+    for(const [chemName, {date, plantback}] of Object.entries(fieldData.chemicals)) {
+      // Normalize crop names for lookup (e.g. "Spring Wheat" vs "Wheat")
+      const days = plantback[field.crop]
+        ?? plantback[field.crop.replace("Spring ","").replace("Winter ","").replace("CC ","")]
+        ?? null;
+      if(!days) continue;
+      const daysAgo = Math.floor((today - new Date(date).getTime()) / 86400000);
+      const daysRemaining = days - daysAgo;
+      if(daysRemaining > 0) {
+        const appliedDate = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+        warnings.push({ chemName, daysAgo, daysRemaining, appliedDate, totalDays: days });
+      }
+    }
+    return warnings.sort((a,b) => b.daysRemaining - a.daysRemaining);
+  }, [field.crop, field.common, fieldRestrictions]);
   const[tab,setTab]=useState("income");
   const[priorYear,setPriorYear]=useState("2023 Actuals");
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
@@ -2091,6 +2114,29 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       <SCard label="Total Expenses" val={f$(c.expenses)} color="#c05010" sub={`$${f2(c.expRate)}/ac`}/>
       <SCard label="Net Income" val={f$(c.net,true)} color={c.net>=0?"#1a7010":"#c02020"} sub="rev − expenses"/>
     </div>
+    {/* Chemical plantback warnings */}
+    {chemWarnings.length > 0 && (
+      <div style={{background:"#fff8e0",border:"2px solid #c07010",borderRadius:8,padding:"12px 16px",marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#7a4a00",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+          ⚗️ Chemical Plantback Restrictions — <span style={{fontWeight:400}}>{field.crop} cannot be planted yet on this field</span>
+        </div>
+        {chemWarnings.map(w=>(
+          <div key={w.chemName} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:11,color:"#5a3800",padding:"4px 0",borderTop:"1px solid #e0c060"}}>
+            <span style={{fontSize:14}}>🚫</span>
+            <div style={{flex:1}}>
+              <strong>{w.chemName}</strong> — applied {w.appliedDate} ({w.daysAgo} days ago)
+              <span style={{marginLeft:8,background:"#c07010",color:"#fff",borderRadius:3,padding:"1px 7px",fontSize:10,fontWeight:700}}>
+                {w.daysRemaining} days remaining
+              </span>
+              <span style={{marginLeft:6,color:"#9a7020",fontSize:10}}>({w.totalDays}-day plantback for {field.crop})</span>
+            </div>
+          </div>
+        ))}
+        <div style={{fontSize:10,color:"#9a7020",marginTop:8,paddingTop:6,borderTop:"1px solid #e0c060"}}>
+          ⚠️ Spraying data from FieldLog. Verify with your agronomist before planting.
+        </div>
+      </div>
+    )}
     {/* Tabs */}
     <div style={{borderBottom:"1px solid #1e3020",marginBottom:20}}>{TB("income","Income")}{TB("expenses","Expenses")}{TB("eligibility","Crop Eligibility")}{TB("history","📋 History & Plan")}</div>
 
@@ -2603,6 +2649,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [showRulesEditor, setShowRulesEditor] = useState(false);
   const [showImportAPH,   setShowImportAPH]   = useState(false);
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
+  const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
   const undoStack = useRef([]);
@@ -2639,6 +2686,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     if(tenantId && token) {
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setAphData(d); }).catch(()=>{});
+      // Load chemical plantback restrictions written by FieldLog
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
     }
 
     // Real-time listener for fields — fires immediately on connect, then on every change
@@ -2852,7 +2902,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear}/>)
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions}/>)
           :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)}/>)}
       </div>
     </div>
