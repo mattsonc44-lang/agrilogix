@@ -249,7 +249,7 @@ const T={
 const S={
   app:   {fontFamily:"'Barlow',sans-serif",background:T.bg,minHeight:"100vh",color:T.text},
   header:{background:T.panel,borderBottom:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",alignItems:"center",gap:"14px",position:"sticky",top:0,zIndex:50},
-  content:{padding:"20px",maxWidth:"820px",margin:"0 auto"},
+  content:{padding:"20px",maxWidth:"1100px",margin:"0 auto"},
   card:  {background:T.card,border:`1px solid ${T.border}`,borderRadius:"10px",padding:"16px",marginBottom:"12px"},
   label: {display:"block",fontSize:"11px",color:T.muted,textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700,marginBottom:"5px"},
   input: {width:"100%",background:"#FFFFFF",border:`1px solid ${T.borderHi}`,borderRadius:"6px",padding:"8px 11px",color:T.text,fontSize:"14px",fontFamily:"'Barlow',sans-serif",outline:"none",boxSizing:"border-box"},
@@ -2781,54 +2781,202 @@ function CropRotationView({fields,activities,onBack}){
 }
 
 // ── Home View ─────────────────────────────────────────────────────────
-function HomeView({fields,activities,onSelect,onAdd,onImport,onReport,onRotation,pendingCount,onPendingLoads}){
-  const[q,setQ]=useState("");
-  const filtered=[...fields].filter(f=>f.name.toLowerCase().includes(q.toLowerCase())||(f.legalDesc||"").toLowerCase().includes(q.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));
-  return(
+// ── Field satellite map thumbnail ─────────────────────────────────────────────
+function FieldMapThumb({ boundary, lat, lng }) {
+  const [err, setErr] = useState(false);
+
+  // Compute centroid from boundary or use explicit lat/lng
+  const center = useMemo(() => {
+    if (lat && lng) return { lat: +lat, lng: +lng };
+    if (boundary && boundary.length >= 3) {
+      const lats = boundary.map(p => p[0]||p.lat||0);
+      const lngs = boundary.map(p => p[1]||p.lng||0);
+      return { lat: lats.reduce((s,v)=>s+v,0)/lats.length, lng: lngs.reduce((s,v)=>s+v,0)/lngs.length };
+    }
+    return null;
+  }, [boundary, lat, lng]);
+
+  if (!center || err) {
+    return (
+      <div style={{ height:160, background:"linear-gradient(160deg,#2a5018 0%,#3d7025 45%,#6ba040 75%,#c8d880 100%)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:6 }}>
+        <div style={{ fontSize:32, opacity:0.7 }}>🗺️</div>
+        <div style={{ fontSize:10, color:"rgba(255,255,255,0.65)", letterSpacing:1, textTransform:"uppercase" }}>
+          {!center ? "No location set" : "Map unavailable"}
+        </div>
+      </div>
+    );
+  }
+
+  // ESRI World Imagery tile at zoom 15 (~1.2km/tile — good for field scale)
+  const z = 15;
+  const n = Math.pow(2, z);
+  const tX = Math.floor((center.lng + 180) / 360 * n);
+  const latR = center.lat * Math.PI / 180;
+  const tY = Math.floor((1 - Math.log(Math.tan(latR) + 1/Math.cos(latR)) / Math.PI) / 2 * n);
+  const src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${tY}/${tX}`;
+
+  return (
+    <img src={src} alt="Field satellite view" onError={()=>setErr(true)}
+      style={{ width:"100%", height:160, objectFit:"cover", display:"block" }} />
+  );
+}
+
+// ── Inline notes editor ────────────────────────────────────────────────────────
+function InlineNotes({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value || "");
+  useEffect(() => { setText(value || ""); }, [value]);
+
+  const commit = () => { setEditing(false); if (text !== (value||"")) onSave(text); };
+
+  if (editing) return (
+    <textarea autoFocus value={text} onChange={e=>setText(e.target.value)}
+      onBlur={commit} onClick={e=>e.stopPropagation()}
+      placeholder="Add field notes…"
+      style={{ width:"100%", resize:"none", height:62, fontSize:12, lineHeight:1.5,
+        fontFamily:"'Barlow',sans-serif", border:`1px solid ${T.borderHi}`, borderRadius:5,
+        padding:"6px 8px", color:T.text, background:"#FFFDF8", outline:"none",
+        boxSizing:"border-box" }}
+    />
+  );
+  return (
+    <div onClick={e=>{e.stopPropagation();setEditing(true);}}
+      style={{ fontSize:12, color:value?T.muted:"#C4B89A", lineHeight:1.55, minHeight:44,
+        cursor:"text", padding:"6px 2px",
+        display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+      {value || "Add notes…"}
+    </div>
+  );
+}
+
+// ── Redesigned HomeView — card grid ───────────────────────────────────────────
+function HomeView({fields,activities,onSelect,onAdd,onImport,onReport,onRotation,pendingCount,onPendingLoads,onUpdateField}){
+  const [q, setQ] = useState("");
+  const filtered = [...fields]
+    .filter(f => f.name.toLowerCase().includes(q.toLowerCase()) || (f.legalDesc||"").toLowerCase().includes(q.toLowerCase()))
+    .sort((a,b) => a.name.localeCompare(b.name));
+
+  const totalLogs = activities.length;
+
+  return (
     <div>
-      <div style={{background:"linear-gradient(135deg,#E8DDD0,#DDD3C0)",border:`1px solid ${T.borderHi}`,borderRadius:"12px",padding:"22px",marginBottom:"20px",display:"flex",alignItems:"center",gap:"16px"}}>
-        <div style={{fontSize:"40px"}}>🌾</div>
-        <div style={{flex:1}}>
-          <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"24px",margin:"0 0 4px",color:T.gold}}>FieldLog</h2>
-          <p style={{margin:0,fontSize:"13px",color:T.muted}}>{fields.length} field{fields.length!==1?"s":""} · {activities.length} activit{activities.length!==1?"ies":"y"} logged</p>
+      {/* ── Header bar ── */}
+      <div style={{ background:"linear-gradient(135deg,#E8DDD0,#DDD3C0)", border:`1px solid ${T.borderHi}`,
+        borderRadius:12, padding:"18px 22px", marginBottom:20, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+        <div style={{ fontSize:36 }}>🌾</div>
+        <div style={{ flex:1 }}>
+          <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, margin:"0 0 2px", color:T.gold }}>FieldLog</h2>
+          <p style={{ margin:0, fontSize:12, color:T.muted }}>{fields.length} field{fields.length!==1?"s":""} · {totalLogs} activit{totalLogs!==1?"ies":"y"} logged</p>
         </div>
         {pendingCount>0&&(
-          <button style={{...mkBtn("ghost"),padding:"10px 14px",fontSize:"14px",borderColor:"#C07010",color:"#8C5408",position:"relative"}} onClick={onPendingLoads}>
+          <button style={{...mkBtn("ghost"),padding:"8px 13px",fontSize:13,borderColor:"#C07010",color:"#8C5408",position:"relative"}} onClick={onPendingLoads}>
             ⚖️ Loads
-            <span style={{position:"absolute",top:"-6px",right:"-6px",background:T.danger,color:"#fff",borderRadius:"10px",fontSize:"10px",fontWeight:700,padding:"1px 5px",minWidth:"18px",textAlign:"center"}}>{pendingCount}</span>
+            <span style={{position:"absolute",top:-6,right:-6,background:T.danger,color:"#fff",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 5px",minWidth:18,textAlign:"center"}}>{pendingCount}</span>
           </button>
         )}
-        <button style={{...mkBtn("ghost"),padding:"10px 16px",fontSize:"14px"}} onClick={onRotation}>🔄 Rotation</button>
-        <button style={{...mkBtn("ghost"),padding:"10px 16px",fontSize:"14px"}} onClick={onReport}>📊 Reports</button>
-        <button style={{...mkBtn("ghost"),padding:"10px 16px",fontSize:"14px"}} onClick={onImport}>⬆ Import</button>
-        <button style={{...mkBtn("primary"),padding:"10px 20px",fontSize:"14px"}} onClick={onAdd}>+ Add Field</button>
+        <button style={{...mkBtn("ghost"),padding:"8px 14px",fontSize:13}} onClick={onRotation}>🔄 Rotation</button>
+        <button style={{...mkBtn("ghost"),padding:"8px 14px",fontSize:13}} onClick={onReport}>📊 Reports</button>
+        <button style={{...mkBtn("ghost"),padding:"8px 14px",fontSize:13}} onClick={onImport}>⬆ Import</button>
+        <button style={{...mkBtn("primary"),padding:"8px 18px",fontSize:13}} onClick={onAdd}>+ Add Field</button>
       </div>
-      {fields.length>3&&<div style={S.row}><input style={S.input} type="search" placeholder="Search fields…" value={q} onChange={e=>setQ(e.target.value)}/></div>}
-      {fields.length===0&&<div style={{...S.card,textAlign:"center",padding:"52px 24px"}}><div style={{fontSize:"48px",marginBottom:"12px"}}>🗺️</div><p style={{color:T.muted,marginBottom:"18px"}}>No fields registered yet.</p><button style={mkBtn("primary")} onClick={onAdd}>Add Your First Field</button></div>}
-      {filtered.map(f=>{
-        const fa=activities.filter(a=>a.fieldId===f.id).sort((a,b)=>new Date(b.date)-new Date(a.date));
-        const last=fa[0];const lm=last?(ACTIVITY_META[last.type]||ACTIVITY_META.other):null;
-        const tc=Object.fromEntries(Object.keys(ACTIVITY_META).map(k=>[k,fa.filter(a=>a.type===k).length]));
-        return(
-          <div key={f.id} style={{...S.card,cursor:"pointer",transition:"all .15s"}} onClick={()=>onSelect(f)}
-            onMouseEnter={e=>{e.currentTarget.style.background=T.cardHov;e.currentTarget.style.borderColor=T.borderHi;}}
-            onMouseLeave={e=>{e.currentTarget.style.background=T.card;e.currentTarget.style.borderColor=T.border;}}>
-            <div style={{display:"flex",gap:"14px",alignItems:"center"}}>
-              <div style={{width:"46px",height:"46px",borderRadius:"8px",background:"#EAE0CC",border:`1px solid ${T.borderHi}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",flexShrink:0}}>🌾</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:"16px",marginBottom:"2px"}}>{f.name}</div>
-                <div style={{color:T.muted,fontSize:"12px",display:"flex",gap:"8px"}}>{f.acres&&<span>{f.acres} ac</span>}{f.legalDesc&&<><span style={{color:T.faint}}>|</span><span>{f.legalDesc}</span></>}</div>
-                <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"6px"}}>{Object.entries(tc).filter(([,n])=>n>0).map(([k,n])=>{const m=ACTIVITY_META[k];return<span key={k} style={{fontSize:"10px",padding:"2px 7px",borderRadius:"10px",background:T.panel,border:`1px solid ${m.color}40`,color:m.color}}>{m.icon} {n}</span>;})}</div>
+
+      {/* ── Search ── */}
+      {fields.length > 4 && (
+        <div style={{ marginBottom:16 }}>
+          <input style={S.input} type="search" placeholder="Search fields…" value={q} onChange={e=>setQ(e.target.value)}/>
+        </div>
+      )}
+
+      {/* ── Empty state ── */}
+      {fields.length===0 && (
+        <div style={{...S.card, textAlign:"center", padding:"52px 24px"}}>
+          <div style={{ fontSize:48, marginBottom:12 }}>🗺️</div>
+          <p style={{ color:T.muted, marginBottom:18 }}>No fields yet. Add your first field to get started.</p>
+          <button style={mkBtn("primary")} onClick={onAdd}>+ Add Field</button>
+        </div>
+      )}
+
+      {/* ── Card grid ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:16 }}>
+        {filtered.map(f => {
+          const fa = activities.filter(a => a.fieldId===f.id);
+          const last = [...fa].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+          const lm = last ? (ACTIVITY_META[last.type]||ACTIVITY_META.other) : null;
+          const counts = Object.entries(ACTIVITY_META)
+            .map(([k,m]) => ({ k, m, n: fa.filter(a=>a.type===k).length }))
+            .filter(x => x.n > 0);
+
+          return (
+            <div key={f.id}
+              style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12,
+                overflow:"hidden", cursor:"pointer", transition:"box-shadow .15s, border-color .15s",
+                display:"flex", flexDirection:"column" }}
+              onClick={() => onSelect(f)}
+              onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.1)"; e.currentTarget.style.borderColor=T.borderHi; }}
+              onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; e.currentTarget.style.borderColor=T.border; }}>
+
+              {/* ── Satellite map ── */}
+              <div style={{ position:"relative", flexShrink:0 }}>
+                <FieldMapThumb boundary={f.boundary} lat={f.lat} lng={f.lng}/>
+                {/* Acres badge */}
+                {f.acres && (
+                  <div style={{ position:"absolute", top:10, right:10,
+                    background:"rgba(20,10,0,0.62)", backdropFilter:"blur(3px)",
+                    color:"#F4EFE6", fontSize:11, fontWeight:700,
+                    padding:"3px 10px", borderRadius:20, letterSpacing:0.4 }}>
+                    {f.acres} ac
+                  </div>
+                )}
+                {/* Last activity badge */}
+                {last && (
+                  <div style={{ position:"absolute", bottom:10, left:10,
+                    background:"rgba(20,10,0,0.62)", backdropFilter:"blur(3px)",
+                    color:"#F4EFE6", fontSize:10, padding:"3px 9px", borderRadius:20 }}>
+                    {lm.icon} {new Date(last.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+                  </div>
+                )}
               </div>
-              <div style={{textAlign:"right",flexShrink:0}}>
-                <div style={{fontSize:"12px",color:T.muted,marginBottom:"4px"}}>{fa.length} log{fa.length!==1?"s":""}</div>
-                {last&&<div style={{fontSize:"11px",color:lm.color}}>{lm.icon} {new Date(last.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>}
-                <div style={{fontSize:"10px",color:T.faint,marginTop:"6px"}}>View →</div>
+
+              {/* ── Card body ── */}
+              <div style={{ padding:"14px 16px", flex:1, display:"flex", flexDirection:"column", gap:8 }}>
+
+                {/* Name + legal */}
+                <div>
+                  <div style={{ fontWeight:700, fontSize:16, color:T.text, lineHeight:1.2 }}>{f.name}</div>
+                  {f.legalDesc && <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>{f.legalDesc}</div>}
+                </div>
+
+                {/* Notes — inline editable */}
+                <div onClick={e=>e.stopPropagation()} style={{ flex:1 }}>
+                  <div style={{ fontSize:10, color:T.faint, textTransform:"uppercase", letterSpacing:0.8, marginBottom:3 }}>Notes</div>
+                  <InlineNotes
+                    value={f.notes}
+                    onSave={notes => onUpdateField && onUpdateField(f.id, {...f, notes})}
+                  />
+                </div>
+
+                {/* Activity counts */}
+                <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:10, marginTop:2 }}>
+                  {counts.length > 0 ? (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                      {counts.map(({k,m,n}) => (
+                        <span key={k} style={{ fontSize:11, padding:"3px 9px", borderRadius:12,
+                          background:`${m.color}12`, border:`1px solid ${m.color}35`,
+                          color:m.color, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
+                          {m.icon} <span style={{ fontSize:10, opacity:0.8 }}>{m.label}</span> · {n}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize:11, color:T.faint }}>No activities logged yet</span>
+                  )}
+                </div>
+
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -3789,7 +3937,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         </div>
       )}
       <div style={S.content}>
-        {view==="home"        &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)}/>}
+        {view==="home"        &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
         {view==="reports"     &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId}/>}
         {view==="rotation"    &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
         {view==="addField"    &&<AddFieldView onBack={()=>setView("home")} onSave={addField}/>}
