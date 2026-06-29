@@ -2781,43 +2781,108 @@ function CropRotationView({fields,activities,onBack}){
 }
 
 // ── Home View ─────────────────────────────────────────────────────────
-// ── Field satellite map thumbnail ─────────────────────────────────────────────
+// ── Mercator projection helpers ───────────────────────────────────────────────
+function latLngToWorld(lat, lng) {
+  // Convert lat/lng to Mercator world pixel coordinates at zoom 0 (256×256 world)
+  const sinLat = Math.sin(lat * Math.PI / 180);
+  const x = (lng + 180) / 360 * 256;
+  const y = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * 256;
+  return { x, y };
+}
+function worldToTilePixel(wx, wy, z, tX, tY) {
+  // Convert world coords to pixel position within a specific tile at zoom z
+  const scale = Math.pow(2, z);
+  const px = wx * scale - tX * 256;
+  const py = wy * scale - tY * 256;
+  return { px, py };
+}
+function bestZoom(minLat, maxLat, minLng, maxLng, imgW=300, imgH=160) {
+  // Find the zoom level where the bounding box fits the image with some padding
+  for (let z = 17; z >= 10; z--) {
+    const scale = Math.pow(2, z);
+    const w1 = latLngToWorld(minLat, minLng);
+    const w2 = latLngToWorld(maxLat, maxLng);
+    const pxW = Math.abs(w2.x - w1.x) * scale;
+    const pxH = Math.abs(w2.y - w1.y) * scale;
+    if (pxW < imgW * 0.65 && pxH < imgH * 0.65) return z;
+  }
+  return 13;
+}
+
+// ── Field satellite map thumbnail with boundary overlay ───────────────────────
 function FieldMapThumb({ boundary, lat, lng }) {
   const [err, setErr] = useState(false);
 
-  // Compute centroid from boundary or use explicit lat/lng
-  const center = useMemo(() => {
-    if (lat && lng) return { lat: +lat, lng: +lng };
-    if (boundary && boundary.length >= 3) {
-      const lats = boundary.map(p => p[0]||p.lat||0);
-      const lngs = boundary.map(p => p[1]||p.lng||0);
-      return { lat: lats.reduce((s,v)=>s+v,0)/lats.length, lng: lngs.reduce((s,v)=>s+v,0)/lngs.length };
+  const mapData = useMemo(() => {
+    // Use boundary if available, otherwise fall back to explicit lat/lng
+    const pts = (boundary && boundary.length >= 3)
+      ? boundary.map(p => ({ lat: p[0]||p.lat||0, lng: p[1]||p.lng||0 }))
+      : null;
+
+    if (pts) {
+      const lats = pts.map(p => p.lat), lngs = pts.map(p => p.lng);
+      const minLat=Math.min(...lats), maxLat=Math.max(...lats);
+      const minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
+      const centerLat = (minLat+maxLat)/2, centerLng = (minLng+maxLng)/2;
+      const z = bestZoom(minLat, maxLat, minLng, maxLng);
+      const n = Math.pow(2, z);
+      const tX = Math.floor((centerLng+180)/360*n);
+      const wc = latLngToWorld(centerLat, centerLng);
+      const tY = Math.floor(wc.y * n / 256);
+      return { z, tX, tY, pts };
+    }
+    if (lat && lng) {
+      const z = 15, n = Math.pow(2, z);
+      const tX = Math.floor((+lng+180)/360*n);
+      const wc = latLngToWorld(+lat, +lng);
+      const tY = Math.floor(wc.y * n / 256);
+      return { z, tX, tY, pts: null };
     }
     return null;
   }, [boundary, lat, lng]);
 
-  if (!center || err) {
+  if (!mapData || err) {
     return (
-      <div style={{ height:160, background:"linear-gradient(160deg,#2a5018 0%,#3d7025 45%,#6ba040 75%,#c8d880 100%)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:6 }}>
+      <div style={{ height:160, background:"linear-gradient(160deg,#2a5018 0%,#3d7025 45%,#6ba040 75%,#c8d880 100%)",
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:6 }}>
         <div style={{ fontSize:32, opacity:0.7 }}>🗺️</div>
         <div style={{ fontSize:10, color:"rgba(255,255,255,0.65)", letterSpacing:1, textTransform:"uppercase" }}>
-          {!center ? "No location set" : "Map unavailable"}
+          {!mapData ? "No location set" : "Map unavailable"}
         </div>
       </div>
     );
   }
 
-  // ESRI World Imagery tile at zoom 15 (~1.2km/tile — good for field scale)
-  const z = 15;
-  const n = Math.pow(2, z);
-  const tX = Math.floor((center.lng + 180) / 360 * n);
-  const latR = center.lat * Math.PI / 180;
-  const tY = Math.floor((1 - Math.log(Math.tan(latR) + 1/Math.cos(latR)) / Math.PI) / 2 * n);
+  const { z, tX, tY, pts } = mapData;
   const src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${tY}/${tX}`;
 
+  // Project boundary points to pixel positions within the 256×256 tile
+  const svgPts = pts ? pts.map(p => {
+    const w = latLngToWorld(p.lat, p.lng);
+    const { px, py } = worldToTilePixel(w.x, w.y, z, tX, tY);
+    return `${px},${py}`;
+  }).join(" ") : null;
+
   return (
-    <img src={src} alt="Field satellite view" onError={()=>setErr(true)}
-      style={{ width:"100%", height:160, objectFit:"cover", display:"block" }} />
+    <div style={{ position:"relative", height:160, overflow:"hidden" }}>
+      <img src={src} alt="Field satellite" onError={()=>setErr(true)}
+        style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}/>
+      {svgPts && (
+        <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", overflow:"visible" }}
+          viewBox="0 0 256 256" preserveAspectRatio="xMidYMid slice">
+          {/* Field boundary fill */}
+          <polygon points={svgPts}
+            fill="rgba(255,220,50,0.15)" stroke="#FFD700" strokeWidth="2"
+            strokeLinejoin="round"/>
+          {/* Corner vertices */}
+          {pts.map((p,i) => {
+            const w = latLngToWorld(p.lat, p.lng);
+            const {px,py} = worldToTilePixel(w.x, w.y, z, tX, tY);
+            return <circle key={i} cx={px} cy={py} r="3" fill="#FFD700" opacity="0.9"/>;
+          })}
+        </svg>
+      )}
+    </div>
   );
 }
 
