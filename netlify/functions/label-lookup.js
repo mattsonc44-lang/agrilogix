@@ -1,26 +1,48 @@
 // netlify/functions/label-lookup.js
 // Looks up herbicide/pesticide label data using Claude AI
+// Results cached in Firebase — same chemical never calls Claude twice
 
 const CROPS = ["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Mustard","Corn","Soybeans","Sunflowers","Alfalfa","Hay"];
+const DB    = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+const CACHE_TTL_DAYS = 60; // re-fetch label data after 60 days
 
 const { checkAuth } = require("./auth-check");
+
+// ── Per-user rate limiting (in-memory, resets on cold start) ─────────────────
+// Max 20 label lookups per user per hour
+const rateLimitMap = {};
+function checkRateLimit(uid) {
+  const now = Date.now();
+  const window = 60 * 60 * 1000; // 1 hour
+  const limit  = 20;
+  if (!rateLimitMap[uid]) rateLimitMap[uid] = [];
+  rateLimitMap[uid] = rateLimitMap[uid].filter(t => now - t < window);
+  if (rateLimitMap[uid].length >= limit) return false;
+  rateLimitMap[uid].push(now);
+  return true;
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
-  // ── Auth check — reject unauthenticated requests ──────────────────────────
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
   const auth = await checkAuth(event);
   if (auth.error) {
-    // Log rejected requests too
     const ip = event.headers["x-forwarded-for"] || "unknown";
     console.warn(`[REJECTED ${new Date().toISOString()}] from ${ip}`);
     return auth.error;
   }
-  // Log every invocation — visible in Netlify function logs
-  const ip = event.headers["x-forwarded-for"] || event.headers["client-ip"] || "unknown";
-  const ua = event.headers["user-agent"] || "unknown";
-  console.log(`[${new Date().toISOString()}] ${event.httpMethod} from ${ip} | ${ua.slice(0,80)}`);
 
+  // ── Rate limit ────────────────────────────────────────────────────────────
+  if (!checkRateLimit(auth.uid)) {
+    console.warn(`[RATE LIMITED] uid=${auth.uid}`);
+    return { statusCode: 429, body: JSON.stringify({ error: "Too many requests — limit 20 label lookups per hour" }) };
+  }
+
+  const ip = event.headers["x-forwarded-for"] || "unknown";
+  console.log(`[${new Date().toISOString()}] uid=${auth.uid} from ${ip}`);
 
   let chemicalName;
   try {
@@ -28,45 +50,49 @@ exports.handler = async (event) => {
   } catch {
     return { statusCode: 400, body: JSON.stringify({ error: "Invalid request body" }) };
   }
-
   if (!chemicalName?.trim()) {
     return { statusCode: 400, body: JSON.stringify({ error: "chemicalName is required" }) };
   }
 
+  const name = chemicalName.trim();
+  const cacheKey = name.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 80);
+  const cachePath = `${DB}/chemLabelCache/${cacheKey}.json`;
+
+  // ── Check Firebase cache first ─────────────────────────────────────────────
+  try {
+    const cached = await fetch(cachePath).then(r => r.json());
+    if (cached?.result && cached?.cachedAt) {
+      const ageDays = (Date.now() - new Date(cached.cachedAt).getTime()) / 86400000;
+      if (ageDays < CACHE_TTL_DAYS) {
+        console.log(`[CACHE HIT] ${name} (${Math.floor(ageDays)}d old)`);
+        return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(cached.result) };
+      }
+      console.log(`[CACHE STALE] ${name} — refreshing`);
+    }
+  } catch { /* no cache — proceed to Claude */ }
+
+  // ── Call Claude ───────────────────────────────────────────────────────────
   const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-  if (!ANTHROPIC_KEY) {
-    return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
-  }
+  if (!ANTHROPIC_KEY) return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
 
-  const prompt = `You are an expert in Canadian and US Prairie crop protection product labels (herbicides, fungicides, insecticides, adjuvants).
+  const prompt = `You are an expert in Canadian and US Prairie crop protection product labels.
 
-Look up the registered label information for the agricultural product: "${chemicalName.trim()}"
+Look up registered label information for: "${name}"
 
-Return ONLY valid JSON — no markdown fences, no explanation — using this exact structure:
+Return ONLY valid JSON — no markdown, no explanation:
 {
   "found": true,
-  "type": "Herbicide",
-  "activeIngredient": "glyphosate",
-  "labeledCrops": ["Wheat","Barley","Oats"],
-  "plantback": [
-    {"crop": "Canola", "days": 30},
-    {"crop": "Flax",   "days": 30}
-  ],
-  "defaultRate": "1.2",
-  "unit": "L/ac",
-  "notes": "Group 2 ALS inhibitor. Avoid use in high-pH soils due to extended residual."
+  "productName": "exact registered name",
+  "activeIngredient": "active ingredient(s)",
+  "group": "herbicide group e.g. Group 2",
+  "type": "herbicide|fungicide|insecticide|adjuvant",
+  "registeredCrops": ["Wheat","Canola"],
+  "plantback": {"Lentils": 670, "Canola": 365},
+  "applicationRate": "rate per acre",
+  "notes": "brief key notes"
 }
-
-Rules:
-- "found": true if you recognize this product; false if unknown
-- "labeledCrops": only include crops from this exact list: ${CROPS.join(", ")}
-- "plantback": crops from the same list that have a rotational restriction — include the minimum days
-- "type": one of Herbicide, Fungicide, Insecticide, Adjuvant, Fertilizer, Other
-- "defaultRate": typical label rate as a number string
-- "unit": typical rate unit (L/ac, oz/ac, ml/ac, fl oz/ac, lbs/ac, g/ac, pt/ac)
-- "notes": one sentence about mode of action, resistance group, or key label cautions
-- If the product is a Canadian prairie market product (e.g. Lontrel 360, Muster 75DF, Refine M, Ally XP, Glean, Edge, Infinity, Odyssey, Axial, Puma Super, Buctril M, Centurion, Tundra, Varro, Prestige, Engage, etc.) use Canadian label data
-- Be accurate — if truly unknown return {"found": false}`;
+If not found: {"found": false}
+Crops to check for plantback: ${CROPS.join(", ")}`;
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -78,34 +104,27 @@ Rules:
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 800,
+        max_tokens: 600,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     const data = await resp.json();
     const text = (data.content?.[0]?.text || "").replace(/```json|```/g, "").trim();
+    const result = JSON.parse(text);
 
-    let parsed;
+    // ── Save to Firebase cache ──────────────────────────────────────────────
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      return {
-        statusCode: 200,
+      await fetch(cachePath, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ found: false, error: "Could not parse response" }),
-      };
-    }
+        body: JSON.stringify({ result, cachedAt: new Date().toISOString(), chemicalName: name }),
+      });
+      console.log(`[CACHED] ${name}`);
+    } catch (e) { console.warn("Cache write failed:", e.message); }
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(parsed),
-    };
+    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(result) };
   } catch (err) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Lookup failed: " + err.message }),
-    };
+    return { statusCode: 500, body: JSON.stringify({ error: "Lookup failed: " + err.message }) };
   }
 };
