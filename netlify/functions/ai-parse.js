@@ -1,7 +1,22 @@
+const { checkAuth } = require("./auth-check");
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method not allowed' };
   }
+  // ── Auth check — reject unauthenticated requests ──────────────────────────
+  const auth = await checkAuth(event);
+  if (auth.error) {
+    // Log rejected requests too
+    const ip = event.headers["x-forwarded-for"] || "unknown";
+    console.warn(`[REJECTED ${new Date().toISOString()}] from ${ip}`);
+    return auth.error;
+  }
+  // Log every invocation — visible in Netlify function logs
+  const ip = event.headers["x-forwarded-for"] || event.headers["client-ip"] || "unknown";
+  const ua = event.headers["user-agent"] || "unknown";
+  console.log(`[${new Date().toISOString()}] ${event.httpMethod} from ${ip} | ${ua.slice(0,80)}`);
+
+
   try {
     const { prompt } = JSON.parse(event.body || '{}');
     if (!prompt) return { statusCode: 400, body: JSON.stringify({ error: 'Missing prompt' }) };

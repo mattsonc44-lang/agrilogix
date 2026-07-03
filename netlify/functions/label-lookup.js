@@ -3,10 +3,24 @@
 
 const CROPS = ["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Mustard","Corn","Soybeans","Sunflowers","Alfalfa","Hay"];
 
+const { checkAuth } = require("./auth-check");
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
+  // ── Auth check — reject unauthenticated requests ──────────────────────────
+  const auth = await checkAuth(event);
+  if (auth.error) {
+    // Log rejected requests too
+    const ip = event.headers["x-forwarded-for"] || "unknown";
+    console.warn(`[REJECTED ${new Date().toISOString()}] from ${ip}`);
+    return auth.error;
+  }
+  // Log every invocation — visible in Netlify function logs
+  const ip = event.headers["x-forwarded-for"] || event.headers["client-ip"] || "unknown";
+  const ua = event.headers["user-agent"] || "unknown";
+  console.log(`[${new Date().toISOString()}] ${event.httpMethod} from ${ip} | ${ua.slice(0,80)}`);
+
 
   let chemicalName;
   try {

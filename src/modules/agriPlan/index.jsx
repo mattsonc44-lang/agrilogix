@@ -2395,7 +2395,8 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
         r.readAsDataURL(file);
       });
       const resp = await fetch("/.netlify/functions/aph-parse", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ pdf: base64 })
       });
       const data = await resp.json();

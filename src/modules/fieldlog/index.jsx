@@ -1226,7 +1226,7 @@ function SprayingForm({v,set,products={},onAddChemical}){
                           <button onClick={async()=>{
                             setSavePrompt(p=>({...p,[c.id]:"loading"}));
                             try {
-                              const res = await fetch("/.netlify/functions/label-lookup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chemicalName:c.chemicalName.trim()})});
+                              const res = await fetch("/.netlify/functions/label-lookup",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({chemicalName:c.chemicalName.trim()})});
                               const data = await res.json();
                               const entry = {name:c.chemicalName, type:data.type||"", defaultRate:data.defaultRate||c.oz||"", unit:data.unit||c.unit||"L/ac", labeledCrops:data.labeledCrops||[], plantback:data.plantback||[]};
                               if(onAddChemical) onAddChemical(entry);
@@ -1642,7 +1642,7 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
       const schema = fieldMap[type] || '{"details":"","notes":""}';
       const resp = await fetch("/.netlify/functions/ai-parse",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},
         body:JSON.stringify({
           prompt:`A farmer said: "${notes}"\n\nField: "${field.name}" | Activity: ${type}\n\nExtract into this JSON schema. Return ONLY raw JSON with no markdown or backticks:\n${schema}`
         })
@@ -3103,7 +3103,7 @@ function ProductsModal({ products, onSave, onClose }) {
     try {
       const res = await fetch('/.netlify/functions/label-lookup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ chemicalName: chemName.trim() }),
       });
       const data = await res.json();
