@@ -435,7 +435,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const selVeh  = D.vehicles.find(v=>v.id===selVehId)||null;
   const selCust = D.customers.find(c=>c.id===selCustId)||null;
   const vRecords= selVeh?D.records.filter(r=>r.vehicleId===selVeh.id).sort((a,b)=>b.date.localeCompare(a.date)):[];
-  const fVehicles= D.vehicles.filter(v=>!sbSearch||(v.name+v.make+v.model).toLowerCase().includes(sbSearch.toLowerCase()));
+  const fVehicles=[...D.vehicles].filter(v=>!sbSearch||(v.name+v.make+v.model).toLowerCase().includes(sbSearch.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));
   const neededCnt= D.partsToOrder.filter(p=>!p.ordered&&!p.received).length;
   const orderedCnt=D.partsToOrder.filter(p=>p.ordered&&!p.received).length;
   const openTodos=(D.vehicles||[]).reduce((s,v)=>s+(v.todos||[]).filter(t=>!t.done).length,0);
@@ -789,7 +789,7 @@ function ReportView({D,reportFil,setRepFil,custName,vehName}){
       <div className="form-group" style={{flex:1,minWidth:"120px"}}><label className="form-lbl">From</label><input type="date" className="form-input" style={{padding:"5px 8px"}} value={reportFil.dateFrom} onChange={e=>s("dateFrom",e.target.value)}/></div>
       <div className="form-group" style={{flex:1,minWidth:"120px"}}><label className="form-lbl">To</label><input type="date" className="form-input" style={{padding:"5px 8px"}} value={reportFil.dateTo} onChange={e=>s("dateTo",e.target.value)}/></div>
       <div className="form-group" style={{flex:1,minWidth:"130px"}}><label className="form-lbl">Type</label><select className="form-select" style={{padding:"5px 8px"}} value={reportFil.type} onChange={e=>s("type",e.target.value)}><option value="">All Types</option>{types.map(t=><option key={t}>{t}</option>)}</select></div>
-      <div className="form-group" style={{flex:1,minWidth:"130px"}}><label className="form-lbl">Customer</label><select className="form-select" style={{padding:"5px 8px"}} value={reportFil.custId} onChange={e=>s("custId",e.target.value)}><option value="">All Customers</option>{D.customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+      <div className="form-group" style={{flex:1,minWidth:"130px"}}><label className="form-lbl">Customer</label><select className="form-select" style={{padding:"5px 8px"}} value={reportFil.custId} onChange={e=>s("custId",e.target.value)}><option value="">All Customers</option>{[...D.customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
       {(reportFil.dateFrom||reportFil.dateTo||reportFil.type||reportFil.custId)&&<button className="btn btn-ghost btn-sm" onClick={()=>setRepFil({dateFrom:"",dateTo:"",type:"",custId:""})}>Clear</button>}
     </div>
     <div className="summary-bar">
@@ -872,7 +872,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
   const received=D.partsToOrder.filter(p=>p.received).length;
   const allVendors=[...new Set(D.partsToOrder.map(p=>p.vendor).filter(Boolean))].sort();
   const allNums=[...new Set(D.partsToOrder.map(p=>p.num).filter(Boolean))].sort();
-  const usedVehs=D.vehicles.filter(v=>D.partsToOrder.some(p=>p.vehicleId===v.id));
+  const usedVehs=D.vehicles.filter(v=>D.partsToOrder.some(p=>p.vehicleId===v.id)).sort((a,b)=>a.name.localeCompare(b.name));
   const f=(k,v)=>setPOF(p=>({...p,[k]:v}));
   const pn=(k,v)=>setPoNew(p=>({...p,[k]:v}));
 
@@ -903,9 +903,9 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
     <div className="po-add-bar">
       <div className="form-group" style={{flex:3,minWidth:"140px"}}><label className="form-lbl">Description</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Part description..." value={poNew.desc} onChange={e=>pn("desc",e.target.value)} onKeyDown={e=>e.key==="Enter"&&quickAddPart()}/></div>
       <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Part #</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Part #" value={poNew.num} onChange={e=>pn("num",e.target.value)}/></div>
-      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor</label><input className="form-input" style={{padding:"6px 8px"}} list="vendor-list-po" placeholder="Vendor" value={poNew.vendor} onChange={e=>pn("vendor",e.target.value)}/><datalist id="vendor-list-po">{D.vendors.map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
+      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor</label><input className="form-input" style={{padding:"6px 8px"}} list="vendor-list-po" placeholder="Vendor" value={poNew.vendor} onChange={e=>pn("vendor",e.target.value)}/><datalist id="vendor-list-po">{[...D.vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
       <div className="form-group" style={{minWidth:"55px"}}><label className="form-lbl">Qty</label><input type="number" className="form-input" style={{padding:"6px 8px"}} min="1" value={poNew.qty} onChange={e=>pn("qty",e.target.value)}/></div>
-      <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Vehicle</label><select className="form-select" style={{padding:"6px 8px"}} value={poNew.vehicleId} onChange={e=>pn("vehicleId",e.target.value)}><option value="">For Stock</option><option value="__stock__">📦 For Stock</option>{D.vehicles.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
+      <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Vehicle</label><select className="form-select" style={{padding:"6px 8px"}} value={poNew.vehicleId} onChange={e=>pn("vehicleId",e.target.value)}><option value="">For Stock</option><option value="__stock__">📦 For Stock</option>{[...D.vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
       <button className="btn btn-primary" style={{alignSelf:"flex-end",padding:"6px 14px"}} onClick={quickAddPart}>+ Add</button>
     </div>
 
@@ -1135,7 +1135,7 @@ function VehicleMo({initial,customers,onSave,onClose}){
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   return(<Mo title={initial?"Edit Equipment":"Add Equipment"} onClose={onClose} onSave={()=>{if(!f.name.trim())return alert("Name required.");onSave(f);}} saveLabel={initial?"Save Changes":"Add Equipment"} large>
     <Fr><Fg label="Name *" full><Fi value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. JD 9620R"/></Fg></Fr>
-    <Fr><Fg label="Type"><Fs value={f.type} onChange={e=>s("type",e.target.value)}>{["Truck","Tractor","Combine","Grain Cart","Semi","Trailer","Sprayer","Pickup","ATV/UTV","Generator","Other"].map(t=><option key={t}>{t}</option>)}</Fs></Fg><Fg label="Customer"><Fs value={f.customerId} onChange={e=>s("customerId",e.target.value)}><option value="">— No customer —</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Fs></Fg></Fr>
+    <Fr><Fg label="Type"><Fs value={f.type} onChange={e=>s("type",e.target.value)}>{["Truck","Tractor","Combine","Grain Cart","Semi","Trailer","Sprayer","Pickup","ATV/UTV","Generator","Other"].map(t=><option key={t}>{t}</option>)}</Fs></Fg><Fg label="Customer"><Fs value={f.customerId} onChange={e=>s("customerId",e.target.value)}><option value="">— No customer —</option>{[...customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Fs></Fg></Fr>
     <Fr><Fg label="Year"><Fi value={f.year} onChange={e=>s("year",e.target.value)} placeholder="2021"/></Fg><Fg label="Make"><Fi value={f.make} onChange={e=>s("make",e.target.value)} placeholder="John Deere"/></Fg><Fg label="Model"><Fi value={f.model} onChange={e=>s("model",e.target.value)}/></Fg><Fg label="VIN/Serial"><Fi value={f.vin} onChange={e=>s("vin",e.target.value)}/></Fg><Fg label="Engine"><Fi value={f.engine} onChange={e=>s("engine",e.target.value)} placeholder="C15 475"/></Fg><Fg label="HP"><Fi type="number" value={f.hp} onChange={e=>s("hp",e.target.value)}/></Fg><Fg label="Current Hrs/Miles"><Fi type="number" value={f.hours} onChange={e=>s("hours",e.target.value)}/></Fg></Fr>
     <Fg label="Notes" full><textarea className="form-textarea" value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
@@ -1181,8 +1181,8 @@ function PartMo({initial,vehicles,vendors,onSave,onClose}){
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   return(<Mo title={initial?"Edit Part":"Add Part to Order"} onClose={onClose} onSave={()=>{if(!f.desc.trim())return alert("Description required.");onSave(f);}} saveLabel={initial?"Save":"Add Part"}>
     <Fg label="Description *" full><Fi value={f.desc} onChange={e=>s("desc",e.target.value)} placeholder="e.g. Oil Filter, Air Filter…"/></Fg>
-    <Fr><Fg label="Part Number"><Fi value={f.num} onChange={e=>s("num",e.target.value)}/></Fg><Fg label="Vendor"><Fi list="vend-list-po" value={f.vendor} onChange={e=>s("vendor",e.target.value)}/><datalist id="vend-list-po">{vendors.map(v=><option key={v.id} value={v.name}/>)}</datalist></Fg><Fg label="Quantity"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Unit Cost ($)"><Fi type="number" step="0.01" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg></Fr>
-    <Fg label="For Vehicle" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— For Stock —</option><option value="__stock__">📦 For Stock</option>{vehicles.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
+    <Fr><Fg label="Part Number"><Fi value={f.num} onChange={e=>s("num",e.target.value)}/></Fg><Fg label="Vendor"><Fi list="vend-list-po" value={f.vendor} onChange={e=>s("vendor",e.target.value)}/><datalist id="vend-list-po">{[...vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></Fg><Fg label="Quantity"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Unit Cost ($)"><Fi type="number" step="0.01" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg></Fr>
+    <Fg label="For Vehicle" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— For Stock —</option><option value="__stock__">📦 For Stock</option>{[...vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
 }
@@ -1219,7 +1219,7 @@ function InvoiceMo({records,customers,settings,selCustId,vehicles,nextNum,onSave
   const total=recTotal+(parseFloat(f.laborCost)||0);
   return(<Mo title={`Create Invoice ${nextNum}`} onClose={onClose} onSave={()=>{if(!f.custId)return alert("Select a customer.");onSave(f);}} saveLabel="Create Invoice" large>
     <Fr><Fg label="Business Name"><Fi value={f.businessName} onChange={e=>s("businessName",e.target.value)} placeholder="Your business name"/></Fg><Fg label="Invoice Date"><Fi type="date" value={f.date} onChange={e=>s("date",e.target.value)}/></Fg></Fr>
-    <Fg label="Customer *" full><Fs value={f.custId} onChange={e=>s("custId",e.target.value)}><option value="">— Select customer —</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Fs></Fg>
+    <Fg label="Customer *" full><Fs value={f.custId} onChange={e=>s("custId",e.target.value)}><option value="">— Select customer —</option>{[...customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Fs></Fg>
     <div style={{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:"4px",padding:"10px 12px",fontSize:"13px"}}>
       <div style={{fontWeight:700,marginBottom:"6px"}}>Service Records ({records.length})</div>
       {records.map(r=>{const v=vehicles.find(vv=>vv.id===r.vehicleId);return(<div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid var(--border)"}}><div><span style={{fontWeight:600}}>{r.type}</span><span style={{color:"var(--text-dim)",fontSize:"12px"}}> · {v?.name||""} · {r.date}</span></div><span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--green)"}}>${parseFloat(r.cost||0).toLocaleString()}</span></div>);})}
@@ -1351,7 +1351,7 @@ function AddToServiceMo({parts,vehicles,onSave,onClose}){
         ))}
         {totalCost>0&&<div style={{textAlign:"right",fontWeight:700,fontSize:"13px",color:"var(--green)",marginTop:"6px"}}>Total: ${totalCost.toFixed(2)}</div>}
       </div>
-      <Fg label="Vehicle *" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— Select vehicle —</option>{vehicles.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
+      <Fg label="Vehicle *" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— Select vehicle —</option>{[...vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
       <div className="form-row">
         <Fg label="Date"><Fi type="date" value={f.date} onChange={e=>s("date",e.target.value)}/></Fg>
         <Fg label="Service Type"><Fi list="svc-types-ats" value={f.type} onChange={e=>s("type",e.target.value)}/><datalist id="svc-types-ats">{["Oil Change","Filter Replacement","Tire Service","Brake Service","Hydraulic Service","Belt/Chain Replacement","Coolant Service","Fuel System","Battery/Electrical","Inspection","Repair","Other"].map(t=><option key={t} value={t}/>)}</datalist></Fg>
