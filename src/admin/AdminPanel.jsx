@@ -223,6 +223,7 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
   const [newPlan,      setNewPlan]      = useState("trial");
   const [saving,       setSaving]       = useState(false);
   const [adminTab,     setAdminTab]     = useState("orgs");
+  const [tenants,          setTenants]          = useState({});  // org data for Organizations tab
   const [tenantViewList,   setTenantViewList]   = useState([]);
   const [tenantViewLoading,setTenantViewLoading] = useState(false);
 
