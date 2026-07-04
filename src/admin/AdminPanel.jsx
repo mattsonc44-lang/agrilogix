@@ -208,8 +208,7 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
 
 const ROLE_COLOR = { owner:"#C07010", manager:"#2563EB", operator:"#16A34A" };
 
-export default function AdminPanel({ user, token, onBack }) {
-  const [tenants,      setTenants]      = useState({});
+export default function AdminPanel({ user, token, onBack, onViewTenant, adminViewTenantId }) {
   const [loading,      setLoading]      = useState(true);
   const [showNew,      setShowNew]      = useState(false);
   const [inviteTarget, setInviteTarget] = useState(null);
@@ -224,6 +223,28 @@ export default function AdminPanel({ user, token, onBack }) {
   const [newPlan,      setNewPlan]      = useState("trial");
   const [saving,       setSaving]       = useState(false);
   const [adminTab,     setAdminTab]     = useState("orgs");
+  const [tenants,      setTenants]      = useState([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+
+  useEffect(() => {
+    if(!token) return;
+    setTenantsLoading(true);
+    const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+    fetch(`${DB}/tenants.json?auth=${token}&shallow=true`)
+      .then(r => r.json())
+      .then(ids => {
+        if(!ids) { setTenantsLoading(false); return; }
+        Promise.all(Object.keys(ids).map(id =>
+          fetch(`${DB}/tenants/${id}/profile.json?auth=${token}`)
+            .then(r => r.json())
+            .then(p => ({ id, name: p?.name || p?.orgName || id, modules: p?.modules || [], plan: p?.plan || "" }))
+            .catch(() => ({ id, name: id, modules: [] }))
+        )).then(list => {
+          setTenants(list.sort((a,b) => a.name.localeCompare(b.name)));
+          setTenantsLoading(false);
+        });
+      }).catch(() => setTenantsLoading(false));
+  }, [token]);
   const [invClient,  setInvClient]  = useState({name:"",address:"",city:"",email:""});
   const [invSel,     setInvSel]     = useState(new Set());
   const [invExtras,  setInvExtras]  = useState([]);
@@ -388,11 +409,58 @@ export default function AdminPanel({ user, token, onBack }) {
       </div>
 
       <div style={{ background:"#F0EBE0", borderBottom:`1px solid ${T.border}`, padding:"0 20px", display:"flex" }}>
-        {[["orgs","🏢 Organizations"],["invoice","🧾 Invoice"]].map(([id,lbl])=>(
+        {[["orgs","🏢 Organizations"],["tenantview","👁 Tenant View"],["invoice","🧾 Invoice"]].map(([id,lbl])=>(
           <button key={id} onClick={()=>setAdminTab(id)} style={{ padding:"11px 18px", border:"none", borderBottom:`2px solid ${adminTab===id?T.brand:"transparent"}`, background:"transparent", color:adminTab===id?T.brand:T.muted, fontWeight:adminTab===id?700:400, fontSize:"13px", cursor:"pointer", transition:"all .15s", fontFamily:"inherit" }}>{lbl}</button>
         ))}
       </div>
-      {adminTab==="invoice"
+      {adminTab==="tenantview"
+        ? <div style={S.content}>
+            <div style={{ marginBottom:16 }}>
+              <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize:20, color:"#1A3A1A", marginBottom:4 }}>Tenant View</h3>
+              <p style={{ fontSize:12, color:T.muted }}>Log into any organization as admin to see exactly what they see and troubleshoot issues. Your own data is never changed.</p>
+            </div>
+
+            {adminViewTenantId && (
+              <div style={{ background:"#FFF4EC", border:"2px solid #C05000", borderRadius:8, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <span style={{ fontSize:13, color:"#7A3000", fontWeight:600 }}>
+                  👁 Currently viewing: <strong>{tenants.find(t=>t.id===adminViewTenantId)?.name || adminViewTenantId}</strong>
+                </span>
+                <button onClick={()=>{onViewTenant(null);}} style={{ background:"#C05000", color:"#fff", border:"none", borderRadius:5, padding:"5px 16px", fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
+                  ✕ Exit View
+                </button>
+              </div>
+            )}
+
+            {tenantsLoading
+              ? <div style={{ textAlign:"center", padding:40, color:T.muted }}>Loading organizations…</div>
+              : <div style={{ display:"grid", gap:10 }}>
+                  {tenants.map(t => {
+                    const isViewing = adminViewTenantId === t.id;
+                    const isOwnOrg  = t.id === user.localId + "_org" || t.name === "Agri Logix";
+                    return (
+                      <div key={t.id} style={{ background: isViewing ? "#FFF4EC" : T.card, border:`2px solid ${isViewing?"#C05000":T.border}`, borderRadius:8, padding:"14px 18px", display:"flex", alignItems:"center", gap:14 }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontWeight:700, fontSize:15, color:T.text }}>{t.name}</div>
+                          <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>{t.id}</div>
+                          <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:6 }}>
+                            {(t.modules||[]).map(m => (
+                              <span key={m} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:"#E8F0E0", color:"#2A5A18", border:"1px solid #B8D8A0", fontWeight:600 }}>{m}</span>
+                            ))}
+                          </div>
+                        </div>
+                        {isOwnOrg
+                          ? <span style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>Your org</span>
+                          : isViewing
+                            ? <button onClick={()=>onViewTenant(null)} style={{ background:"#C05000", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✕ Exit View</button>
+                            : <button onClick={()=>{onViewTenant(t.id, t.name);onBack();}} style={{ background:"#1A4A28", color:"#C8E8A0", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>👁 Enter View</button>
+                        }
+                      </div>
+                    );
+                  })}
+                </div>
+            }
+          </div>
+        : adminTab==="invoice"
         ? <div style={S.content}><InvoiceBuilder client={invClient} setClient={setInvClient} sel={invSel} setSel={setInvSel} extras={invExtras} setExtras={setInvExtras} date={invDate} setDate={setInvDate} due={invDue} setDue={setInvDue} notes={invNotes} setNotes={setInvNotes} invNum={invNum}/></div>
         : <div style={S.content}>
         {/* Stats */}

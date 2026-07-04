@@ -39,8 +39,12 @@ export default function App() {
   const [farms,      setFarms]      = useState([]);
   const [activeFarm, setActiveFarm] = useState(DEFAULT_FARM);
   const [farmModal,  setFarmModal]  = useState(null); // null | "new" | {id,name,color}
+  const [adminViewTenantId,   setAdminViewTenantId]   = useState(null); // admin impersonation
+  const [adminViewTenantName, setAdminViewTenantName] = useState("");
   const refreshTimer = useRef(null);
   const isAdmin = session?.localId === ADMIN_UID;
+  // When admin is viewing a tenant, use that tenantId instead of their own
+  const effectiveTenantId = adminViewTenantId || profile?.tenantId;
 
   // ── Bootstrap ────────────────────────────────────────────────────
   useEffect(() => {
@@ -199,7 +203,7 @@ export default function App() {
   );
   if (!session) return <AuthScreen onAuth={handleAuth}/>;
 
-  if (showAdmin && isAdmin) return <AdminPanel user={session} token={session.idToken} onBack={()=>setShowAdmin(false)}/>;
+  if (showAdmin && isAdmin) return <AdminPanel user={session} token={session.idToken} onBack={()=>setShowAdmin(false)} onViewTenant={(id, name)=>{setAdminViewTenantId(id);setAdminViewTenantName(name||id);setShowAdmin(false);}} adminViewTenantId={adminViewTenantId}/>;
 
   const tenantProfile  = tenant?.profile || {};
   const tenantModules  = tenantProfile.modules || [];
@@ -300,12 +304,25 @@ export default function App() {
 
       {showOrg && <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>}
 
+      {/* ── Admin view banner ── */}
+      {adminViewTenantId && (
+        <div style={{ background:"#C05000", color:"#fff", padding:"8px 20px", fontSize:13,
+          display:"flex", alignItems:"center", justifyContent:"space-between", fontFamily:"'Barlow',sans-serif" }}>
+          <span>👁 <strong>Admin View: {adminViewTenantName}</strong> — you are seeing their data. Your own data is not affected.</span>
+          <button onClick={()=>setAdminViewTenantId(null)}
+            style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.4)",
+              borderRadius:5, color:"#fff", padding:"3px 14px", cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>
+            ✕ Exit Admin View
+          </button>
+        </div>
+      )}
+
       {/* ── Modules ── */}
       <div>
-        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
-        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
-        {module === "agriPlan"   && <AgriPlanModule  tenantId={profile.tenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
+        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
+        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
+        {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
