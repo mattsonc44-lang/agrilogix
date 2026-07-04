@@ -223,27 +223,27 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
   const [newPlan,      setNewPlan]      = useState("trial");
   const [saving,       setSaving]       = useState(false);
   const [adminTab,     setAdminTab]     = useState("orgs");
-  const [tenants,      setTenants]      = useState([]);
-  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [tenantViewList,   setTenantViewList]   = useState([]);
+  const [tenantViewLoading,setTenantViewLoading] = useState(false);
 
   useEffect(() => {
     if(!token) return;
-    setTenantsLoading(true);
+    setTenantViewLoading(true);
     const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
     fetch(`${DB}/tenants.json?auth=${token}&shallow=true`)
       .then(r => r.json())
       .then(ids => {
-        if(!ids) { setTenantsLoading(false); return; }
+        if(!ids) { setTenantViewLoading(false); return; }
         Promise.all(Object.keys(ids).map(id =>
           fetch(`${DB}/tenants/${id}/profile.json?auth=${token}`)
             .then(r => r.json())
             .then(p => ({ id, name: p?.name || p?.orgName || id, modules: p?.modules || [], plan: p?.plan || "" }))
             .catch(() => ({ id, name: id, modules: [] }))
         )).then(list => {
-          setTenants(list.sort((a,b) => a.name.localeCompare(b.name)));
-          setTenantsLoading(false);
+          setTenantViewList(list.sort((a,b) => a.name.localeCompare(b.name)));
+          setTenantViewLoading(false);
         });
-      }).catch(() => setTenantsLoading(false));
+      }).catch(() => setTenantViewLoading(false));
   }, [token]);
   const [invClient,  setInvClient]  = useState({name:"",address:"",city:"",email:""});
   const [invSel,     setInvSel]     = useState(new Set());
@@ -423,7 +423,7 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
             {adminViewTenantId && (
               <div style={{ background:"#FFF4EC", border:"2px solid #C05000", borderRadius:8, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <span style={{ fontSize:13, color:"#7A3000", fontWeight:600 }}>
-                  👁 Currently viewing: <strong>{tenants.find(t=>t.id===adminViewTenantId)?.name || adminViewTenantId}</strong>
+                  👁 Currently viewing: <strong>{tenantViewList.find(t=>t.id===adminViewTenantId)?.name || adminViewTenantId}</strong>
                 </span>
                 <button onClick={()=>{onViewTenant(null);}} style={{ background:"#C05000", color:"#fff", border:"none", borderRadius:5, padding:"5px 16px", fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
                   ✕ Exit View
@@ -431,10 +431,10 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
               </div>
             )}
 
-            {tenantsLoading
+            {tenantViewLoading
               ? <div style={{ textAlign:"center", padding:40, color:T.muted }}>Loading organizations…</div>
               : <div style={{ display:"grid", gap:10 }}>
-                  {tenants.map(t => {
+                  {tenantViewList.map(t => {
                     const isViewing = adminViewTenantId === t.id;
                     const isOwnOrg  = t.id === user.localId + "_org" || t.name === "Agri Logix";
                     return (
