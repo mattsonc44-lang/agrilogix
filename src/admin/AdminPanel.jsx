@@ -435,29 +435,56 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
             {tenantViewLoading
               ? <div style={{ textAlign:"center", padding:40, color:T.muted }}>Loading organizations…</div>
               : <div style={{ display:"grid", gap:10 }}>
-                  {tenantViewList.map(t => {
-                    const isViewing = adminViewTenantId === t.id;
-                    const isOwnOrg  = t.id === user.localId + "_org" || t.name === "Agri Logix";
-                    return (
-                      <div key={t.id} style={{ background: isViewing ? "#FFF4EC" : T.card, border:`2px solid ${isViewing?"#C05000":T.border}`, borderRadius:8, padding:"14px 18px", display:"flex", alignItems:"center", gap:14 }}>
-                        <div style={{ flex:1 }}>
-                          <div style={{ fontWeight:700, fontSize:15, color:T.text }}>{t.name}</div>
-                          <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>{t.id}</div>
-                          <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:6 }}>
-                            {(t.modules||[]).map(m => (
-                              <span key={m} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:"#E8F0E0", color:"#2A5A18", border:"1px solid #B8D8A0", fontWeight:600 }}>{m}</span>
-                            ))}
+                  {(() => {
+                    const sorted = [...tenantViewList].sort((a,b)=>{
+                      const aA=a.active!==false, bA=b.active!==false;
+                      if(aA!==bA) return aA?-1:1;
+                      return a.name.localeCompare(b.name);
+                    });
+                    const activeCount = sorted.filter(t=>t.active!==false).length;
+                    const suspCount   = sorted.filter(t=>t.active===false).length;
+                    let suspShown = false;
+                    return sorted.map((t, idx) => {
+                      const isViewing = adminViewTenantId === t.id;
+                      const isOwnOrg  = t.id === user.localId + "_org" || t.name === "Agri Logix";
+                      const showSusp  = t.active===false && !suspShown;
+                      if(showSusp) suspShown = true;
+                      return <React.Fragment key={t.id}>
+                        {idx===0 && activeCount>0 && (
+                          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+                            <span style={{ fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:T.brand, whiteSpace:"nowrap" }}>✓ Active — {activeCount}</span>
+                            <div style={{ flex:1, height:1, background:T.brand+"30" }}/>
                           </div>
+                        )}
+                        {showSusp && (
+                          <div style={{ display:"flex", alignItems:"center", gap:10, margin:"16px 0 4px" }}>
+                            <span style={{ fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:T.danger, whiteSpace:"nowrap" }}>⏸ Suspended — {suspCount}</span>
+                            <div style={{ flex:1, height:1, background:T.danger+"30" }}/>
+                          </div>
+                        )}
+                        <div style={{ background:isViewing?"#FFF4EC":T.card, border:`2px solid ${isViewing?"#C05000":T.border}`, borderRadius:8, padding:"14px 18px", display:"flex", alignItems:"center", gap:14, opacity:t.active===false?0.7:1 }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontWeight:700, fontSize:15, color:T.text, display:"flex", alignItems:"center", gap:8 }}>
+                              {t.name}
+                              {t.active===false && <span style={{ fontSize:10, padding:"1px 7px", borderRadius:10, background:"#F0E8E8", color:T.danger, fontWeight:700 }}>SUSPENDED</span>}
+                            </div>
+                            <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>{t.id}</div>
+                            <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:6 }}>
+                              {(t.modules||[]).map(m => (
+                                <span key={m} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:"#E8F0E0", color:"#2A5A18", border:"1px solid #B8D8A0", fontWeight:600 }}>{m}</span>
+                              ))}
+                            </div>
+                          </div>
+                          {isOwnOrg
+                            ? <span style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>Your org</span>
+                            : isViewing
+                              ? <button onClick={()=>onViewTenant(null)} style={{ background:"#C05000", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✕ Exit View</button>
+                              : <button onClick={()=>{onViewTenant(t.id, t.name);onBack();}} style={{ background:"#1A4A28", color:"#C8E8A0", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>👁 Enter View</button>
+                          }
                         </div>
-                        {isOwnOrg
-                          ? <span style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>Your org</span>
-                          : isViewing
-                            ? <button onClick={()=>onViewTenant(null)} style={{ background:"#C05000", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✕ Exit View</button>
-                            : <button onClick={()=>{onViewTenant(t.id, t.name);onBack();}} style={{ background:"#1A4A28", color:"#C8E8A0", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>👁 Enter View</button>
-                        }
-                      </div>
-                    );
-                  })}
+                      </React.Fragment>;
+                    });
+                  })()}
                 </div>
             }
           </div>
