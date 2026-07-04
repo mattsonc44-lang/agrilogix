@@ -486,26 +486,7 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
           <button style={mkBtn("primary", T.brand)} onClick={()=>setShowNew(true)}>+ Add Organization</button>
         </div>
 
-        {/* Filter tabs */}
-        {(() => {
-          const all = Object.entries(tenants).map(([id,t])=>({...t,profile:t.profile||{id,name:id,active:true,modules:[],plan:"trial"}}));
-          const activeCnt    = all.filter(t=>t.profile.active!==false).length;
-          const suspendedCnt = all.filter(t=>t.profile.active===false).length;
-          return (
-            <div style={{ display:"flex", gap:"4px", marginBottom:"16px", borderBottom:`1px solid ${T.border}`, paddingBottom:"0" }}>
-              {[
-                { id:"active",    label:`Active (${activeCnt})` },
-                { id:"suspended", label:`Suspended (${suspendedCnt})` },
-                { id:"all",       label:`All (${all.length})` },
-              ].map(f => (
-                <button key={f.id} onClick={()=>setOrgFilter(f.id)}
-                  style={{ padding:"8px 16px", background:"none", border:"none", borderBottom:`2px solid ${orgFilter===f.id?T.brand:"transparent"}`, color:orgFilter===f.id?T.brand:T.muted, fontWeight:orgFilter===f.id?700:400, cursor:"pointer", fontSize:"13px", marginBottom:"-1px", transition:"color .15s" }}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          );
-        })()}
+
 
         {showNew && (
           <div style={{ ...S.card, background:"#F0F8F0", border:`1px solid #A0C8A0`, marginBottom:"16px" }}>
@@ -540,13 +521,29 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
         )}
 
         {loading && <p style={{ color:T.muted, textAlign:"center", padding:"32px" }}>Loading organizations…</p>}
-        {!loading && tenantList.length === 0 && (
-          <div style={{ ...S.card, textAlign:"center", padding:"48px", color:T.faint }}>
-            {orgFilter==="suspended" ? "No suspended organizations." : orgFilter==="active" ? "No active organizations." : "No organizations yet."}
-          </div>
+        {!loading && Object.keys(tenants).length === 0 && (
+          <div style={{ ...S.card, textAlign:"center", padding:"48px", color:T.faint }}>No organizations yet.</div>
         )}
 
-        {tenantList.map(({ profile:p }) => {
+        {!loading && (() => {
+          const all = Object.entries(tenants)
+            .map(([id,t])=>({...t,profile:t.profile||{id,name:id,active:true,modules:[],plan:"trial"}}))
+            .sort((a,b)=>{const aA=a.profile.active!==false,bA=b.profile.active!==false;if(aA!==bA)return aA?-1:1;return(a.profile.name||"").localeCompare(b.profile.name||"");});
+          const activeCount=all.filter(t=>t.profile.active!==false).length;
+          const suspCount=all.filter(t=>t.profile.active===false).length;
+          let suspShown=false;
+          return all.map(({profile:p},idx)=>{
+            const showSusp=p.active===false&&!suspShown; if(showSusp)suspShown=true;
+            return <React.Fragment key={p.id}>
+              {idx===0&&activeCount>0&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                <span style={{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:T.brand,whiteSpace:"nowrap"}}>✓ Active — {activeCount}</span>
+                <div style={{flex:1,height:1,background:T.brand+"30"}}/>
+              </div>}
+              {showSusp&&<div style={{display:"flex",alignItems:"center",gap:10,margin:"24px 0 14px"}}>
+                <span style={{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:T.danger,whiteSpace:"nowrap"}}>⏸ Suspended — {suspCount}</span>
+                <div style={{flex:1,height:1,background:T.danger+"30"}}/>
+              </div>}
+              {(p=>{
           const isExpanded = expandedOrg === p.id;
           const users = orgUsers[p.id] || [];
           const isLoadingUsers = usersLoading[p.id];
@@ -684,7 +681,9 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
               )}
             </div>
           );
-        })}
+              })(p)}</React.Fragment>;
+          });
+        })()}
       </div>
 
       }
