@@ -1186,7 +1186,7 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
   };
 
   return (
-    <div style={{padding:"24px",maxWidth:920,margin:"0 auto"}}>
+    <div style={{padding:"24px",maxWidth:1100,margin:"0 auto"}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <div>
@@ -2237,11 +2237,11 @@ function AddFieldForm({onSave,onCancel}){
     <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{label}</span>
     <input type={type} value={d[key]} onChange={e=>upd(key,e.target.value)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:type==="number"?"'IBM Plex Mono',monospace":"'Barlow',sans-serif",fontSize:13,outline:"none"}}/>
   </label>);
-  return(<div style={{background:"#ffffff",border:"1px solid #ccdda0",borderRadius:10,padding:24,maxWidth:720}}>
+  return(<div style={{background:"#ffffff",border:"1px solid #ccdda0",borderRadius:10,padding:24,maxWidth:900}}>
     <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a4010",marginBottom:20}}>Add New Field</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
       <label style={{display:"flex",flexDirection:"column",gap:4}}><span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Entity</span>
-        <input value={d.entity} onChange={e=>upd("entity",e.target.value)} placeholder="e.g. Flat Acre" style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:"'Barlow',sans-serif",fontSize:13,outline:"none",width:"100%"}}/>
+        <input value={d.entity} onChange={e=>upd("entity",e.target.value)} placeholder="e.g. Agri Logix" style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:"'Barlow',sans-serif",fontSize:13,outline:"none",width:"100%"}}/>
       </label>
       {inp("Farm / Landlord","farm")}{inp("Farm Number","farmNumber")}
     </div>
@@ -2299,7 +2299,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint}){
           return(<tr key={f.id} onClick={()=>onSelect(f.id)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
             <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #141e14"}}>{f.farm}</td>
-            <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #141e14"}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
+            <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #141e14",minWidth:160}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
             <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",background:inelig?"#fff0f0":"#dce8c6",borderRadius:3,fontSize:11,color:inelig?"#c02020":"#2a7010"}}><span style={{width:5,height:5,borderRadius:"50%",background:inelig?"#c02020":"#3a9020"}}/>{f.crop}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f.acres.toFixed(1)}</td>
             <td style={{padding:"7px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f$(c.revenue)}</td>
@@ -2875,7 +2875,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
               {open&&g.fields.map(f=>{const act=f.id===selectedId;const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
                 return(<div key={f.id} onClick={()=>selectField(f.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
-                  <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
+                  <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
                   {hasOv&&<span style={{color:"#8a6010",fontSize:9}}>★</span>}
                   <span style={{fontSize:9,color:"#7a9260",flexShrink:0}}>{f.acres.toFixed(0)}ac</span>
                 </div>);
