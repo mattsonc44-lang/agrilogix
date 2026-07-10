@@ -2808,8 +2808,6 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 export default function AgriPlanModule({ tenantId, token, userProfile, persist } = {}){
   // Configure Firebase and localStorage mode for this tenant
   _isAgriLogixTenant = !!tenantId;
-  _expRates  = expenseDefaults;
-  _cropRates = cropExpDefaults;
   initAgriPlan(tenantId, token);
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
@@ -2829,6 +2827,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [expenseDefaults, setExpenseDefaults] = useState({...DEFAULT_RATES});
   const [cropExpDefaults, setCropExpDefaults] = useState({...CROP_EXP_DEFAULTS});
   const [showRatesEditor, setShowRatesEditor] = useState(false);
+  // Sync module-level vars so calc() / getRate() use current tenant rates
+  _expRates  = expenseDefaults;
+  _cropRates = cropExpDefaults;
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
