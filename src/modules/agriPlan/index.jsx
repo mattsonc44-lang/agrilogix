@@ -2088,11 +2088,53 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   }, [field.crop, field.common, fieldRestrictions]);
   const[tab,setTab]=useState("income");
   const[priorYear,setPriorYear]=useState("2023 Actuals");
+  const[editing,setEditing]=useState(false);
+  const[editDraft,setEditDraft]=useState({});
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
   return(<div>
     {/* Header */}
+    {editing ? (
+      <div style={{background:"#f6fbf0",border:"2px solid #5cb850",borderRadius:10,padding:20,marginBottom:18}}>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,color:"#1a4010",marginBottom:14}}>✏️ Edit Field Info</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+          {[["Entity","entity"],["Farm / Landlord","farm"],["Farm Number","farmNumber"]].map(([lbl,key])=>(
+            <label key={key} style={{display:"flex",flexDirection:"column",gap:3}}>
+              <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{lbl}</span>
+              <input value={editDraft[key]??""} onChange={e=>setEditDraft(p=>({...p,[key]:e.target.value}))}
+                style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:13,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+            </label>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+          {[["Legal Description","legal"],["Common Name *","common"],["Field Number(s)","fieldNum"]].map(([lbl,key])=>(
+            <label key={key} style={{display:"flex",flexDirection:"column",gap:3}}>
+              <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{lbl}</span>
+              <input value={editDraft[key]??""} onChange={e=>setEditDraft(p=>({...p,[key]:e.target.value}))}
+                style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:13,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+            </label>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:10,marginBottom:16,alignItems:"end"}}>
+          <label style={{display:"flex",flexDirection:"column",gap:3}}>
+            <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Acres *</span>
+            <input type="number" value={editDraft.acres??""} onChange={e=>setEditDraft(p=>({...p,acres:e.target.value}))}
+              style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:13,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+          </label>
+          <div/>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>setEditing(false)}
+            style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 16px",color:"#c02020",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
+          <button onClick={()=>{
+            if(!editDraft.common?.trim()||!editDraft.acres) return alert("Name and acres are required.");
+            onUpdate(field.id,{...editDraft,acres:+editDraft.acres});
+            setEditing(false);
+          }} style={{background:"#2a7a18",border:"none",borderRadius:4,padding:"6px 18px",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif",fontWeight:700}}>Save Changes</button>
+        </div>
+      </div>
+    ) : (
     <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18}}>
       <div>
         <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700,color:"#1a3010"}}>{field.common}{field.fieldNum&&<span style={{fontSize:14,color:"#6a8a50"}}> — Field #{field.fieldNum}</span>}</div>
@@ -2103,9 +2145,12 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={field.eligibleCrops}/>
+        <button onClick={()=>{setEditDraft({entity:field.entity||"",farm:field.farm||"",farmNumber:field.farmNumber||"",legal:field.legal||"",common:field.common||"",fieldNum:field.fieldNum||"",acres:field.acres||""});setEditing(true);}}
+          style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 10px",color:"#2a6010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✏️ Edit</button>
         <button onClick={()=>{if(window.confirm("Delete this field?"))onDelete(field.id);}} style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 10px",color:"#c02020",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Delete</button>
       </div>
     </div>
+    )}
     {/* Summary */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
       <SCard label="Ins. Guarantee" val={f$(c.guarantee)} color="#7a6010" sub={`$${f2(c.valAcre)}/ac`}/>
@@ -2364,7 +2409,7 @@ function saveFields(year, fields, onStatus){
   if(onStatus) onStatus('saving');
   fbSaveFields(year, fields)
     .then(()=>{ if(onStatus) onStatus('saved'); })
-    .catch((e)=>{ console.error("Firebase save failed:",e); if(onStatus) onStatus('error'); });
+    .catch((e)=>{ console.error("🔴 AgriPlan Firebase save FAILED:",e.message,"| path:",e.message); if(onStatus) onStatus('error'); });
 }
 
 function loadHistRevCache(){
@@ -2738,10 +2783,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     }
   },[fields,activeYear]);
 
-  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(loadFields(yr));setSelectedId(null);setMainView("table");setSearchQ("");},[activeYear,fields]);
+  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?[]:loadFields(yr));setSelectedId(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId]);
 
   const createYear=useCallback((newYr,mode,copyFromYr)=>{
-    const src=mode==="copy"?loadFields(copyFromYr):[];
+    const src=mode==="copy"?(tenantId?[...fields]:loadFields(copyFromYr)):[];
     // Always blank the crop when creating a new year — user selects crops fresh
     const newFields=src.map(f=>({...f,id:String(_id++),crop:"",expenseOverrides:{}}));
     saveFields(newYr,newFields);
@@ -2841,7 +2886,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {saveStatus==='saving'&&<span style={{fontSize:10,color:"#90c870",opacity:0.8}}>⟳ Saving...</span>}
         <button onClick={()=>setShowRulesEditor(true)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:4,padding:"4px 10px",color:"#a8d880",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} title="Edit rotation rules">⚙ Rotation Rules</button>
         {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
-        {saveStatus==='error'&&<span style={{fontSize:10,color:"#ff8870"}} title="Check Firebase rules">⚠ Save failed — check database rules</span>}
+        {saveStatus==='error'&&<span style={{fontSize:11,color:"#ff6050",background:"rgba(255,80,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ff6050",cursor:"pointer"}} title="Click to retry" onClick={()=>saveFields(activeYear,fields,(s)=>setSaveStatus(s))}>⚠ Save failed — tap to retry</span>}
         <button onClick={()=>{setMainView("table");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
         {(!tenantId||aphData)&&<button onClick={()=>{setMainView("history");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
         <button onClick={()=>{setMainView("expenses");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
