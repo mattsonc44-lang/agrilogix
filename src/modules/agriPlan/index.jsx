@@ -2425,6 +2425,131 @@ function saveHistRevCache(data){
 }
 
 
+
+// ── Expense Defaults Editor ──────────────────────────────────────────────────
+const CROPS_LIST = ["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Durum",
+  "Lentils","Chickpeas","Austrians","Green Peas","Yellow Peas","Mustard","Canola","Flax"];
+
+function ExpenseDefaultsModal({ tenantId, token, expenseDefaults, cropExpDefaults, onSave, onClose }) {
+  const [baseRates, setBaseRates] = useState({...expenseDefaults});
+  const [cropRates, setCropRates] = useState(
+    CROPS_LIST.reduce((acc,c)=>({...acc,[c]:{seed:0,fertilizerChemical:0,cropInsurance:0,...(cropExpDefaults[c]||{})}}),{})
+  );
+  const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState("base");
+
+  const upBase = (k,v) => setBaseRates(p=>({...p,[k]:+v||0}));
+  const upCrop = (crop,k,v) => setCropRates(p=>({...p,[crop]:{...p[crop],[k]:+v||0}}));
+
+  const copyFAVT = () => {
+    setBaseRates({...DEFAULT_RATES});
+    setCropRates(CROPS_LIST.reduce((acc,c)=>({...acc,[c]:{seed:0,fertilizerChemical:0,cropInsurance:0,...(CROP_EXP_DEFAULTS[c]||{})}}),{}));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+    try {
+      await Promise.all([
+        fetch(`${DB}/tenants/${tenantId}/agriPlan/expenseDefaults.json?auth=${token}`,
+          {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(baseRates)}),
+        fetch(`${DB}/tenants/${tenantId}/agriPlan/cropExpDefaults.json?auth=${token}`,
+          {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(cropRates)}),
+      ]);
+      onSave(baseRates, cropRates);
+      onClose();
+    } catch(e) { alert("Save failed: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const inp = (val, onChange) => (
+    <input type="number" step="0.01" value={val||""} onChange={e=>onChange(e.target.value)}
+      style={{width:"100%",background:"#fff",border:"1px solid #2a4030",borderRadius:4,
+        padding:"4px 7px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4000}}>
+      <div style={{background:"#fff",borderRadius:12,padding:28,width:820,maxHeight:"88vh",overflowY:"auto",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)",border:"1px solid #ccdda0",fontFamily:"'Barlow',sans-serif"}}>
+
+        {/* Header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+          <div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>⚙️ Default Expense Rates</div>
+            <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>Per-acre rates used as defaults for all fields on this account. Override per-field in the field detail.</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={copyFAVT} style={{background:"#f0f4e8",border:"1px solid #8ab870",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"inherit"}}>
+              Copy FA/VT Defaults
+            </button>
+            <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:0,borderBottom:"1px solid #ccdda0",marginBottom:18}}>
+          {[["base","📊 Base Rates ($/ac)"],["crops","🌾 Crop Overrides"]].map(([id,lbl])=>(
+            <button key={id} onClick={()=>setTab(id)} style={{padding:"7px 18px",background:"none",border:"none",
+              borderBottom:`2px solid ${tab===id?"#5cb850":"transparent"}`,color:tab===id?"#1a7010":"#7a9260",
+              fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:tab===id?700:400}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {tab==="base" && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 20px"}}>
+            {EXP.map(([k,lbl])=>(
+              <label key={k} style={{display:"grid",gridTemplateColumns:"1fr 100px",gap:8,alignItems:"center"}}>
+                <span style={{fontSize:12,color:"#3a6020"}}>{lbl}</span>
+                {inp(baseRates[k]??0, v=>upBase(k,v))}
+              </label>
+            ))}
+          </div>
+        )}
+
+        {tab==="crops" && (
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
+                  <th style={{padding:"8px 12px",textAlign:"left",fontSize:11}}>Crop</th>
+                  <th style={{padding:"8px 12px",textAlign:"right",fontSize:11}}>Seed ($/ac)</th>
+                  <th style={{padding:"8px 12px",textAlign:"right",fontSize:11}}>Fert/Chem ($/ac)</th>
+                  <th style={{padding:"8px 12px",textAlign:"right",fontSize:11}}>Crop Ins. ($/ac)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CROPS_LIST.map((crop,i)=>(
+                  <tr key={crop} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
+                    <td style={{padding:"5px 12px",fontWeight:600,color:"#1a4010"}}>{crop}</td>
+                    {["seed","fertilizerChemical","cropInsurance"].map(k=>(
+                      <td key={k} style={{padding:"4px 8px",textAlign:"right"}}>
+                        {inp(cropRates[crop]?.[k]??0, v=>upCrop(crop,k,v))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{fontSize:11,color:"#9aaa80",marginTop:10}}>
+              Crop overrides replace the base rate for that line item when that crop is planned. Leave at 0 to use the base rate.
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,paddingTop:16,borderTop:"1px solid #e0eccc"}}>
+          <button onClick={onClose} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,padding:"7px 18px",fontSize:13,cursor:"pointer",color:"#7a9260",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{background:saving?"#8ab870":"#2a7a18",border:"none",borderRadius:6,padding:"7px 22px",fontSize:13,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"Save Rates"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── APH Import Modal ──────────────────────────────────────────────────────────
 function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
   const [stage, setStage] = useState("upload"); // upload | parsing | review | saving | done
@@ -2860,6 +2985,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       <div style={{fontSize:12,color:"#7a9260"}}>Syncing with database</div>
     </div>}
     {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/> }
+    {showRatesEditor&&<ExpenseDefaultsModal
+      tenantId={tenantId} token={token}
+      expenseDefaults={expenseDefaults} cropExpDefaults={cropExpDefaults}
+      onSave={(base,crops)=>{ setExpenseDefaults(base); setCropExpDefaults(crops); }}
+      onClose={()=>setShowRatesEditor(false)}/>}
     {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} fields={fields} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
     {/* Header */}
     <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
@@ -2906,6 +3036,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         <button onClick={()=>{setMainView("expenses");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedId(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
+        {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
         <button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>
       </div>
