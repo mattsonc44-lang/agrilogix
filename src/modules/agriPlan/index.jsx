@@ -2481,7 +2481,7 @@ function ExpenseDefaultsModal({ tenantId, token, expenseDefaults, cropExpDefault
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={copyFAVT} style={{background:"#f0f4e8",border:"1px solid #8ab870",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"inherit"}}>
-              Copy FA/VT Defaults
+              Copy AgriLogix Defaults
             </button>
             <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
           </div>
