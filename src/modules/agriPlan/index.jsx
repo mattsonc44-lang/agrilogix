@@ -481,7 +481,7 @@ function getCropProfitability(crop, acres, fieldKey) {
 
   const expRate = EXP.reduce((s,[k]) => {
     const cd = CROP_EXP_DEFAULTS[crop];
-    return s + (cd && cd[k] !== undefined ? cd[k] : DEFAULT_RATES[k]);
+    const _rates=_expRates||DEFAULT_RATES; const _crd=_cropRates||CROP_EXP_DEFAULTS; const _cd=_crd[field.crop]; return s + (_cd && _cd[k] !== undefined ? _cd[k] : _rates[k]??0);
   }, 0);
   const expenses = expRate * acres;
 
@@ -519,13 +519,15 @@ const VT_ELIG=["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","M
 
 function getRate(field,key){
   if(field.expenseOverrides&&field.expenseOverrides[key]!==undefined) return +field.expenseOverrides[key];
-  const cd=CROP_EXP_DEFAULTS[field.crop];
+  const rates=_expRates||DEFAULT_RATES; const crops=_cropRates||CROP_EXP_DEFAULTS;
+  const cd=crops[field.crop];
   if(cd&&cd[key]!==undefined) return cd[key];
-  return DEFAULT_RATES[key];
+  return rates[key]??0;
 }
 function getCropDefault(crop,key){
-  const cd=CROP_EXP_DEFAULTS[crop];
-  return cd&&cd[key]!==undefined?cd[key]:DEFAULT_RATES[key];
+  const rates=_expRates||DEFAULT_RATES; const crops=_cropRates||CROP_EXP_DEFAULTS;
+  const cd=crops[crop];
+  return cd&&cd[key]!==undefined?cd[key]:rates[key]??0;
 }
 function calc(field){
   const{acres,income:i}=field;
@@ -1796,7 +1798,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
         if (!wd) continue;
         const expRate = EXP.reduce((s,[k]) => {
           const cd = CROP_EXP_DEFAULTS[wd.crop];
-          return s + (cd && cd[k] !== undefined ? cd[k] : DEFAULT_RATES[k]);
+          const _rates=_expRates||DEFAULT_RATES; const _crd=_cropRates||CROP_EXP_DEFAULTS; const _cd=_crd[field.crop]; return s + (_cd && _cd[k] !== undefined ? _cd[k] : _rates[k]??0);
         }, 0);
         const expenses = expRate * field.acres;
         const revenue = wd.revenue || 0;
@@ -2371,6 +2373,8 @@ const DATA_VERSION = "2026-v6";
 // ── Sync helpers — write to Firebase, mirror to localStorage as offline cache ──
 // Set to true when running inside Agri Logix (tenantId present) — skips localStorage
 let _isAgriLogixTenant = false;
+let _expRates  = null; // set per render from state; falls back to DEFAULT_RATES
+let _cropRates = null; // set per render from state; falls back to CROP_EXP_DEFAULTS
 
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
@@ -2679,6 +2683,8 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 export default function AgriPlanModule({ tenantId, token, userProfile, persist } = {}){
   // Configure Firebase and localStorage mode for this tenant
   _isAgriLogixTenant = !!tenantId;
+  _expRates  = expenseDefaults;
+  _cropRates = cropExpDefaults;
   initAgriPlan(tenantId, token);
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
@@ -2695,6 +2701,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [showRulesEditor, setShowRulesEditor] = useState(false);
   const [showImportAPH,   setShowImportAPH]   = useState(false);
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
+  const [expenseDefaults, setExpenseDefaults] = useState({...DEFAULT_RATES});
+  const [cropExpDefaults, setCropExpDefaults] = useState({...CROP_EXP_DEFAULTS});
+  const [showRatesEditor, setShowRatesEditor] = useState(false);
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
@@ -2735,6 +2744,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       // Load chemical plantback restrictions written by FieldLog
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
+      // Load tenant-specific expense defaults (replaces hardcoded FA/VT constants)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/expenseDefaults.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setExpenseDefaults(d); }).catch(()=>{});
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropExpDefaults.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setCropExpDefaults(d); }).catch(()=>{});
     }
 
     // Real-time listener for fields — fires immediately on connect, then on every change
