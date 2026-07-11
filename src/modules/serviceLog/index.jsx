@@ -397,9 +397,19 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     if(hours){const h=parseFloat(hours);const veh=D.vehicles.find(v=>v.id===vehicleId);if(veh&&h>(parseFloat(veh.hours)||0))nv=D.vehicles.map(v=>v.id===vehicleId?{...v,hours:String(h)}:v);}
     const totalCost=partsArr.reduce((s,p)=>s+(parseFloat(p.unitCost)||0)*(parseInt(p.qty)||1),0);
     const newRec={id:genId(),vehicleId,date,type:type||"Repair",notes,tech,hours,cost:String(totalCost.toFixed(2)),parts:partsArr.map(p=>({desc:p.desc||"",num:p.num||"",qty:p.qty||"1"}))};
+    // Decrement inventory for parts linked via invPartId
     let ni=D.partsInventory;
     partsArr.forEach(p=>{if(p.invPartId){ni=ni.map(ip=>ip.id===p.invPartId?{...ip,qty:String(Math.max(0,(parseInt(ip.qty)||0)-(parseInt(p.qty)||1)))}:ip);}});
-    save({vehicles:nv,records:[...D.records,newRec],partsInventory:ni});
+    // Auto-archive: move used parts from partsToOrder into orderHistory
+    const usedIds=new Set(partsArr.map(p=>p.id).filter(Boolean));
+    const usedOrderParts=D.partsToOrder.filter(p=>usedIds.has(p.id));
+    const remainingOrders=D.partsToOrder.filter(p=>!usedIds.has(p.id));
+    const newHistory=[...D.orderHistory,...usedOrderParts.map(p=>({
+      id:genId(),desc:p.desc||"",num:p.num||"",vendor:p.vendor||"",
+      qty:p.qty||"1",unitCost:p.unitCost||"",vehicleId:p.vehicleId,
+      receivedDate:date,usedOnService:true,
+    }))];
+    save({vehicles:nv,records:[...D.records,newRec],partsInventory:ni,partsToOrder:remainingOrders,orderHistory:newHistory});
     setModal(null);setEdit(null);
   };
 
