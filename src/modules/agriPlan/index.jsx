@@ -543,7 +543,7 @@ const f2=n=>(+n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFraction
 
 function mkF(farmNum,entity,farm,legal,common,fieldNum,acres,crop,bG,pG,bP,cP,el){
   return{id:String(_id++),farmNumber:farmNum,entity,farm,legal:legal||"",common,fieldNum:fieldNum||"",
-    acres:+acres,crop,eligibleCrops:el||FA_ELIG,
+    acres:+acres,crop,eligibleCrops:el||(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:FA_ELIG),
     income:{bushelGuarantee:+bG,priceGuarantee:+pG,bushelProjection:+bP,currentPrice:+cP},
     expenseOverrides:{}};
 }
@@ -1466,7 +1466,7 @@ ${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;return`<
   <th class="r">Expenses</th><th class="r">Exp $/Ac</th>
   <th class="r">Net Income</th>
 </tr></thead><tbody>
-${fields.map(f=>{const c=calc(f);const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
+${fields.map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
   <td><span class="badge ${f.entity==="Flat Acre"?"fa":"vt"}">${f.entity==="Flat Acre"?"FA":"VT"}</span></td>
   <td>${f.farm}</td>
   <td><strong>${f.common}</strong></td>
@@ -1509,7 +1509,7 @@ function SCard({label,val,color,sub}){
 function CropSelect({value,onChange,eligibleCrops}){
   const[open,setOpen]=useState(false);const ref=useRef();
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
-  const isInelig=c=>GLOBALLY_INELIGIBLE.has(c)||!eligibleCrops.includes(c);
+  const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!eligibleCrops.includes(c);
   return(<div ref={ref} style={{position:"relative",display:"inline-block"}}>
     <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:isInelig(value)?"#c02020":"#3a9020",flexShrink:0}}/>
@@ -1518,9 +1518,9 @@ function CropSelect({value,onChange,eligibleCrops}){
     </button>
     {open&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#f8fbf5",border:"1px solid #2a4030",borderRadius:5,width:240,maxHeight:300,overflowY:"auto",boxShadow:"0 8px 32px rgba(0,0,0,.7)",marginTop:2}}>
       <div style={{padding:"6px 10px 2px",fontSize:9,color:"#4a8a30",textTransform:"uppercase",letterSpacing:1}}>✓ Eligible for this field</div>
-      {ALL_CROPS.filter(c=>!isInelig(c)).map(c=>(<div key={c} onClick={()=>{onChange(c);setOpen(false);}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#1a6010":"#1a4010",background:c===value?"#d4ecc0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#d4ecc0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#d4ecc0":"transparent"}><span style={{width:6,height:6,borderRadius:"50%",background:"#3a9020",flexShrink:0}}/>{c}{c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#3a8020"}}>✓</span>}</div>))}
+      {(_tenantCrops||ALL_CROPS).filter(c=>!isInelig(c)).map(c=>(<div key={c} onClick={()=>{onChange(c);setOpen(false);}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#1a6010":"#1a4010",background:c===value?"#d4ecc0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#d4ecc0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#d4ecc0":"transparent"}><span style={{width:6,height:6,borderRadius:"50%",background:"#3a9020",flexShrink:0}}/>{c}{c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#3a8020"}}>✓</span>}</div>))}
       <div style={{padding:"8px 10px 2px",fontSize:9,color:"#904040",textTransform:"uppercase",letterSpacing:1,borderTop:"1px solid #2a2010",marginTop:4}}>✗ Not eligible</div>
-      {ALL_CROPS.filter(c=>isInelig(c)).map(c=>(<div key={c} style={{padding:"7px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8,color:"#7a3030",cursor:"not-allowed",opacity:0.7}} title={GLOBALLY_INELIGIBLE.has(c)?"Region ineligible":"No APH on this field"}><span style={{width:6,height:6,borderRadius:"50%",background:"#c02020",flexShrink:0}}/>{c}<span style={{marginLeft:"auto",fontSize:9,color:"#904040"}}>{GLOBALLY_INELIGIBLE.has(c)?"Region":"No APH"}</span></div>))}
+      {(_tenantCrops||ALL_CROPS).filter(c=>isInelig(c)).map(c=>(<div key={c} style={{padding:"7px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8,color:"#7a3030",cursor:"not-allowed",opacity:0.7}} title={(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region ineligible":"No APH on this field"}><span style={{width:6,height:6,borderRadius:"50%",background:"#c02020",flexShrink:0}}/>{c}<span style={{marginLeft:"auto",fontSize:9,color:"#904040"}}>{(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region":"No APH"}</span></div>))}
     </div>)}
   </div>);
 }
@@ -1560,7 +1560,7 @@ function getCropSuggestions(historyEntry, activeYear) {
     "Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"];
 
   for (const crop of eligibleBase) {
-    if (GLOBALLY_INELIGIBLE.has(crop)) continue;
+    if ((_globallyIneligible||GLOBALLY_INELIGIBLE).has(crop)) continue;
     const checker = getRotationRules()[crop];
     const violations = checker ? checker(hist, nextYr) : [];
 
@@ -2260,14 +2260,14 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     {tab==="eligibility"&&(<div>
       <p style={{fontSize:12,color:"#5a7a40",marginBottom:16}}>Toggle crops with APH history on this field. Unchecked crops show <span style={{color:"#c02020"}}>red</span> and cannot be planted.</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-        {ALL_CROPS.filter(c=>!GLOBALLY_INELIGIBLE.has(c)).map(c=>{const on=field.eligibleCrops.includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
+        {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=field.eligibleCrops.includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
           <input type="checkbox" checked={on} onChange={()=>onUpdate(field.id,{eligibleCrops:on?field.eligibleCrops.filter(x=>x!==c):[...field.eligibleCrops,c]})} style={{accentColor:"#3a9020"}}/>
           <span style={{width:8,height:8,borderRadius:"50%",background:on?"#3a9020":"#7a3030",flexShrink:0}}/>{c}
         </label>);})}
       </div>
       <div style={{padding:"12px 14px",background:"#fdf4f4",borderRadius:6,border:"1px solid #2a1a1a"}}>
         <div style={{fontSize:10,color:"#904040",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Always Ineligible — Hi-Line Montana</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[...GLOBALLY_INELIGIBLE].map(c=>(<span key={c} style={{padding:"3px 10px",background:"#fff0f0",border:"1px solid #4a2020",borderRadius:3,fontSize:11,color:"#904040"}}>{c}</span>))}</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[...(_globallyIneligible||GLOBALLY_INELIGIBLE)].map(c=>(<span key={c} style={{padding:"3px 10px",background:"#fff0f0",border:"1px solid #4a2020",borderRadius:3,fontSize:11,color:"#904040"}}>{c}</span>))}</div>
       </div>
 
     </div>)}
@@ -2278,7 +2278,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
 // ── Add Field Form ────────────────────────────────────────────────────────────
 function AddFieldForm({onSave,onCancel}){
   const[d,setD]=useState({farmNumber:"",entity:"",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25});
-  const[eligibleCrops,setEligibleCrops]=useState([...FA_ELIG]);
+  const[eligibleCrops,setEligibleCrops]=useState(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:[...FA_ELIG]);
   const upd=(k,v)=>setD(p=>({...p,[k]:v}));
   const inp=(label,key,type="text")=>(<label style={{display:"flex",flexDirection:"column",gap:4}}>
     <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{label}</span>
@@ -2301,7 +2301,7 @@ function AddFieldForm({onSave,onCancel}){
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>{inp("Bu Guarantee/Ac","bushelGuarantee","number")}{inp("Guarantee Price","priceGuarantee","number")}{inp("Bu Projection/Ac","bushelProjection","number")}{inp("Projected Price","currentPrice","number")}</div>
     <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Crop Insurance Eligibility ────────────────────</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:16}}>
-      {ALL_CROPS.filter(c=>!GLOBALLY_INELIGIBLE.has(c)).map(c=>{const on=eligibleCrops.includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:4,cursor:"pointer",fontSize:11,color:on?"#1a7010":"#904040"}}>
+      {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=eligibleCrops.includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:4,cursor:"pointer",fontSize:11,color:on?"#1a7010":"#904040"}}>
         <input type="checkbox" checked={on} onChange={()=>setEligibleCrops(p=>on?p.filter(x=>x!==c):[...p,c])} style={{accentColor:"#3a9020"}}/>{c}
       </label>);})}
     </div>
@@ -2342,7 +2342,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint}){
         <Th label="Acres" k="acres" right/><Th label="Revenue" k="revenue" right/><Th label="Expenses" k="expenses" right/><Th label="Net" k="net" right/>
       </tr></thead>
       <tbody>
-        {sorted.map((f,i)=>{const c=calc(f);const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+        {sorted.map((f,i)=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
           return(<tr key={f.id} onClick={()=>onSelect(f)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
             <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #141e14"}}>{f.farm}</td>
@@ -2373,8 +2373,10 @@ const DATA_VERSION = "2026-v6";
 // ── Sync helpers — write to Firebase, mirror to localStorage as offline cache ──
 // Set to true when running inside Agri Logix (tenantId present) — skips localStorage
 let _isAgriLogixTenant = false;
-let _expRates  = null; // set per render from state; falls back to DEFAULT_RATES
-let _cropRates = null; // set per render from state; falls back to CROP_EXP_DEFAULTS
+let _expRates         = null; // set per render from state; falls back to DEFAULT_RATES
+let _cropRates        = null; // set per render from state; falls back to CROP_EXP_DEFAULTS
+let _tenantCrops      = null; // per-tenant crop list; null = use ALL_CROPS
+let _globallyIneligible = null; // per-tenant ineligible set; null = use GLOBALLY_INELIGIBLE
 
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
@@ -2425,6 +2427,90 @@ function saveHistRevCache(data){
 }
 
 
+
+
+// ── Manage Crops Modal ────────────────────────────────────────────────────────
+function ManageCropsModal({ tenantId, token, tenantCrops, onSave, onClose }) {
+  const [crops, setCrops] = useState(tenantCrops.length > 0 ? [...tenantCrops] : [...ALL_CROPS]);
+  const [newCrop, setNewCrop] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const add = () => {
+    const name = newCrop.trim();
+    if (!name) return;
+    if (crops.find(c => c.toLowerCase() === name.toLowerCase())) { setErr("Crop already exists"); return; }
+    setCrops(p => [...p, name]);
+    setNewCrop(""); setErr("");
+  };
+
+  const remove = (c) => setCrops(p => p.filter(x => x !== c));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`,
+        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(crops) }
+      );
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+      onSave(crops);
+      onClose();
+    } catch(e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4000}}>
+      <div style={{background:"#fff",borderRadius:12,padding:28,width:520,maxHeight:"82vh",overflowY:"auto",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)",border:"1px solid #ccdda0",fontFamily:"'Barlow',sans-serif"}}>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+          <div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>🌾 Manage Crops</div>
+            <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>Add or remove crops available for planning on this account. All new fields will have all crops eligible by default.</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
+        </div>
+
+        {err && <div style={{background:"#fff0f0",border:"1px solid #e08080",borderRadius:5,padding:"6px 10px",fontSize:12,color:"#c02020",marginBottom:12}}>{err}</div>}
+
+        {/* Add new crop */}
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
+          <input value={newCrop} onChange={e=>{setNewCrop(e.target.value);setErr("");}}
+            onKeyDown={e=>e.key==="Enter"&&add()}
+            placeholder="Enter crop name…"
+            style={{flex:1,border:"1px solid #2a4030",borderRadius:5,padding:"7px 10px",fontSize:13,
+              color:"#1a3010",fontFamily:"inherit",outline:"none",background:"#f8fbf5"}}/>
+          <button onClick={add} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:5,
+            padding:"7px 18px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            + Add Crop
+          </button>
+        </div>
+
+        {/* Crop list */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:20}}>
+          {crops.map(c => (
+            <div key={c} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              background:"#f0f8e8",border:"1px solid #b8d8a0",borderRadius:5,padding:"6px 10px"}}>
+              <span style={{fontSize:13,color:"#1a4010",fontWeight:600}}>{c}</span>
+              <button onClick={()=>remove(c)} style={{background:"none",border:"none",color:"#c04040",
+                cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 4px",fontFamily:"inherit"}}>×</button>
+            </div>
+          ))}
+          {crops.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",color:"#9aaa80",fontSize:13,padding:20}}>No crops added yet.</div>}
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",borderTop:"1px solid #e0eccc",paddingTop:16}}>
+          <button onClick={onClose} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,padding:"7px 18px",fontSize:13,cursor:"pointer",color:"#7a9260",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{background:saving?"#8ab870":"#2a7a18",border:"none",borderRadius:6,padding:"7px 22px",fontSize:13,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"Save Crops"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Expense Defaults Editor ──────────────────────────────────────────────────
 const CROPS_LIST = ["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Durum",
@@ -2824,12 +2910,16 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [showRulesEditor, setShowRulesEditor] = useState(false);
   const [showImportAPH,   setShowImportAPH]   = useState(false);
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
+  const [tenantCrops,     setTenantCrops]     = useState([]);   // per-tenant crop list
+  const [showCropsMgr,   setShowCropsMgr]   = useState(false);
   const [expenseDefaults, setExpenseDefaults] = useState({...DEFAULT_RATES});
   const [cropExpDefaults, setCropExpDefaults] = useState({...CROP_EXP_DEFAULTS});
   const [showRatesEditor, setShowRatesEditor] = useState(false);
-  // Sync module-level vars so calc() / getRate() use current tenant rates
-  _expRates  = expenseDefaults;
-  _cropRates = cropExpDefaults;
+  // Sync module-level vars so calc() / getRate() / CropSelect use current tenant values
+  _expRates          = expenseDefaults;
+  _cropRates         = cropExpDefaults;
+  _tenantCrops       = tenantCrops.length > 0 ? tenantCrops : (_isAgriLogixTenant ? [] : null);
+  _globallyIneligible = _isAgriLogixTenant ? new Set() : null; // Agri Logix: no ineligible crops
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
@@ -2870,6 +2960,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       // Load chemical plantback restrictions written by FieldLog
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
+      // Load tenant crop list from Firebase
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
       // Load tenant-specific expense defaults (replaces hardcoded FA/VT constants)
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/expenseDefaults.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setExpenseDefaults(d); }).catch(()=>{});
@@ -2992,6 +3085,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       <div style={{fontSize:12,color:"#7a9260"}}>Syncing with database</div>
     </div>}
     {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/> }
+    {showCropsMgr&&<ManageCropsModal
+      tenantId={tenantId} token={token} tenantCrops={tenantCrops}
+      onSave={crops=>setTenantCrops(crops)}
+      onClose={()=>setShowCropsMgr(false)}/>}
     {showRatesEditor&&<ExpenseDefaultsModal
       tenantId={tenantId} token={token}
       expenseDefaults={expenseDefaults} cropExpDefaults={cropExpDefaults}
@@ -3044,6 +3141,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
         {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
+        {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
         <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
         <button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>
       </div>
@@ -3069,7 +3167,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
                 {hasOv&&<span style={{color:"#8a6010",fontSize:9}}>★</span>}
                 <span style={{color:"#3a7028",fontSize:9}}>{acres.toFixed(0)}ac</span>
               </div>
-              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
                 return(<div key={f.id} onClick={()=>selectField(f)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
                   <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
