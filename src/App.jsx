@@ -30,7 +30,7 @@ export default function App() {
   const [session,    setSession]    = useState(null);
   const [profile,    setProfile]    = useState(null);
   const [tenant,     setTenant]     = useState(null);
-  const [module,     setModule]     = useState(null);
+  const [module,     setModule]     = useState(()=>window.location.hash.slice(1)||null);
   const [loading,    setLoading]    = useState(true);
   const [authErr,    setAuthErr]    = useState("");
   const [showAdmin,  setShowAdmin]  = useState(false);
@@ -100,7 +100,12 @@ export default function App() {
       const mods = tenant?.profile?.modules || [];
       const allowlist = profile?.modules;
       const available = (allowlist != null && allowlist.length > 0) ? mods.filter(m => allowlist.includes(m)) : mods;
-      if (available.length > 0) setModule(available[0]);
+      if (available.length > 0) {
+        const hash = window.location.hash.slice(1);
+        const target = hash && available.includes(hash) ? hash : available[0];
+        window.location.hash = target;
+        setModule(target);
+      }
     }
   }, [loading, tenant, profile, session, module]);
 
@@ -143,7 +148,12 @@ export default function App() {
           ? tenantMods.filter(m => userAllowlist.includes(m)) : tenantMods;
         setProfile(userProfile);
         setTenant({ profile: tenantProfile });
-        if (mods.length) setModule(mods[0]);
+        if (mods.length) {
+          const hash = window.location.hash.slice(1);
+          const target = hash && mods.includes(hash) ? hash : mods[0];
+          window.location.hash = target;
+          setModule(target);
+        }
       } else {
         setProfile({ email: sess.email, pendingSetup: true });
       }
@@ -227,7 +237,7 @@ export default function App() {
             const m = MODULES[mid]; if (!m) return null;
             const active = module === mid;
             return (
-              <button key={mid} onClick={()=>setModule(mid)} style={{
+              <button key={mid} onClick={()=>{ window.location.hash = mid; setModule(mid); }} style={{
                 display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
                 border:"none", cursor:"pointer",
                 background: active ? "rgba(255,255,255,0.15)" : "transparent",
