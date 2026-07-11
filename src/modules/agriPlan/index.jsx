@@ -2812,7 +2812,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
   const[fields,setFields]=useState(()=>tenantId?[]:loadFields(loadYears().slice(-1)[0]));
-  const[selectedId,setSelectedId]=useState(null);
+  const[selectedField,setSelectedField]=useState(null);
   const[entityFilter,setEntityFilter]=useState("all");
   const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set(["Flat Acre::Home","Flat Acre::Hunnewell","Via Terra::Chris Kolstad"]));
   const[addMode,setAddMode]=useState(false);
@@ -2905,6 +2905,13 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
 
   const isSavingRef = useRef(false);
 
+  // Keep selectedField in sync when fields array updates (SSE, edits, etc.)
+  useEffect(()=>{
+    if(!selectedField) return;
+    const fresh = fields.find(f=>f.id===selectedField.id);
+    if(fresh && JSON.stringify(fresh)!==JSON.stringify(selectedField)) setSelectedField(fresh);
+  },[fields]);
+
   useEffect(()=>{
     if(fields&&fields.length>0){
       if(saveTimer.current) clearTimeout(saveTimer.current);
@@ -2923,7 +2930,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     }
   },[fields,activeYear]);
 
-  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?[]:loadFields(yr));setSelectedId(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId]);
+  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?[]:loadFields(yr));setSelectedField(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId]);
 
   const createYear=useCallback((newYr,mode,copyFromYr)=>{
     const src=mode==="copy"?(tenantId?[...fields]:loadFields(copyFromYr)):[];
@@ -2937,7 +2944,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     saveFields(activeYear,fields);
     setActiveYear(newYr);
     setFields(newFields);
-    setSelectedId(null);
+    setSelectedField(null);
     setMainView("table");
   },[years,activeYear,fields]);
 
@@ -2953,12 +2960,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     const switchTo=updatedYears[updatedYears.length-1];
     setActiveYear(switchTo);
     setFields(loadFields(switchTo));
-    setSelectedId(null);
+    setSelectedField(null);
     setMainView("table");
   },[years]);
   const filtered=useMemo(()=>{let fs=fields;if(entityFilter!=="all")fs=fs.filter(f=>f.entity===entityFilter);if(searchQ){const q=searchQ.toLowerCase();fs=fs.filter(f=>f.common?.toLowerCase().includes(q)||f.farm?.toLowerCase().includes(q)||f.crop?.toLowerCase().includes(q)||f.legal?.toLowerCase().includes(q));}return fs;},[fields,entityFilter,searchQ]);
   const totals=useMemo(()=>filtered.reduce((a,f)=>{const c=calc(f);return{acres:a.acres+f.acres,revenue:a.revenue+c.revenue,guarantee:a.guarantee+c.guarantee,expenses:a.expenses+c.expenses,net:a.net+c.net};},{acres:0,revenue:0,guarantee:0,expenses:0,net:0}),[filtered]);
-  const selectedField=fields.find(f=>f.id===selectedId);
   const farmGroups=useMemo(()=>{const g={};filtered.forEach(f=>{const k=`${f.entity}::${f.farm}`;if(!g[k])g[k]={entity:f.entity,farm:f.farm,fields:[]};g[k].fields.push(f);});return Object.values(g);},[filtered]);
   const pushUndo = useCallback((prev)=>{
     undoStack.current=[...undoStack.current.slice(-19),prev]; // keep last 20
@@ -2974,9 +2980,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const updateIncome=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,income:{...f.income,[k]:+v}}:f);}),[pushUndo]);
   const updateExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,expenseOverrides:{...(f.expenseOverrides||{}),[k]:+v}}:f);}),[pushUndo]);
   const resetExpense=useCallback((id,k)=>setFields(p=>p.map(f=>{if(f.id!==id)return f;const ov={...(f.expenseOverrides||{})};delete ov[k];return{...f,expenseOverrides:ov};})),[]);
-  const deleteField=useCallback(id=>{setFields(p=>p.filter(f=>f.id!==id));setSelectedId(null);setMainView("table");},[]);
-  const addField=useCallback(nf=>{const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};setFields(p=>[...p,field]);setAddMode(false);setSelectedId(field.id);setMainView("detail");},[]);
-  const selectField=id=>{setSelectedId(id);setMainView("detail");setAddMode(false);};
+  const deleteField=useCallback(id=>{setFields(p=>p.filter(f=>f.id!==id));setSelectedField(null);setMainView("table");},[]);
+  const addField=useCallback(nf=>{const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");},[]);
+  const selectField=f=>{setSelectedField(typeof f==="object"?f:fields.find(x=>x.id===f)||null);setMainView("detail");setAddMode(false);};
 
   return(<div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#f1f5eb",color:"#1a3010",fontFamily:"'Barlow',sans-serif",overflow:"hidden"}}>
     {showRulesEditor&&<RotationRulesEditor onClose={()=>setShowRulesEditor(false)}/>}
@@ -3032,10 +3038,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         <button onClick={()=>setShowRulesEditor(true)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:4,padding:"4px 10px",color:"#a8d880",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} title="Edit rotation rules">⚙ Rotation Rules</button>
         {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
         {saveStatus==='error'&&<span style={{fontSize:11,color:"#ff6050",background:"rgba(255,80,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ff6050",cursor:"pointer"}} title="Click to retry" onClick={()=>saveFields(activeYear,fields,(s)=>setSaveStatus(s))}>⚠ Save failed — tap to retry</span>}
-        <button onClick={()=>{setMainView("table");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
-        {(!tenantId||aphData)&&<button onClick={()=>{setMainView("history");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
-        <button onClick={()=>{setMainView("expenses");setSelectedId(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
-        <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedId(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
+        <button onClick={()=>{setMainView("table");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
+        {(!tenantId||aphData)&&<button onClick={()=>{setMainView("history");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
+        <button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
+        <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
         {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
@@ -3063,7 +3069,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
                 {hasOv&&<span style={{color:"#8a6010",fontSize:9}}>★</span>}
                 <span style={{color:"#3a7028",fontSize:9}}>{acres.toFixed(0)}ac</span>
               </div>
-              {open&&g.fields.map(f=>{const act=f.id===selectedId;const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
                 return(<div key={f.id} onClick={()=>selectField(f.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
                   <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
