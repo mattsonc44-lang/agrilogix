@@ -3070,7 +3070,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
                 <span style={{color:"#3a7028",fontSize:9}}>{acres.toFixed(0)}ac</span>
               </div>
               {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=GLOBALLY_INELIGIBLE.has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
-                return(<div key={f.id} onClick={()=>selectField(f.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
+                return(<div key={f.id} onClick={()=>selectField(f)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
                   <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
                   {hasOv&&<span style={{color:"#8a6010",fontSize:9}}>★</span>}
