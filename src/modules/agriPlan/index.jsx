@@ -522,7 +522,7 @@ function getRate(field,key){
   const rates=_expRates||DEFAULT_RATES; const crops=_cropRates||CROP_EXP_DEFAULTS;
   const cd=crops[field.crop];
   if(cd&&cd[key]!==undefined) return cd[key];
-  return rates[key]??0;
+  return (_isAgriLogixTenant ? (rates[key]??0) : (rates[key]??DEFAULT_RATES[key]??0));
 }
 function getCropDefault(crop,key){
   const rates=_expRates||DEFAULT_RATES; const crops=_cropRates||CROP_EXP_DEFAULTS;
@@ -2912,13 +2912,13 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
   const [tenantCrops,     setTenantCrops]     = useState([]);   // per-tenant crop list
   const [showCropsMgr,   setShowCropsMgr]   = useState(false);
-  const [expenseDefaults, setExpenseDefaults] = useState({...DEFAULT_RATES});
-  const [cropExpDefaults, setCropExpDefaults] = useState({...CROP_EXP_DEFAULTS});
+  const [expenseDefaults, setExpenseDefaults] = useState(_isAgriLogixTenant?{}:{...DEFAULT_RATES});
+  const [cropExpDefaults, setCropExpDefaults] = useState(_isAgriLogixTenant?{}:{...CROP_EXP_DEFAULTS});
   const [showRatesEditor, setShowRatesEditor] = useState(false);
   // Sync module-level vars so calc() / getRate() / CropSelect use current tenant values
   _expRates          = expenseDefaults;
   _cropRates         = cropExpDefaults;
-  _tenantCrops       = tenantCrops.length > 0 ? tenantCrops : (_isAgriLogixTenant ? [] : null);
+  _tenantCrops       = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS; // always fall back to ALL_CROPS if not configured
   _globallyIneligible = _isAgriLogixTenant ? new Set() : null; // Agri Logix: no ineligible crops
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
