@@ -1718,7 +1718,7 @@ function RevenueInputModal({ field, year, crop, existingData, onSave, onClose })
   );
 }
 
-function FieldHistoryTab({ field, activeYear, allFields, years, createYear, switchYear, onUpdate }) {
+function FieldHistoryTab({ field, activeYear, allFields, years, createYear, switchYear, onUpdate, tenantId, manualHistory={}, onSaveHistory }) {
   const histEntry = useMemo(() => {
     // Primary: common|fieldNum
     const keyFn = field.common + '|' + field.fieldNum;
@@ -1743,6 +1743,44 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
   const suggestions = useMemo(() => getCropSuggestions(histEntry, activeYear), [histEntry, activeYear]);
   const HIST_YEARS_ALL = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
+
+  // ── Manual history state ──────────────────────────────────────────────────
+  const [manHist, setManHist] = useState({...manualHistory});
+  const [addingYear, setAddingYear] = useState(false);
+  const [newRow, setNewRow] = useState({year:"", crop:"", yield:"", acres:""});
+  const [editingYear, setEditingYear] = useState(null);
+  const [editRow, setEditRow] = useState({});
+  useEffect(()=>{ setManHist({...manualHistory}); },[manualHistory]);
+
+  const allEnteredYears = Object.keys(manHist).sort((a,b)=>b.localeCompare(a));
+
+  const saveRow = (year, data) => {
+    const updated = {...manHist, [year]: data};
+    setManHist(updated);
+    onSaveHistory && onSaveHistory(updated);
+  };
+
+  const deleteRow = year => {
+    const updated = {...manHist};
+    delete updated[year];
+    setManHist(updated);
+    onSaveHistory && onSaveHistory(updated);
+  };
+
+  const commitNew = () => {
+    if(!newRow.year || !newRow.crop) return;
+    saveRow(newRow.year, {crop:newRow.crop, yield:newRow.yield||"", acres:newRow.acres||""});
+    setNewRow({year:"", crop:"", acres:""}); setAddingYear(false);
+  };
+
+  const commitEdit = () => {
+    if(!editingYear) return;
+    saveRow(editingYear, {crop:editRow.crop, yield:editRow.yield||"", acres:editRow.acres||""});
+    setEditingYear(null);
+  };
+
+  const cropOpts = (_tenantCrops||ALL_CROPS);
+  const inpS = {border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none",background:"#fff"};
 
   // Revenue modal state
   const [editYear, setEditYear] = useState(null);
@@ -1871,6 +1909,55 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
   return (
     <div>
+      {/* ── Manual crop history entry ───────────────────────────────────── */}
+      {(tenantId || Object.keys(manHist).length > 0) && (
+        <div style={{background:"#f6f9f0",border:"1px solid #c8e0a8",borderRadius:8,padding:16,marginBottom:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#1a4010"}}>📋 Crop History — {field.common}</div>
+            {!addingYear&&<button onClick={()=>{setAddingYear(true);setNewRow({year:"",crop:"",yield:"",acres:String(field.acres||"")});}} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:4,padding:"4px 14px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Year</button>}
+          </div>
+          {allEnteredYears.length===0&&!addingYear&&<div style={{fontSize:12,color:"#9aaa80",textAlign:"center",padding:"12px 0"}}>No history entered yet — click + Add Year to start</div>}
+          {(allEnteredYears.length>0||addingYear)&&(
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
+                {["Year","Crop","Yield (bu/ac)","Acres",""].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:10,letterSpacing:0.5}}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {allEnteredYears.map((yr,i)=>(
+                  editingYear===yr?(
+                    <tr key={yr} style={{background:"#eaf5e0"}}>
+                      <td style={{padding:"4px 6px",fontWeight:700,color:"#1a4010"}}>{yr}</td>
+                      <td style={{padding:"4px 6px"}}><select value={editRow.crop||""} onChange={e=>setEditRow(p=>({...p,crop:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:"100%"}}><option value="">—</option>{cropOpts.map(c=><option key={c}>{c}</option>)}</select></td>
+                      <td style={{padding:"4px 6px"}}><input type="number" value={editRow.yield||""} onChange={e=>setEditRow(p=>({...p,yield:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
+                      <td style={{padding:"4px 6px"}}><input type="number" value={editRow.acres||""} onChange={e=>setEditRow(p=>({...p,acres:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
+                      <td style={{padding:"4px 6px"}}><button onClick={commitEdit} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:3,padding:"3px 10px",fontSize:11,cursor:"pointer",marginRight:4}}>✓</button><button onClick={()=>setEditingYear(null)} style={{background:"#f0f0f0",border:"1px solid #ccc",borderRadius:3,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>✕</button></td>
+                    </tr>
+                  ):(
+                    <tr key={yr} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
+                      <td style={{padding:"5px 8px",fontWeight:700,color:"#1a4010"}}>{yr}</td>
+                      <td style={{padding:"5px 8px"}}><span style={{background:"#d4ecc0",padding:"1px 8px",borderRadius:3,fontSize:11,fontWeight:600,color:"#2a6010"}}>{manHist[yr].crop||"—"}</span></td>
+                      <td style={{padding:"5px 8px",fontFamily:"'IBM Plex Mono',monospace"}}>{manHist[yr].yield||"—"}</td>
+                      <td style={{padding:"5px 8px",fontFamily:"'IBM Plex Mono',monospace"}}>{manHist[yr].acres||"—"}</td>
+                      <td style={{padding:"5px 8px"}}><button onClick={()=>{setEditingYear(yr);setEditRow({...manHist[yr]});}} style={{background:"none",border:"1px solid #5a9040",borderRadius:3,padding:"2px 8px",fontSize:10,cursor:"pointer",color:"#3a7020",marginRight:4}}>✏️</button><button onClick={()=>deleteRow(yr)} style={{background:"none",border:"1px solid #c04040",borderRadius:3,padding:"2px 8px",fontSize:10,cursor:"pointer",color:"#c04040"}}>✕</button></td>
+                    </tr>
+                  )
+                ))}
+                {addingYear&&(
+                  <tr style={{background:"#eaf5e0"}}>
+                    <td style={{padding:"4px 6px"}}><select value={newRow.year} onChange={e=>setNewRow(p=>({...p,year:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:"100%"}}><option value="">Year</option>{HIST_YEARS_ALL.filter(y=>!manHist[y]).map(y=><option key={y}>{y}</option>)}</select></td>
+                    <td style={{padding:"4px 6px"}}><select value={newRow.crop} onChange={e=>setNewRow(p=>({...p,crop:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:"100%"}}><option value="">Crop</option>{cropOpts.map(c=><option key={c}>{c}</option>)}</select></td>
+                    <td style={{padding:"4px 6px"}}><input type="number" placeholder="bu/ac" value={newRow.yield} onChange={e=>setNewRow(p=>({...p,yield:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
+                    <td style={{padding:"4px 6px"}}><input type="number" placeholder="ac" value={newRow.acres} onChange={e=>setNewRow(p=>({...p,acres:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
+                    <td style={{padding:"4px 6px"}}><button onClick={commitNew} disabled={!newRow.year||!newRow.crop} style={{background:(!newRow.year||!newRow.crop)?"#aac890":"#2a7a18",color:"#fff",border:"none",borderRadius:3,padding:"3px 10px",fontSize:11,cursor:"pointer",marginRight:4}}>✓ Add</button><button onClick={()=>setAddingYear(false)} style={{background:"#f0f0f0",border:"1px solid #ccc",borderRadius:3,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>✕</button></td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+          {allEnteredYears.length>0&&<div style={{fontSize:10,color:"#9aaa80",marginTop:8}}>History is used for rotation planning and crop suggestions. Yield and acres are optional.</div>}
+        </div>
+      )}
+
       {/* Revenue Input Modal */}
       {editYear && (
         <RevenueInputModal
@@ -2064,7 +2151,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={}}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},onSaveFieldHistory}){
   // ── Chemical plantback warnings ────────────────────────────────────────────
   const chemWarnings = useMemo(() => {
     if(!field.crop || !fieldRestrictions) return [];
@@ -2271,7 +2358,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       </div>
 
     </div>)}
-    {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate}/>)}
+    {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate} tenantId={tenantId} manualHistory={fieldHistory[field.common]||{}} onSaveHistory={hist=>onSaveFieldHistory&&onSaveFieldHistory(field.common,hist)}/>)}
   </div>);
 }
 
@@ -2910,6 +2997,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [showRulesEditor, setShowRulesEditor] = useState(false);
   const [showImportAPH,   setShowImportAPH]   = useState(false);
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
+  const [fieldHistory,    setFieldHistory]    = useState({}); // manual crop history per field
   const [tenantCrops,     setTenantCrops]     = useState([]);   // per-tenant crop list
   const [showCropsMgr,   setShowCropsMgr]   = useState(false);
   const [expenseDefaults, setExpenseDefaults] = useState(_isAgriLogixTenant?{}:{...DEFAULT_RATES});
@@ -2960,6 +3048,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       // Load chemical plantback restrictions written by FieldLog
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
+      // Load manual field history from Firebase
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
       // Load tenant crop list from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
@@ -3198,7 +3289,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions}/>)
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} onSaveFieldHistory={(common,hist)=>{
+            const updated={...fieldHistory,[common]:hist};
+            setFieldHistory(updated);
+            if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
+          }}/>)
           :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)}/>)}
       </div>
     </div>
