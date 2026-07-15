@@ -475,40 +475,76 @@ const WORKBOOK_PRODUCTION = {
   "West 280|":{"2025":{"crop":"Spring Wheat","total_bu":7700.0,"bu_per_ac":27.65}},
 };
 
-function getCropProfitability(crop, acres, fieldKey) {
-  const t = CROP_TYPICAL[crop];
-  if (!t) return null;
-
+function getCropProfitability(crop, acres, fieldCommon) {
+  // ── Expense calculation ──────────────────────────────────────────────────
   const expRate = EXP.reduce((s,[k]) => {
-    const cd = CROP_EXP_DEFAULTS[crop];
-    const _rates=_expRates||DEFAULT_RATES; const _crd=_cropRates||CROP_EXP_DEFAULTS; const _cd=_crd[field.crop]; return s + (_cd && _cd[k] !== undefined ? _cd[k] : _rates[k]??0);
+    const rates = _expRates||DEFAULT_RATES;
+    const crops = _cropRates||CROP_EXP_DEFAULTS;
+    const cd = crops[crop];
+    return s + (cd&&cd[k]!==undefined ? cd[k] : rates[k]??0);
   }, 0);
   const expenses = expRate * acres;
 
-  // Use field-specific APH if we have it, otherwise fall back to CROP_TYPICAL
-  const fieldAph = fieldKey && FIELD_APH[fieldKey] && FIELD_APH[fieldKey][crop];
-  const buGuar = fieldAph
-    ? Math.round(fieldAph.aph * 0.75 * 10) / 10  // 75% coverage of APH
-    : t.buGuar;
-  const aphNote = fieldAph
-    ? `${fieldAph.aph} bu/ac APH (${fieldAph.n}yr) × 75%`
-    : `Typical (no field APH)`;
+  // ── APH yield lookup — priority: imported APH > manual history > FA/VT hardcoded ──
+  let aphYield=null, aphYears=null, aphNote=null;
 
-  // Use actual sold price history if available, otherwise CROP_TYPICAL
-  const soldPrice = CROP_SOLD_PRICES[crop] || t.projPrice;
-  const priceGuar = t.priceGuar;  // insurance price election stays from CROP_TYPICAL
+  // 1. Imported APH (from crop insurance PDF)
+  if(_aphData && fieldCommon && _aphData[fieldCommon]?.[crop]?.aphYield) {
+    const d = _aphData[fieldCommon][crop];
+    aphYield = d.aphYield;
+    aphYears = d.aphYears;
+    aphNote  = `${aphYield} bu/ac APH (${aphYears||"?"}yr) — imported`;
+  }
 
-  const guarRevPerAc = buGuar * priceGuar;
-  const guarRev = guarRevPerAc * acres;
-  const projRevPerAc = (fieldAph ? fieldAph.aph : t.buProj) * soldPrice;
-  const projRev = projRevPerAc * acres;
+  // 2. Manual history — average yield for this crop across entered years
+  if(!aphYield && _fieldHistory?.[fieldCommon]) {
+    const yrs = Object.values(_fieldHistory[fieldCommon])
+      .filter(y => y.crop===crop && y.yield && +y.yield>0);
+    if(yrs.length>0){
+      aphYield = Math.round(yrs.reduce((s,y)=>s+(+y.yield),0)/yrs.length*10)/10;
+      aphYears = yrs.length;
+      aphNote  = `${aphYield} bu/ac avg (${aphYears}yr manual history)`;
+    }
+  }
+
+  // 3. FA/VT hardcoded data (standalone app only)
+  if(!aphYield && !_isAgriLogixTenant) {
+    const fa = FIELD_APH[fieldCommon]?.[crop] || FIELD_APH[fieldCommon+"|"]?.[crop];
+    const t  = CROP_TYPICAL[crop];
+    if(fa){ aphYield=fa.aph; aphYears=fa.n; aphNote=`${fa.aph} bu/ac APH (${fa.n}yr)`; }
+    else if(t){ aphYield=t.buProj; aphNote="Typical (no field APH)"; }
+  }
+
+  // No APH — return expense-only result so UI can show expenses without revenue
+  if(!aphYield) {
+    if(expRate===0) return null;
+    return {
+      expRate, expenses,
+      buGuar:null, priceGuar:null,
+      aphNote: "No APH data — add in History & Plan tab",
+      guarRevPerAc:null, guarRev:null, guarNet:null, guarNetPerAc:null,
+      projRevPerAc:null, projRev:null, projNet:null, projNetPerAc:null,
+      soldPrice:null, fieldAph:false,
+    };
+  }
+
+  // ── Revenue calculation ──────────────────────────────────────────────────
+  const t = CROP_TYPICAL[crop];
+  const buGuar      = Math.round(aphYield*0.75*10)/10;
+  const priceGuar   = t?.priceGuar || 0;
+  const soldPrice   = (typeof CROP_SOLD_PRICES!=="undefined"&&CROP_SOLD_PRICES[crop]) || t?.projPrice || 0;
+
+  const guarRevPerAc = buGuar*priceGuar;
+  const guarRev      = guarRevPerAc*acres;
+  const projRevPerAc = aphYield*soldPrice;
+  const projRev      = projRevPerAc*acres;
 
   return {
     expRate, expenses,
     buGuar, priceGuar, aphNote,
-    guarRevPerAc, guarRev, guarNet: guarRev - expenses, guarNetPerAc: guarRevPerAc - expRate,
-    projRevPerAc, projRev, projNet: projRev - expenses, projNetPerAc: projRevPerAc - expRate,
-    soldPrice, fieldAph: !!fieldAph,
+    guarRevPerAc, guarRev, guarNet:guarRev-expenses, guarNetPerAc:guarRevPerAc-expRate,
+    projRevPerAc, projRev, projNet:projRev-expenses, projNetPerAc:projRevPerAc-expRate,
+    soldPrice, fieldAph:true,
   };
 }
 
@@ -2084,7 +2120,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
           {/* Eligible crops with profitability */}
           <div style={{fontSize:12,color:"#3a7020",textTransform:"uppercase",letterSpacing:0.7,marginBottom:8,fontWeight:700}}>✓ Rotation Eligible</div>
           {suggestions.filter(s=>s.eligible).map(s=>{
-            const p = getCropProfitability(s.crop, field.acres, field.common+"|"+field.legal);
+            const p = getCropProfitability(s.crop, field.acres, field.common);
             return(
             <div key={s.crop} style={{marginBottom:10,padding:"11px 13px",background:"#f4fcee",borderRadius:6,border:"1px solid #cce8b0"}}>
               {/* Crop name + last grown + plant button */}
@@ -2462,8 +2498,10 @@ const DATA_VERSION = "2026-v6";
 let _isAgriLogixTenant = false;
 let _expRates         = null; // set per render from state; falls back to DEFAULT_RATES
 let _cropRates        = null; // set per render from state; falls back to CROP_EXP_DEFAULTS
-let _tenantCrops      = null; // per-tenant crop list; null = use ALL_CROPS
+let _tenantCrops        = null; // per-tenant crop list; null = use ALL_CROPS
 let _globallyIneligible = null; // per-tenant ineligible set; null = use GLOBALLY_INELIGIBLE
+let _aphData            = null; // imported APH data from crop insurance PDF
+let _fieldHistory       = null; // manually entered crop history per field
 
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
@@ -3006,8 +3044,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   // Sync module-level vars so calc() / getRate() / CropSelect use current tenant values
   _expRates          = expenseDefaults;
   _cropRates         = cropExpDefaults;
-  _tenantCrops       = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS; // always fall back to ALL_CROPS if not configured
-  _globallyIneligible = _isAgriLogixTenant ? new Set() : null; // Agri Logix: no ineligible crops
+  _tenantCrops        = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS;
+  _globallyIneligible = _isAgriLogixTenant ? new Set() : null;
+  _aphData            = aphData;
+  _fieldHistory       = fieldHistory;
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
