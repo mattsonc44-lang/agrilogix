@@ -3234,7 +3234,26 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const updateExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,expenseOverrides:{...(f.expenseOverrides||{}),[k]:+v}}:f);}),[pushUndo]);
   const resetExpense=useCallback((id,k)=>setFields(p=>p.map(f=>{if(f.id!==id)return f;const ov={...(f.expenseOverrides||{})};delete ov[k];return{...f,expenseOverrides:ov};})),[]);
   const deleteField=useCallback(id=>{setFields(p=>p.filter(f=>f.id!==id));setSelectedField(null);setMainView("table");},[]);
-  const addField=useCallback(nf=>{const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");},[]);
+  const addField=useCallback(nf=>{
+    const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};
+    setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");
+    // ── Sync to FieldLog (Default Farm) ─────────────────────────────────────
+    if(tenantId&&token){(async()=>{
+      const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+      const flPath=`tenants/${tenantId}/fieldlog`;
+      try{
+        const data=await fetch(`${DB}/${flPath}/fields.json?auth=${token}`).then(r=>r.json());
+        const existing=data?Object.values(data):[];
+        if(existing.some(f=>f.name===field.common)) return;
+        const flId=`fl${Date.now()}${Math.floor(Math.random()*9999)}`;
+        await fetch(`${DB}/${flPath}/fields/${flId}.json?auth=${token}`,{
+          method:"PUT",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({id:flId,name:field.common,acres:String(field.acres||""),legalDesc:field.legal||"",notes:field.farm?`Farm: ${field.farm}`:"",boundary:[]})
+        });
+        console.log(`[SYNC] "${field.common}" → AgriField`);
+      }catch(e){console.warn("AgriPlan→AgriField sync failed:",e.message);}
+    })();}
+  },[tenantId,token]);
   const selectField=f=>{setSelectedField(typeof f==="object"?f:fields.find(x=>x.id===f)||null);setMainView("detail");setAddMode(false);};
 
   return(<div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#f1f5eb",color:"#1a3010",fontFamily:"'Barlow',sans-serif",overflow:"hidden"}}>
