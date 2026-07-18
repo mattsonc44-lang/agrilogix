@@ -329,11 +329,17 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
-        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
-        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
-        {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
-        {!module && enabledModules.length === 0 && (
+        {loading && !profile && (
+          <div style={{ ...S.content, textAlign:"center", paddingTop:"80px" }}>
+            <div style={{ fontSize:"32px", marginBottom:"12px", opacity:0.4 }}>🌾</div>
+            <p style={{ color:T.faint, fontSize:"13px" }}>Loading…</p>
+          </div>
+        )}
+        {profile && module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
+        {profile && module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
+        {profile && module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
+        {profile && module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
+        {profile && !module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
             <p style={{ color:T.muted }}>No modules enabled. Contact your administrator.</p>
