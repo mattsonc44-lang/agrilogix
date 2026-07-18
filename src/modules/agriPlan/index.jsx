@@ -530,9 +530,12 @@ function getCropProfitability(crop, acres, fieldCommon) {
 
   // ── Revenue calculation ──────────────────────────────────────────────────
   const t = CROP_TYPICAL[crop];
-  const buGuar      = Math.round(aphYield*0.75*10)/10;
-  const priceGuar   = t?.priceGuar || 0;
-  const soldPrice   = (typeof CROP_SOLD_PRICES!=="undefined"&&CROP_SOLD_PRICES[crop]) || t?.projPrice || 0;
+  const buGuar    = Math.round(aphYield*0.75*10)/10;
+  // Use tenant-configured prices first, fall back to CROP_TYPICAL defaults
+  const tp        = _cropPrices?.[crop];
+  const priceGuar = tp?.priceGuar>0 ? tp.priceGuar : (t?.priceGuar || 0);
+  const soldPrice = tp?.projPrice>0 ? tp.projPrice :
+                    ((typeof CROP_SOLD_PRICES!=="undefined"&&CROP_SOLD_PRICES[crop]) || t?.projPrice || 0);
 
   const guarRevPerAc = buGuar*priceGuar;
   const guarRev      = guarRevPerAc*acres;
@@ -2531,6 +2534,7 @@ let _tenantCrops        = null; // per-tenant crop list; null = use ALL_CROPS
 let _globallyIneligible = null; // per-tenant ineligible set; null = use GLOBALLY_INELIGIBLE
 let _aphData            = null; // imported APH data from crop insurance PDF
 let _fieldHistory       = null; // manually entered crop history per field
+let _cropPrices         = null; // per-tenant price elections + projected sell prices
 
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
@@ -2790,6 +2794,130 @@ function ExpenseDefaultsModal({ tenantId, token, expenseDefaults, cropExpDefault
   );
 }
 
+
+// ── Crop Prices Editor ────────────────────────────────────────────────────────
+function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onClose }) {
+  const crops = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS.filter(c => CROP_TYPICAL[c]);
+  const [prices, setPrices] = useState(() => {
+    const init = {};
+    crops.forEach(c => {
+      const t = CROP_TYPICAL[c] || {};
+      const saved = cropPrices[c] || {};
+      init[c] = {
+        priceGuar: saved.priceGuar ?? t.priceGuar ?? 0,
+        projPrice: saved.projPrice ?? t.projPrice ?? 0,
+      };
+    });
+    return init;
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const upd = (crop, key, val) => setPrices(p => ({...p, [crop]: {...p[crop], [key]: +val||0}}));
+
+  const copyDefaults = () => {
+    const init = {};
+    crops.forEach(c => {
+      const t = CROP_TYPICAL[c] || {};
+      init[c] = { priceGuar: t.priceGuar || 0, projPrice: t.projPrice || 0 };
+    });
+    setPrices(init);
+  };
+
+  const save = async () => {
+    setSaving(true); setErr("");
+    try {
+      const res = await fetch(
+        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
+        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(prices) }
+      );
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+      onSave(prices);
+      onClose();
+    } catch(e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const inp = (val, onChange) => (
+    <input type="number" step="0.01" value={val||""} onChange={e=>onChange(e.target.value)}
+      style={{width:"100%",border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",
+        fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none",
+        background:"#fff",textAlign:"right"}}/>
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4000}}>
+      <div style={{background:"#fff",borderRadius:12,padding:28,width:680,maxHeight:"88vh",overflowY:"auto",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)",border:"1px solid #ccdda0",fontFamily:"'Barlow',sans-serif"}}>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+          <div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>💲 Crop Prices</div>
+            <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>
+              Set your crop insurance price elections and projected sell prices for budget calculations.
+              These override the built-in defaults for your account.
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={copyDefaults} style={{background:"#f0f4e8",border:"1px solid #8ab870",borderRadius:5,
+              padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              Copy AgriLogix Defaults
+            </button>
+            <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,
+              padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
+          </div>
+        </div>
+
+        {err && <div style={{background:"#fff0f0",border:"1px solid #e08080",borderRadius:5,
+          padding:"6px 10px",fontSize:12,color:"#c02020",marginBottom:12}}>{err}</div>}
+
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:16}}>
+          <thead>
+            <tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
+              <th style={{padding:"7px 10px",textAlign:"left",fontSize:10,letterSpacing:0.5}}>Crop</th>
+              <th style={{padding:"7px 10px",textAlign:"center",fontSize:10,letterSpacing:0.5,width:160}}>
+                Insurance Price Election<br/>
+                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>($/bu — RMA sets each spring)</span>
+              </th>
+              <th style={{padding:"7px 10px",textAlign:"center",fontSize:10,letterSpacing:0.5,width:160}}>
+                Projected Sell Price<br/>
+                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>($/bu — your market estimate)</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {crops.filter(c => CROP_TYPICAL[c]).map((crop,i) => (
+              <tr key={crop} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
+                <td style={{padding:"5px 10px",fontWeight:600,color:"#1a4010"}}>{crop}</td>
+                <td style={{padding:"4px 8px"}}>
+                  {inp(prices[crop]?.priceGuar, v=>upd(crop,"priceGuar",v))}
+                </td>
+                <td style={{padding:"4px 8px"}}>
+                  {inp(prices[crop]?.projPrice, v=>upd(crop,"projPrice",v))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div style={{fontSize:11,color:"#9aaa80",marginBottom:16}}>
+          💡 Insurance Price Election is published by RMA each spring — check with your agent for current values.
+          Projected Sell Price is your own estimate for planning purposes.
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",borderTop:"1px solid #e0eccc",paddingTop:16}}>
+          <button onClick={onClose} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,
+            padding:"7px 18px",fontSize:13,cursor:"pointer",color:"#7a9260",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{background:saving?"#8ab870":"#2a7a18",border:"none",
+            borderRadius:6,padding:"7px 22px",fontSize:13,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"Save Prices"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── APH Import Modal ──────────────────────────────────────────────────────────
 function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
   const [stage, setStage] = useState("upload"); // upload | parsing | review | saving | done
@@ -2857,6 +2985,33 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
         body: JSON.stringify(aphData)
       });
       if (!res.ok) throw new Error(`Firebase save failed: ${res.status}`);
+
+      // Extract price elections and save to cropPrices (insurance price only — not projected sell)
+      const priceUpdates = {};
+      (parsed.units || []).forEach((unit, i) => {
+        const fieldId = matches[i]; if(!fieldId) return;
+        const crop = unit.crop;
+        if(crop && unit.priceElection > 0) {
+          if(!priceUpdates[crop] || unit.priceElection > priceUpdates[crop].priceGuar) {
+            priceUpdates[crop] = { priceGuar: unit.priceElection };
+          }
+        }
+      });
+      if(Object.keys(priceUpdates).length > 0) {
+        // Merge with existing cropPrices (don't overwrite projected sell prices)
+        const existingPrices = await fetch(
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`
+        ).then(r=>r.json()).catch(()=>({}));
+        const merged = {...(existingPrices||{})};
+        Object.entries(priceUpdates).forEach(([crop, {priceGuar}]) => {
+          merged[crop] = { ...(merged[crop]||{}), priceGuar };
+        });
+        await fetch(
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
+          { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(merged) }
+        ).catch(()=>{});
+      }
+
       onImported(aphData);
       setStage("done");
     } catch (err) { setError(err.message); setStage("review"); }
@@ -2968,7 +3123,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
             <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
             <div style={{ fontSize:16, color:"#2a6010", fontWeight:700, marginBottom:8 }}>APH data imported!</div>
             <div style={{ fontSize:12, color:"#7a9260", marginBottom:24 }}>
-              {matchedCount} field unit{matchedCount !== 1 ? "s" : ""} imported. History tab is now available with crop rotation and yield data.
+              {matchedCount} field unit{matchedCount !== 1 ? "s" : ""} imported. History tab is now available with crop rotation and yield data. Any price elections found in the PDF have been saved to 💲 Prices.
             </div>
             <button onClick={onClose} style={btn("#2a7a18","#fff")}>Done</button>
           </div>
@@ -3069,7 +3224,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [showCropsMgr,   setShowCropsMgr]   = useState(false);
   const [expenseDefaults, setExpenseDefaults] = useState(_isAgriLogixTenant?{}:{...DEFAULT_RATES});
   const [cropExpDefaults, setCropExpDefaults] = useState(_isAgriLogixTenant?{}:{...CROP_EXP_DEFAULTS});
-  const [showRatesEditor, setShowRatesEditor] = useState(false);
+  const [showRatesEditor,  setShowRatesEditor]  = useState(false);
+  const [showPricesEditor, setShowPricesEditor] = useState(false);
+  const [cropPrices,       setCropPrices]       = useState({}); // {crop: {priceGuar, projPrice}}
   // Sync module-level vars so calc() / getRate() / CropSelect use current tenant values
   _expRates          = expenseDefaults;
   _cropRates         = cropExpDefaults;
@@ -3077,6 +3234,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   _globallyIneligible = _isAgriLogixTenant ? new Set() : null;
   _aphData            = aphData;
   _fieldHistory       = fieldHistory;
+  _cropPrices         = Object.keys(cropPrices).length > 0 ? cropPrices : null;
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
@@ -3120,6 +3278,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       // Load manual field history from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
+      // Load tenant crop price elections from Firebase
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setCropPrices(d); }).catch(()=>{});
       // Load tenant crop list from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
@@ -3264,6 +3425,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       <div style={{fontSize:12,color:"#7a9260"}}>Syncing with database</div>
     </div>}
     {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/> }
+    {showPricesEditor&&<CropPricesModal
+      tenantId={tenantId} token={token}
+      tenantCrops={tenantCrops} cropPrices={cropPrices}
+      onSave={p=>setCropPrices(p)}
+      onClose={()=>setShowPricesEditor(false)}/>}
     {showCropsMgr&&<ManageCropsModal
       tenantId={tenantId} token={token} tenantCrops={tenantCrops}
       onSave={crops=>setTenantCrops(crops)}
@@ -3321,6 +3487,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
         {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
+        {tenantId&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
         <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
         <button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>
       </div>
