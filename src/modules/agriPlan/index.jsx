@@ -1401,7 +1401,7 @@ function exportCSV(fields){
 
 // ── Print / PDF ───────────────────────────────────────────────────────────────
 function openPrint(fields,entityFilter){
-  const title=entityFilter==="all"?(_isAgriLogixTenant?"Farm Budget":"Flat Acre Farms & Via Terra Inc."):entityFilter;
+  const title=entityFilter==="all"?"Farm Budget":entityFilter;
   const totAc=fields.reduce((s,f)=>s+f.acres,0);const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
   const totGuar=fields.reduce((s,f)=>s+calc(f).guarantee,0);const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);const totNet=totRev-totExp;
   const fmt=n=>"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
@@ -1435,7 +1435,7 @@ function openPrint(fields,entityFilter){
     tfoot td{background:#e8f4d8;font-weight:600;border-top:2px solid #4a8a30;font-size:10px}
     .pb{page-break-before:always}.nop{page-break-before:avoid}
     .badge{display:inline-block;padding:1px 5px;border-radius:2px;font-size:7.5px;font-weight:600}
-    .fa{background:#d8f0c8;color:#2a6a10}.vt{background:#c8dff8;color:#103a6a}
+    .ent{background:#e8f0d8;color:#2a5a10}
     .dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:3px;vertical-align:middle}
     .dg{background:#3a9a28}.dr{background:#c02020}
     .toolbar{background:#2a5a20;padding:10px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px}
@@ -1532,7 +1532,7 @@ ${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;return`<
   <th class="r">Net Income</th>
 </tr></thead><tbody>
 ${fields.map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
-  <td><span class="badge ${f.entity==="Flat Acre"?"fa":"vt"}">${f.entity==="Flat Acre"?"FA":"VT"}</span></td>
+  <td><span class="badge ent">${(f.entity||"").slice(0,8)||"—"}</span></td>
   <td>${f.farm}</td>
   <td><strong>${f.common}</strong></td>
   <td style="font-size:8.5px;color:#5a7a5a;text-align:center">${f.fieldNum}</td>
@@ -2206,7 +2206,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
             </div>
           ))}
           <div style={{fontSize:10,color:"#b0b8a8",marginTop:12,fontStyle:"italic",lineHeight:1.5}}>
-            Profitability uses typical Hi-Line MT APH values. Actual guarantees depend on your policy and field APH. Expenses from crop defaults.
+            Profitability uses imported APH or entered history. Actual guarantees depend on your policy and field APH. Expenses from configured rates.
           </div>
         </div>
       </div>
@@ -2418,7 +2418,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         </label>);})}
       </div>
       <div style={{padding:"12px 14px",background:"#fdf4f4",borderRadius:6,border:"1px solid #2a1a1a"}}>
-        <div style={{fontSize:10,color:"#904040",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Always Ineligible — Hi-Line Montana</div>
+        <div style={{fontSize:10,color:"#904040",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Always Ineligible (Region/Policy)</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[...(_globallyIneligible||GLOBALLY_INELIGIBLE)].map(c=>(<span key={c} style={{padding:"3px 10px",background:"#fff0f0",border:"1px solid #4a2020",borderRadius:3,fontSize:11,color:"#904040"}}>{c}</span>))}</div>
       </div>
 
@@ -3054,7 +3054,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const[fields,setFields]=useState(()=>tenantId?[]:loadFields(loadYears().slice(-1)[0]));
   const[selectedField,setSelectedField]=useState(null);
   const[entityFilter,setEntityFilter]=useState("all");
-  const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set(["Flat Acre::Home","Flat Acre::Hunnewell","Via Terra::Chris Kolstad"]));
+  const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set([]));
   const[addMode,setAddMode]=useState(false);
   const[searchQ,setSearchQ]=useState("");
   const[mainView,setMainView]=useState("table");
