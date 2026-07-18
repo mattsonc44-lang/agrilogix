@@ -1577,7 +1577,7 @@ function SCard({label,val,color,sub}){
 function CropSelect({value,onChange,eligibleCrops}){
   const[open,setOpen]=useState(false);const ref=useRef();
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
-  const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!(eligibleCrops||[]).includes(c);
+  const _ec=Array.isArray(eligibleCrops)?eligibleCrops:eligibleCrops&&typeof eligibleCrops==="object"?Object.values(eligibleCrops):[]; const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!(_ec.length>0?_ec:(_tenantCrops||ALL_CROPS)).includes(c);
   return(<div ref={ref} style={{position:"relative",display:"inline-block"}}>
     <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:isInelig(value)?"#c02020":"#3a9020",flexShrink:0}}/>
@@ -2418,8 +2418,13 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     {tab==="eligibility"&&(<div>
       <p style={{fontSize:12,color:"#5a7a40",marginBottom:16}}>Toggle crops with APH history on this field. Unchecked crops show <span style={{color:"#c02020"}}>red</span> and cannot be planted.</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-        {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=(field.eligibleCrops||[]).includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
-          <input type="checkbox" checked={on} onChange={()=>{ const ec=field.eligibleCrops||[]; onUpdate(field.id,{eligibleCrops:on?ec.filter(x=>x!==c):[...ec,c]}); }} style={{accentColor:"#3a9020"}}/>
+        {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{
+          // Normalize eligibleCrops — Firebase may return array or plain object
+          const _raw=field.eligibleCrops;
+          const _ec=Array.isArray(_raw)?_raw:_raw&&typeof _raw==="object"?Object.values(_raw):(_tenantCrops||ALL_CROPS);
+          const on=_ec.includes(c);
+          return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
+          <input type="checkbox" checked={on} onChange={()=>{ onUpdate(field.id,{eligibleCrops:on?_ec.filter(x=>x!==c):[..._ec,c]}); }} style={{accentColor:"#3a9020"}}/>
           <span style={{width:8,height:8,borderRadius:"50%",background:on?"#3a9020":"#7a3030",flexShrink:0}}/>{c}
         </label>);})}
       </div>
@@ -3495,9 +3500,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
             // giving all crops eligibility by default when not set
             setFields(fbFields.map(f=>({
               ...f,
-              eligibleCrops: Array.isArray(f.eligibleCrops)&&f.eligibleCrops.length>0
-                ? f.eligibleCrops
-                : (_tenantCrops||ALL_CROPS) // blank eligibleCrops = all eligible
+              eligibleCrops: (()=>{ const raw=f.eligibleCrops; const arr=Array.isArray(raw)?raw:raw&&typeof raw==="object"?Object.values(raw):[]; return arr.length>0?arr:(_tenantCrops||ALL_CROPS); })()
             })));
           }
           firstLoad = false;
