@@ -208,6 +208,61 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
 
 const ROLE_COLOR = { owner:"#C07010", manager:"#2563EB", operator:"#16A34A" };
 
+
+// ── Clean Duplicate Fields Button ─────────────────────────────────────────────
+function CleanDuplicatesBtn({ tenantId, token, T }) {
+  const [status, setStatus] = React.useState("idle"); // idle | running | done | error
+  const [removed, setRemoved] = React.useState(0);
+
+  const clean = async () => {
+    if (!window.confirm(`Remove duplicate AgriPlan fields from this tenant's 2026 plan?`)) return;
+    setStatus("running");
+    const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+    const yr = new Date().getFullYear();
+    const url = `${DB}/tenants/${tenantId}/agriPlan/fields/${yr}.json?auth=${token}`;
+    try {
+      const data = await fetch(url).then(r => r.json());
+      if (!data) { setStatus("done"); setRemoved(0); return; }
+      const seen = {};
+      const cleaned = {};
+      let dupes = 0;
+      Object.entries(data).forEach(([k, f]) => {
+        if (!f?.common) return;
+        const key = f.common.trim().toLowerCase();
+        if (seen[key]) { dupes++; return; } // skip duplicate
+        seen[key] = true;
+        cleaned[k] = f;
+      });
+      await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cleaned)
+      });
+      setRemoved(dupes);
+      setStatus("done");
+      setTimeout(() => setStatus("idle"), 4000);
+    } catch(e) {
+      console.error("Clean duplicates failed:", e);
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 3000);
+    }
+  };
+
+  return (
+    <button onClick={clean} disabled={status === "running"} style={{
+      background: status === "done" ? "#1A4A28" : status === "error" ? "#C05000" : "#2a3a28",
+      color: "#C8E8A0", border: "1px solid #3a5a30", borderRadius: 6,
+      padding: "8px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer",
+      fontFamily: "inherit", whiteSpace: "nowrap"
+    }}>
+      {status === "running" ? "Cleaning…"
+        : status === "done" ? `✓ Removed ${removed} dupe${removed !== 1 ? "s" : ""}`
+        : status === "error" ? "✗ Failed"
+        : "🧹 Clean Dupes"}
+    </button>
+  );
+}
+
 export default function AdminPanel({ user, token, onBack, onViewTenant, adminViewTenantId }) {
   const [loading,      setLoading]      = useState(true);
   const [showNew,      setShowNew]      = useState(false);
@@ -479,7 +534,9 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
                             ? <span style={{ fontSize:11, color:T.faint, fontStyle:"italic" }}>Your org</span>
                             : isViewing
                               ? <button onClick={()=>onViewTenant(null)} style={{ background:"#C05000", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>✕ Exit View</button>
-                              : <button onClick={()=>{onViewTenant(t.id, t.name);onBack();}} style={{ background:"#1A4A28", color:"#C8E8A0", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>👁 Enter View</button>
+                              : <button onClick={()=>{onViewTenant(t.id, t.name);onBack();}} style={{ background:"#1A4A28", color:"#C8E8A0", border:"none", borderRadius:6, padding:"8px 18px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>👁 Enter View</button>}
+                            <CleanDuplicatesBtn tenantId={t.id} token={token} T={T}/>
+                            {false
                           }
                         </div>
                       </React.Fragment>;
