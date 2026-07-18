@@ -47,7 +47,8 @@ Return ONLY valid JSON — no markdown, no explanation — using this exact stru
         { "year": 2015, "acres": 314.0, "production": 18000, "yield": 57.3 }
       ],
       "aphYield": 28.4,
-      "aphYears": 10
+      "aphYears": 10,
+      "priceElection": 5.80
     }
   ]
 }
@@ -59,6 +60,7 @@ Rules:
 - Include years with zero production (crop failure, prevented planting) — set production: 0
 - aphYield = the calculated or shown APH guarantee yield for this unit/crop
 - aphYears = number of years in the APH database for this unit
+- priceElection = the crop insurance price election shown on the document ($/bu). If not shown use 0
 - If multiple crops on one unit (e.g. wheat and lentils on same ground), create separate unit entries
 - fieldName should be the most descriptive identifier available (common name, legal desc, or both)
 - crop names: use "Spring Wheat", "Winter Wheat", "CC WW", "Barley", "Durum", "Lentils", "Chickpeas", "Green Peas", "Yellow Peas", "Austrians", "Mustard", "Canola", "Flax" where possible`;
