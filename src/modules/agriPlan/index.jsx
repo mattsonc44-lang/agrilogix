@@ -3612,21 +3612,44 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const addField=useCallback(nf=>{
     const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};
     setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");
-    // ── Sync to FieldLog (Default Farm) ─────────────────────────────────────
+    // ── Sync to FieldLog — update existing (keep boundary) or add to Default Farm ──
     if(tenantId&&token){(async()=>{
       const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-      const flPath=`tenants/${tenantId}/fieldlog`;
+      const norm=s=>(s||"").trim().toLowerCase();
       try{
-        const data=await fetch(`${DB}/${flPath}/fields.json?auth=${token}`).then(r=>r.json());
-        const existing=data?Object.values(data):[];
-        const norm = s => (s||"").trim().toLowerCase();
-        if(existing.some(f=>norm(f.name)===norm(field.common))) return;
-        const flId=`fl${Date.now()}${Math.floor(Math.random()*9999)}`;
-        await fetch(`${DB}/${flPath}/fields/${flId}.json?auth=${token}`,{
-          method:"PUT",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({id:flId,name:field.common,acres:String(field.acres||""),legalDesc:field.legal||"",notes:field.farm?`Farm: ${field.farm}`:"",boundary:[]})
-        });
-        console.log(`[SYNC] "${field.common}" → AgriField`);
+        // Get all farm paths (Default + named farms)
+        const farmsData=await fetch(`${DB}/tenants/${tenantId}/farms.json?auth=${token}&shallow=true`).then(r=>r.json()).catch(()=>null);
+        const farmPaths=[`tenants/${tenantId}/fieldlog`];
+        if(farmsData&&typeof farmsData==="object") Object.keys(farmsData).forEach(id=>farmPaths.push(`tenants/${tenantId}/farms/${id}/fieldlog`));
+        // Search all farms for existing field by name
+        let matchPath=null, matchKey=null, matchField=null;
+        for(const p of farmPaths){
+          const d=await fetch(`${DB}/${p}/fields.json?auth=${token}`).then(r=>r.json()).catch(()=>null);
+          if(!d) continue;
+          const entry=Object.entries(d).find(([,f])=>norm(f?.name)===norm(field.common));
+          if(entry){ matchPath=p; matchKey=entry[0]; matchField=entry[1]; break; }
+        }
+        if(matchField){
+          // Field exists — update info but KEEP boundary, lat/lng, and all other FieldLog data
+          const updated={
+            ...matchField,                              // preserve everything (boundary, activities, etc.)
+            acres: String(field.acres||matchField.acres||""),
+            legalDesc: field.legal||matchField.legalDesc||"",
+            notes: field.farm ? `Farm: ${field.farm}` : (matchField.notes||""),
+          };
+          await fetch(`${DB}/${matchPath}/fields/${matchKey}.json?auth=${token}`,{
+            method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)
+          });
+          console.log(`[SYNC] Updated "${field.common}" in AgriField — boundary preserved`);
+        } else {
+          // Not found anywhere — add to Default Farm
+          const flId=`fl${Date.now()}${Math.floor(Math.random()*9999)}`;
+          await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields/${flId}.json?auth=${token}`,{
+            method:"PUT",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({id:flId,name:field.common,acres:String(field.acres||""),legalDesc:field.legal||"",notes:field.farm?`Farm: ${field.farm}`:"",boundary:[]})
+          });
+          console.log(`[SYNC] "${field.common}" → AgriField Default Farm (new)`);
+        }
       }catch(e){console.warn("AgriPlan→AgriField sync failed:",e.message);}
     })();}
   },[tenantId,token]);
