@@ -609,7 +609,7 @@ function SavePrompt({name, dismissed, onYes, onNo}) {
 // ── Seeding Form ──────────────────────────────────────────────────────
 const PULSE_CROPS = ["Peas","Lentils","Chickpeas","Soybeans"];
 
-function SeedingForm({v,set,products={},onAddProduct}){
+function SeedingForm({v,set,products={},onAddProduct,cropList=CROPS}){
   const mySeeds = products.seeds || [];
   const myFerts = products.fertilizers || [];
   // When a saved seed is picked, auto-fill rate
@@ -671,7 +671,7 @@ function SeedingForm({v,set,products={},onAddProduct}){
               <div style={{flex:"2 1 150px"}}>
                 <label style={S.label}>{crops.length>1?`Crop #${i+1}`:"Crop"} *</label>
                 <select style={S.input} value={c.crop} onChange={e=>updCrop(c.id,"crop",e.target.value)}>
-                  <option value="">Select crop…</option>{CROPS.map(cr=><option key={cr}>{cr}</option>)}
+                  <option value="">Select crop…</option>{cropList.map(cr=><option key={cr}>{cr}</option>)}
                 </select>
                 {mySeeds.filter(s=>!s.cropType||s.cropType===c.crop).length>0&&(
                   <select style={{...S.input,marginTop:"5px",fontSize:"11px",color:T.brand}}
@@ -1715,7 +1715,7 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
               ✓ AgriPlan crop applied — <span style={{cursor:"pointer",textDecoration:"underline"}} onClick={()=>setAgriPlanApplied(false)}>undo</span>
             </div>
           )}
-          <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct}/>
+          <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct} cropList={tenantCrops.length>0?tenantCrops:CROPS}/>
           {complianceWarnings.filter(w=>w.type==="rotation").length > 0 && (
             <div style={{background:"#F0F4FF",border:"2px solid #4060C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
               <div style={{fontWeight:700,color:"#1A2A80",fontSize:"12px",marginBottom:"5px"}}>🔄 ROTATION CHECK — Crop Insurance Eligibility</div>
@@ -3612,6 +3612,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
 
   const[view,setView]      =useState("home");
   const[fields,setFields]  =useState([]);
+  const[tenantCrops,setTenantCrops]=useState([]); // loaded from AgriPlan crop list
   const[showSettings,setShowSettings]=useState(false);
   const[showProducts,setShowProducts]=useState(false);
   const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]});
@@ -3646,6 +3647,13 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   }[sync] || {bg:"#D8CEBC", label:""};
 
   // ── Load on mount ─────────────────────────────────────────
+  // Load AgriPlan crop list so FieldLog uses the same crops
+  useEffect(()=>{
+    if(!tenantId||!token) return;
+    fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`)
+      .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
+  },[tenantId,token]);
+
   useEffect(()=>{
     if(!tenantId) return;
     dbRead(BASE, token).then(data=>{
