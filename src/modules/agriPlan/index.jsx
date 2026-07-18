@@ -3519,7 +3519,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   },[fields]);
 
   useEffect(()=>{
-    if(fields&&fields.length>0){
+    if(fields!==null&&fields!==undefined){
       if(saveTimer.current) clearTimeout(saveTimer.current);
       setSaveStatus('saving');
       saveTimer.current = setTimeout(()=>{
@@ -3586,7 +3586,29 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const updateIncome=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,income:{...f.income,[k]:+v}}:f);}),[pushUndo]);
   const updateExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,expenseOverrides:{...(f.expenseOverrides||{}),[k]:+v}}:f);}),[pushUndo]);
   const resetExpense=useCallback((id,k)=>setFields(p=>p.map(f=>{if(f.id!==id)return f;const ov={...(f.expenseOverrides||{})};delete ov[k];return{...f,expenseOverrides:ov};})),[]);
-  const deleteField=useCallback(id=>{setFields(p=>p.filter(f=>f.id!==id));setSelectedField(null);setMainView("table");},[]);
+  const deleteField=useCallback(id=>{
+    setFields(p=>{
+      const remaining=p.filter(f=>f.id!==id);
+      // Save immediately — auto-save misses this if remaining is empty
+      saveFields(activeYear, remaining, (s)=>setSaveStatus(s));
+      // Also remove from FieldLog Default Farm if it was synced there
+      const deleted=p.find(f=>f.id===id);
+      if(deleted&&tenantId&&token){(async()=>{
+        try{
+          const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+          const data=await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`).then(r=>r.json());
+          if(!data) return;
+          const match=Object.entries(data).find(([,f])=>f.name===deleted.common);
+          if(match){
+            await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields/${match[0]}.json?auth=${token}`,{method:"DELETE"});
+            console.log(`[SYNC] Deleted "${deleted.common}" from AgriField`);
+          }
+        }catch(e){console.warn("Delete sync to AgriField failed:",e.message);}
+      })();}
+      return remaining;
+    });
+    setSelectedField(null);setMainView("table");
+  },[activeYear,tenantId,token]);
   const addField=useCallback(nf=>{
     const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};
     setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");
