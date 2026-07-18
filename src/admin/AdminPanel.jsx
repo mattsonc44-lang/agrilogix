@@ -211,36 +211,71 @@ const ROLE_COLOR = { owner:"#C07010", manager:"#2563EB", operator:"#16A34A" };
 
 // ── Clean Duplicate Fields Button ─────────────────────────────────────────────
 function CleanDuplicatesBtn({ tenantId, token, T }) {
-  const [status, setStatus] = React.useState("idle"); // idle | running | done | error
+  const [status, setStatus] = React.useState("idle");
   const [removed, setRemoved] = React.useState(0);
 
+  const norm = s => (s||"").trim().toLowerCase();
+
+  const dedupePath = async (url, nameKey) => {
+    const data = await fetch(url).then(r => r.json()).catch(()=>null);
+    if (!data) return 0;
+    const seen = {}, cleaned = {};
+    let dupes = 0;
+    Object.entries(data).forEach(([k, f]) => {
+      const n = f?.[nameKey]; if (!n) return;
+      const key = norm(n);
+      if (seen[key]) { dupes++; return; }
+      seen[key] = true; cleaned[k] = f;
+    });
+    if (dupes > 0) await fetch(url, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cleaned) });
+    return dupes;
+  };
+
   const clean = async () => {
-    if (!window.confirm(`Remove duplicate AgriPlan fields from this tenant's 2026 plan?`)) return;
+    if (!window.confirm(`Remove duplicate fields from AgriPlan and AgriField (all farms) for this tenant?`)) return;
     setStatus("running");
     const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
     const yr = new Date().getFullYear();
-    const url = `${DB}/tenants/${tenantId}/agriPlan/fields/${yr}.json?auth=${token}`;
     try {
-      const data = await fetch(url).then(r => r.json());
-      if (!data) { setStatus("done"); setRemoved(0); return; }
-      const seen = {};
-      const cleaned = {};
-      let dupes = 0;
-      Object.entries(data).forEach(([k, f]) => {
-        if (!f?.common) return;
-        const key = f.common.trim().toLowerCase();
-        if (seen[key]) { dupes++; return; } // skip duplicate
-        seen[key] = true;
-        cleaned[k] = f;
-      });
-      await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cleaned)
-      });
-      setRemoved(dupes);
+      // Get all FieldLog farm paths
+      const farmsData = await fetch(`${DB}/tenants/${tenantId}/farms.json?auth=${token}&shallow=true`).then(r=>r.json()).catch(()=>null);
+      const farmPaths = [`tenants/${tenantId}/fieldlog`];
+      if (farmsData && typeof farmsData === "object") Object.keys(farmsData).forEach(id => farmPaths.push(`tenants/${tenantId}/farms/${id}/fieldlog`));
+
+      // Build set of all field names across ALL named farms (not default)
+      const namedFarmNames = new Set();
+      await Promise.all(farmPaths.slice(1).map(async p => {
+        const d = await fetch(`${DB}/${p}/fields.json?auth=${token}`).then(r=>r.json()).catch(()=>null);
+        if (d) Object.values(d).forEach(f => { if(f?.name) namedFarmNames.add(norm(f.name)); });
+      }));
+
+      // Clean AgriPlan dupes
+      const apDupes = await dedupePath(`${DB}/tenants/${tenantId}/agriPlan/fields/${yr}.json?auth=${token}`, "common");
+
+      // Clean AgriField Default Farm — remove dupes AND fields that exist in named farms (sync orphans)
+      const defaultData = await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`).then(r=>r.json()).catch(()=>null);
+      let flDupes = 0;
+      if (defaultData) {
+        const seen = {}, cleaned = {};
+        Object.entries(defaultData).forEach(([k, f]) => {
+          const n = f?.name; if (!n) return;
+          const key = norm(n);
+          // Remove if: already seen (dupe within default farm) OR exists in a named farm
+          if (seen[key] || namedFarmNames.has(key)) { flDupes++; return; }
+          seen[key] = true; cleaned[k] = f;
+        });
+        if (flDupes > 0) await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cleaned) });
+      }
+
+      // Also dedupe within each named farm
+      let namedDupes = 0;
+      await Promise.all(farmPaths.slice(1).map(async p => {
+        namedDupes += await dedupePath(`${DB}/${p}/fields.json?auth=${token}`, "name");
+      }));
+
+      setRemoved(apDupes + flDupes + namedDupes);
       setStatus("done");
-      setTimeout(() => setStatus("idle"), 4000);
+      setTimeout(() => setStatus("idle"), 5000);
     } catch(e) {
       console.error("Clean duplicates failed:", e);
       setStatus("error");
