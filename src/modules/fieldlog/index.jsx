@@ -3813,7 +3813,8 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       try{
         const data=await fetch(`${DB}/${apPath}.json?auth=${token}`).then(r=>r.json());
         const existing=data?Object.values(data):[];
-        if(existing.some(x=>x.common===f.name)) return;
+        const norm2 = s => (s||"").trim().toLowerCase();
+        if(existing.some(x=>norm2(x.common)===norm2(f.name))) return;
         const apId=`f${Date.now()}${Math.floor(Math.random()*9999)}`;
         const apField={
           id:apId,common:f.name,farm:"",entity:"",
