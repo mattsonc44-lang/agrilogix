@@ -3805,6 +3805,32 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   // ── Mutations ─────────────────────────────────────────────
   const addField=(f)=>{
     const nf=[...fields,f]; setFields(nf); persist(nf,activities); setView("home");
+    // ── Sync to AgriPlan (current year) ─────────────────────────────────────
+    if(tenantId&&token){(async()=>{
+      const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+      const yr=new Date().getFullYear().toString();
+      const apPath=`tenants/${tenantId}/agriPlan/fields/${yr}`;
+      try{
+        const data=await fetch(`${DB}/${apPath}.json?auth=${token}`).then(r=>r.json());
+        const existing=data?Object.values(data):[];
+        if(existing.some(x=>x.common===f.name)) return;
+        const apId=`f${Date.now()}${Math.floor(Math.random()*9999)}`;
+        const apField={
+          id:apId,common:f.name,farm:"",entity:"",
+          legal:f.legalDesc||"",fieldNum:"",
+          acres:+(f.acres)||0,crop:"",
+          eligibleCrops:[],
+          income:{bushelGuarantee:0,priceGuarantee:0,bushelProjection:0,currentPrice:0},
+          expenseOverrides:{}
+        };
+        const idx=data?Object.keys(data).length:0;
+        await fetch(`${DB}/${apPath}/${idx}.json?auth=${token}`,{
+          method:"PUT",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(apField)
+        });
+        console.log(`[SYNC] "${f.name}" → AgriPlan ${yr}`);
+      }catch(e){console.warn("AgriField→AgriPlan sync failed:",e.message);}
+    })();}
   };
   const importFields=(imported)=>{
     const nf=[...fields,...imported]; setFields(nf); persist(nf,activities);
