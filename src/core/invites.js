@@ -58,7 +58,7 @@ export const sendInviteEmail = async ({ toEmail, toName, tenantName, role, invit
 
     return { ok: true };
   } catch (e) {
-    console.warn("Email send failed:", e.message, "— invite URL:", inviteUrl);
-    return { warning: "Email could not be sent. Share this link manually: " + inviteUrl };
+    console.warn("Email send failed:", e.message);
+    return { warning: e.message || "Email could not be sent" };
   }
 };
