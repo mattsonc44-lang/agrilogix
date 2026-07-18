@@ -2813,7 +2813,7 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  const upd = (crop, key, val) => setPrices(p => ({...p, [crop]: {...p[crop], [key]: +val||0}}));
+  const upd = (crop, key, val) => { const n=parseFloat(val); setPrices(p => ({...p, [crop]: {...p[crop], [key]: isFinite(n)?n:0}})); };
 
   const copyDefaults = () => {
     const init = {};
@@ -2827,12 +2827,25 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
   const save = async () => {
     setSaving(true); setErr("");
     try {
+      // Sanitize: ensure all values are finite numbers (Firebase rejects NaN/Infinity/undefined)
+      const clean = {};
+      Object.entries(prices).forEach(([crop, vals]) => {
+        const pg = parseFloat(vals.priceGuar);
+        const pp = parseFloat(vals.projPrice);
+        clean[crop] = {
+          priceGuar: isFinite(pg) ? pg : 0,
+          projPrice: isFinite(pp) ? pp : 0,
+        };
+      });
       const res = await fetch(
         `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
-        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(prices) }
+        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(clean) }
       );
-      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-      onSave(prices);
+      if (!res.ok) {
+        const errBody = await res.text().catch(()=>"");
+        throw new Error(`Save failed: ${res.status} — ${errBody.slice(0,120)}`);
+      }
+      onSave(clean);
       onClose();
     } catch(e) { setErr(e.message); }
     finally { setSaving(false); }
