@@ -724,14 +724,25 @@ const INITIAL_FIELDS = [
 // ─── ROTATION RULES ───────────────────────────────────────────────────────────
 const FIELD_PEAS = new Set(["Austrians","Green Peas","Yellow Peas"]);
 // ── Default rotation rules config (editable, stored in Firebase) ─────────────
+// RMA Crop Insurance Rotation Requirements — Montana (per RMA Special Provisions)
+// selfGap = years before same crop can be replanted (insurable)
+// conflictGap = years before conflicting crops can follow
+// Source: RMA Crop Provisions + westernfrontierins.com/crop/rotation-info
 const DEFAULT_ROTATION_CONFIG = {
-  Lentils:    { selfGap: 2, conflictGap: 1, conflicts: ["Chickpeas","Green Peas","Yellow Peas","Austrians"] },
-  Chickpeas:  { selfGap: 3, conflictGap: 0, conflicts: [] },
-  Austrians:  { selfGap: 2, conflictGap: 1, conflicts: ["Chickpeas","Lentils","Green Peas","Yellow Peas","Austrians"] },
-  "Green Peas":  { selfGap: 2, conflictGap: 1, conflicts: ["Chickpeas","Lentils","Yellow Peas","Austrians","Green Peas"] },
-  "Yellow Peas": { selfGap: 2, conflictGap: 1, conflicts: ["Chickpeas","Lentils","Green Peas","Austrians","Yellow Peas"] },
-  Mustard:    { selfGap: 1, conflictGap: 1, conflicts: ["Canola","Chickpeas","Sunflowers"] },
-  Canola:     { selfGap: 1, conflictGap: 1, conflicts: ["Mustard","Chickpeas","Sunflowers"] },
+  // Lentils: 2-yr self gap; any broadleaf in prior year = ineligible
+  Lentils:     { selfGap: 2, conflictGap: 1, conflicts: ["Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax","Sunflowers"] },
+  // Chickpeas: 3-yr self gap (strictest rule — Desi & Kabuli)
+  Chickpeas:   { selfGap: 3, conflictGap: 0, conflicts: [] },
+  // Austrian Winter Peas: 2-yr self gap; sunflowers 1-yr conflict
+  Austrians:   { selfGap: 2, conflictGap: 1, conflicts: ["Green Peas","Yellow Peas","Lentils","Sunflowers"] },
+  // Smooth Green Peas: 2-yr self gap; sunflowers & lentils 1-yr conflict
+  "Green Peas":  { selfGap: 2, conflictGap: 1, conflicts: ["Yellow Peas","Austrians","Lentils","Sunflowers"] },
+  // Smooth Yellow Peas: same as green peas
+  "Yellow Peas": { selfGap: 2, conflictGap: 1, conflicts: ["Green Peas","Austrians","Lentils","Sunflowers"] },
+  // Mustard: 1-yr self gap; canola, chickpeas, sunflowers conflict
+  Mustard:     { selfGap: 1, conflictGap: 1, conflicts: ["Canola","Chickpeas","Sunflowers"] },
+  // Canola: Montana = 1-yr rotation; chickpeas, mustard, sunflowers conflict
+  Canola:      { selfGap: 1, conflictGap: 1, conflicts: ["Mustard","Chickpeas","Sunflowers"] },
 };
 
 // Global rotation config — loaded from Firebase on mount, falls back to DEFAULT
@@ -905,33 +916,51 @@ function cropColor(crop) { return CROP_COLORS[crop] || "#aabbaa"; }
 // ─── HISTORY VIEW ─────────────────────────────────────────────────────────────
 const HIST_YEARS = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
 
-function HistoryView({ fields, allFields, onSelectField, aphData=null }) {
+function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHistory=null }) {
   const [year, setYear] = useState("2026");
   const [search, setSearch] = useState("");
   const [filterViol, setFilterViol] = useState(false);
   const [sortKey, setSortKey] = useState("farm");
 
-  // Build dynamic history data from aphData when in Agri Logix mode
+  // Build history data — merges manual fieldHistory (priority) + imported APH
   const histData = useMemo(() => {
-    if (!aphData) return HISTORY_DATA;
-    // Convert aphData shape: {fieldCommon: {crop: {years: {year: {yield,acres}}}}}
-    // Into HISTORY_DATA shape: {key: {common, farm, fieldNum, acres, history: {year: crop}}}
+    if (!aphData && !fieldHistory) return HISTORY_DATA;
     const built = {};
-    Object.entries(aphData).forEach(([fieldCommon, crops]) => {
+
+    const ensureField = (fieldCommon) => {
       const apField = allFields.find(f => f.common === fieldCommon);
       const key = `${fieldCommon}|${apField?.fieldNum||""}`;
       if(!built[key]) built[key] = {
         common: fieldCommon, farm: apField?.farm||"", fieldNum: apField?.fieldNum||"",
         acres: apField?.acres||0, history: {}
       };
-      Object.entries(crops).forEach(([crop, cropData]) => {
-        Object.keys(cropData.years||{}).forEach(yr => {
-          if(!built[key].history[yr]) built[key].history[yr] = crop;
+      return key;
+    };
+
+    // Manual history takes priority (user entered, most accurate)
+    if(fieldHistory) {
+      Object.entries(fieldHistory).forEach(([fieldCommon, years]) => {
+        const key = ensureField(fieldCommon);
+        Object.entries(years).forEach(([yr, data]) => {
+          if(data?.crop) built[key].history[yr] = data.crop;
         });
       });
-    });
+    }
+
+    // APH data fills gaps not covered by manual entries
+    if(aphData) {
+      Object.entries(aphData).forEach(([fieldCommon, crops]) => {
+        const key = ensureField(fieldCommon);
+        Object.entries(crops).forEach(([crop, cropData]) => {
+          Object.keys(cropData.years||{}).forEach(yr => {
+            if(!built[key].history[yr]) built[key].history[yr] = crop;
+          });
+        });
+      });
+    }
+
     return Object.keys(built).length > 0 ? built : HISTORY_DATA;
-  }, [aphData, allFields]);
+  }, [aphData, fieldHistory, allFields]);
 
   const [, forceUpdate] = useState(0);
   const violations = useMemo(() => checkRotationViolations(histData, year), [histData, year, forceUpdate]);
@@ -3267,7 +3296,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
         {saveStatus==='error'&&<span style={{fontSize:11,color:"#ff6050",background:"rgba(255,80,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ff6050",cursor:"pointer"}} title="Click to retry" onClick={()=>saveFields(activeYear,fields,(s)=>setSaveStatus(s))}>⚠ Save failed — tap to retry</span>}
         <button onClick={()=>{setMainView("table");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
-        {(!tenantId||aphData)&&<button onClick={()=>{setMainView("history");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
+        {(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)&&<button onClick={()=>{setMainView("history");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
         <button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
@@ -3327,7 +3356,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
           <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
-          :mainView==="history"&&(!tenantId||aphData)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} />)
+          :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
