@@ -1478,7 +1478,7 @@ function useVoiceInput() {
   return { listening, toggle, stop };
 }
 
-function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[],tenantId="",token=""}){
+function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[],tenantId="",token="",cropList=null}){
   const[type,setType]=useState(initial?.type||"");
   const[date,setDate]=useState(initial?.date||nowLocal());
   const[data,setData]=useState(initial?.data||{});
@@ -1716,7 +1716,7 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
               ✓ AgriPlan crop applied — <span style={{cursor:"pointer",textDecoration:"underline"}} onClick={()=>setAgriPlanApplied(false)}>undo</span>
             </div>
           )}
-          <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct} cropList={tenantCrops.length>0?tenantCrops:CROPS}/>
+          <SeedingForm v={data} set={setData} products={products} onAddProduct={onAddProduct} cropList={cropList||_flCrops||CROPS}/>
           {complianceWarnings.filter(w=>w.type==="rotation").length > 0 && (
             <div style={{background:"#F0F4FF",border:"2px solid #4060C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
               <div style={{fontWeight:700,color:"#1A2A80",fontSize:"12px",marginBottom:"5px"}}>🔄 ROTATION CHECK — Crop Insurance Eligibility</div>
@@ -1879,7 +1879,7 @@ function FieldDetailView({field,activities,onBack,onAddActivity,onDeleteActivity
           </div>
           {shown.length===0&&<div style={{...S.card,textAlign:"center",padding:"36px",color:T.faint}}>{all.length===0?"No activities logged yet. Click \"+ Log Activity\" to get started.":"No activities match this filter."}</div>}
           {shown.map(a=><ActivityCard key={a.id} activity={a} onDelete={onDeleteActivity} onEdit={a=>setEditingActivity(a)}/>)}
-          {editingActivity&&<AddActivityModal field={field} initial={editingActivity} onClose={()=>setEditingActivity(null)} onSave={a=>{onEditActivity(a);setEditingActivity(null);}}/>}
+          {editingActivity&&<AddActivityModal field={field} initial={editingActivity} cropList={_flCrops||CROPS} onClose={()=>setEditingActivity(null)} onSave={a=>{onEditActivity(a);setEditingActivity(null);}}/>}
         </>
       )}
     </div>
@@ -4052,6 +4052,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         fieldActivities={activities.filter(a=>a.fieldId===curField.id)}
         tenantId={tenantId}
         token={token}
+        cropList={_flCrops||CROPS}
         onAddChemical={chem=>saveProducts({...products,chemicals:[...(products.chemicals||[]),{id:genId(),...chem}]})}
         onAddProduct={(cat,item)=>{
           const {_id,...clean}=item;
