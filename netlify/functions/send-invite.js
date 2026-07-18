@@ -7,21 +7,10 @@
 
 const nodemailer = require("nodemailer");
 
-const { checkAuth } = require("./auth-check");
-
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
-
-  // ── Auth check ────────────────────────────────────────────────────────────
-  const auth = await checkAuth(event);
-  if (auth.error) {
-    const ip = event.headers["x-forwarded-for"] || "unknown";
-    console.warn(`[REJECTED ${new Date().toISOString()}] invite from ${ip}`);
-    return auth.error;
-  }
-  console.log(`[${new Date().toISOString()}] invite sent by uid=${auth.uid}`);
 
   let body;
   try { body = JSON.parse(event.body); }
