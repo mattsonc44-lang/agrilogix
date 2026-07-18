@@ -2219,7 +2219,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},onSaveFieldHistory}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory}){
   // ── Chemical plantback warnings ────────────────────────────────────────────
   const chemWarnings = useMemo(() => {
     if(!field.crop || !fieldRestrictions) return [];
@@ -2339,6 +2339,36 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         </div>
       </div>
     )}
+    {/* ── Seeding Banner from AgriField ─────────────────────────── */}
+    {(()=>{
+      const logs = (flSeedLogs||{})[field.common] || [];
+      if(!logs.length && tenantId) return (
+        <div style={{background:"#f8f4ee",border:"1px dashed #c8b870",borderRadius:6,padding:"8px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#8a7040"}}>
+          <span style={{fontSize:15}}>🌱</span>
+          <span>No seeding logged in AgriField yet for {new Date().getFullYear()}.</span>
+        </div>
+      );
+      return logs.map((log,i)=>{
+        const cropNames=log.crops.map(c=>c.crop).filter(Boolean).join(", ");
+        const matches=!field.crop||cropNames.toLowerCase().includes((field.crop||"").toLowerCase());
+        return(
+          <div key={i} style={{background:matches?"#eaf8e0":"#fff8e0",border:`1px solid ${matches?"#5cb850":"#c8a030"}`,borderRadius:6,padding:"8px 14px",marginBottom:8,fontSize:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:15}}>🌱</span>
+              <strong style={{color:matches?"#1a6010":"#7a5000"}}>Seeded {new Date(log.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</strong>
+              {log.crops.map((c,j)=>(
+                <span key={j} style={{background:matches?"#c8f0b0":"#f0dea0",padding:"1px 8px",borderRadius:3,fontSize:11,fontWeight:700,color:matches?"#1a5010":"#6a4000"}}>
+                  {c.crop}{c.variety?` — ${c.variety}`:""}{c.seedRate?` @ ${c.seedRate} lbs/ac`:""}
+                </span>
+              ))}
+              {log.equipment&&<span style={{color:"#7a9260",fontSize:11}}>{log.equipment}</span>}
+              {!matches&&field.crop&&<span style={{marginLeft:"auto",fontSize:11,color:"#8a6000",fontStyle:"italic"}}>⚠ Plan shows {field.crop}</span>}
+            </div>
+          </div>
+        );
+      });
+    })()}
+
     {/* Tabs */}
     <div style={{borderBottom:"1px solid #1e3020",marginBottom:20}}>{TB("income","Income")}{TB("expenses","Expenses")}{TB("eligibility","Crop Eligibility")}{TB("history","📋 History & Plan")}</div>
 
@@ -2468,7 +2498,7 @@ function AddFieldForm({onSave,onCancel}){
 }
 
 // ── Fields Table ──────────────────────────────────────────────────────────────
-function FieldsTable({fields,onSelect,onExportCSV,onPrint}){
+function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={}}){
   const[sortKey,setSortKey]=useState("farm");const[sortDir,setSortDir]=useState(1);
   const sorted=useMemo(()=>[...fields].sort((a,b)=>{
     let av,bv;
@@ -2502,7 +2532,10 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint}){
             <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #141e14"}}>{f.farm}</td>
             <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #141e14",minWidth:160}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
-            <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",background:inelig?"#fff0f0":"#dce8c6",borderRadius:3,fontSize:11,color:inelig?"#c02020":"#2a7010"}}><span style={{width:5,height:5,borderRadius:"50%",background:inelig?"#c02020":"#3a9020"}}/>{f.crop}</span></td>
+            <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}>
+              <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",background:inelig?"#fff0f0":"#dce8c6",borderRadius:3,fontSize:11,color:inelig?"#c02020":"#2a7010"}}><span style={{width:5,height:5,borderRadius:"50%",background:inelig?"#c02020":"#3a9020"}}/>{f.crop}</span>
+              {(seedLogs[f.common]||[]).length>0&&<span style={{marginLeft:4,fontSize:9,background:"#c8f0a8",color:"#1a5010",padding:"1px 5px",borderRadius:2,fontWeight:700,verticalAlign:"middle"}}>🌱</span>}
+            </td>
             <td style={{padding:"7px 10px",color:"#3a6028",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f.acres.toFixed(1)}</td>
             <td style={{padding:"7px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f$(c.revenue)}</td>
             <td style={{padding:"7px 10px",color:"#c05010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f$(c.expenses)}</td>
@@ -3239,6 +3272,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [showRatesEditor,  setShowRatesEditor]  = useState(false);
   const [showPricesEditor, setShowPricesEditor] = useState(false);
   const [cropPrices,       setCropPrices]       = useState({}); // {crop: {priceGuar, projPrice}}
+  const [flSeedLogs,       setFlSeedLogs]       = useState({}); // {fieldName: [{date,crop,seedRate,variety}]}
   // Sync module-level vars so calc() / getRate() / CropSelect use current tenant values
   _expRates          = expenseDefaults;
   _cropRates         = cropExpDefaults;
@@ -3287,6 +3321,33 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       // Load chemical plantback restrictions written by FieldLog
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
+      // Load seeding logs from FieldLog (Default Farm) for cross-module display
+      (async () => {
+        try {
+          const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+          const [flFieldsData, flActsData] = await Promise.all([
+            fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`).then(r=>r.json()),
+            fetch(`${DB}/tenants/${tenantId}/fieldlog/activities.json?auth=${token}`).then(r=>r.json()),
+          ]);
+          // Build fieldId → name map
+          const idToName = {};
+          if(flFieldsData) Object.values(flFieldsData).forEach(f => { if(f?.id) idToName[f.id] = f.name; });
+          // Filter seeding activities for current year, group by field name
+          const yr = new Date().getFullYear();
+          const logs = {};
+          if(flActsData) Object.values(flActsData).forEach(a => {
+            if(a?.type !== "seeding") return;
+            const actYr = a.date ? new Date(a.date).getFullYear() : null;
+            if(actYr !== yr) return;
+            const name = idToName[a.fieldId]; if(!name) return;
+            const crops = a.data?.crops?.length > 0 ? a.data.crops :
+              (a.data?.crop ? [{crop: a.data.crop, seedRate: a.data.seedRate, variety: a.data.variety}] : []);
+            if(!logs[name]) logs[name] = [];
+            logs[name].push({ date: a.date, crops, equipment: a.data?.equipment, notes: a.notes });
+          });
+          setFlSeedLogs(logs);
+        } catch(e) { console.warn("FieldLog seed log load failed:", e.message); }
+      })();
       // Load manual field history from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
@@ -3566,12 +3627,12 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
           }}/>)
-          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)}/>)}
+          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs}/>)}
       </div>
     </div>
   </div>);
