@@ -15,6 +15,7 @@ if (!document.getElementById("fl-fonts")) {
 
 // ── Constants ─────────────────────────────────────────────────────────
 const CROPS        = ["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Mustard","Corn","Soybeans","Sunflowers","Alfalfa","Hay","Other"];
+let _flCrops = null; // set from tenant AgriPlan crop list; falls back to CROPS
 const FERT_BLENDS  = ["28-0-0 (UAN)","46-0-0 (Urea)","11-52-0 (MAP)","18-46-0 (DAP)","0-0-60 (Potash)","10-26-26","34-0-0 (AN)","12-40-0","Custom Blend"];
 const CHEMICALS    = ["Glyphosate (Roundup)","2,4-D Amine","MCPA Amine","Lontrel 360","Infinity","Odyssey","Axial","Puma Super","Buctril M","Muster 75DF","Centurion","Tundra","Refine M","Bumper 418 EC","Stratego YLD","Headline","Priaxor","Trivapro","Dimethoate","Matador","Other"];
 // ── Built-in chemical compliance data (always active, no setup needed) ────────
@@ -1054,7 +1055,7 @@ function ScoutingForm({v,set}){
 // ── Harvest Form ──────────────────────────────────────────────────────
 const DELIVERY_LOCATIONS = ["Local Elevator","Co-op","Farm Storage — Bin 1","Farm Storage — Bin 2","Farm Storage — Bin 3","Direct to Buyer","Other"];
 
-function HarvestForm({v,set}){
+function HarvestForm({v,set,cropList=CROPS}){
   const totalBu = v.yieldPerAc && v.acres
     ? (parseFloat(v.yieldPerAc)*parseFloat(v.acres)).toFixed(0)
     : v.totalBushels||"";
@@ -1067,7 +1068,7 @@ function HarvestForm({v,set}){
           <label style={S.label}>Crop Harvested</label>
           <select style={S.input} value={v.crop||""} onChange={e=>set({...v,crop:e.target.value})}>
             <option value="">Select crop…</option>
-            {CROPS.map(c=><option key={c}>{c}</option>)}
+            {cropList.map(c=><option key={c}>{c}</option>)}
           </select>
         </div>
         <div style={S.row}>
@@ -1745,7 +1746,7 @@ function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemica
           )}
         </>}
         {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
-        {type==="harvest"  &&<HarvestForm v={data} set={setData}/>}
+        {type==="harvest"  &&<HarvestForm v={data} set={setData} cropList={_flCrops||CROPS}/>}
         {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
         {type&&(
         <div style={S.row}>
@@ -3198,7 +3199,7 @@ function ProductsModal({ products, onSave, onClose }) {
                     {i===0&&<label style={S.label}>Crop Type</label>}
                     <select style={S.input} value={s.cropType||""} onChange={e=>upd("seeds",s.id,"cropType",e.target.value)}>
                       <option value="">Select crop…</option>
-                      {CROPS.map(c=><option key={c}>{c}</option>)}
+                      {(_flCrops||CROPS).map(c=><option key={c}>{c}</option>)}
                     </select>
                   </div>
                   <div>
@@ -3278,7 +3279,7 @@ function ProductsModal({ products, onSave, onClose }) {
                 <div style={{ marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #C8D8F0" }}>
                   <div style={{ fontSize:"11px",color:"#2563EB",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px" }}>✅ Labeled for crops (check all that apply)</div>
                   <div style={{ display:"flex",flexWrap:"wrap",gap:"4px" }}>
-                    {CROPS.filter(cr=>cr!=="Other").map(crop=>(
+                    {(_flCrops||CROPS).filter(cr=>cr!=="Other").map(crop=>(
                       <label key={crop} style={{ display:"flex",alignItems:"center",gap:"3px",fontSize:"11px",cursor:"pointer",padding:"2px 7px",borderRadius:"4px",border:`1px solid ${(c.labeledCrops||[]).includes(crop)?"#2563EB":"#C8D8F0"}`,background:(c.labeledCrops||[]).includes(crop)?"#DBEAFE":"transparent",userSelect:"none" }}>
                         <input type="checkbox" checked={(c.labeledCrops||[]).includes(crop)} onChange={e=>toggleCropLabel(c.id,crop,e.target.checked)} style={{ accentColor:"#2563EB",width:"11px",height:"11px" }}/>
                         {crop}
@@ -3293,7 +3294,7 @@ function ProductsModal({ products, onSave, onClose }) {
                     <div key={pbi} style={{ display:"grid",gridTemplateColumns:"1fr 90px 26px",gap:"5px",marginBottom:"5px",alignItems:"center" }}>
                       <select style={{...S.input,marginBottom:0,fontSize:"12px"}} value={pb.crop||""} onChange={e=>updPlantback(c.id,pbi,"crop",e.target.value)}>
                         <option value="">Select crop…</option>
-                        {CROPS.filter(cr=>cr!=="Other").map(cr=><option key={cr}>{cr}</option>)}
+                        {(_flCrops||CROPS).filter(cr=>cr!=="Other").map(cr=><option key={cr}>{cr}</option>)}
                       </select>
                       <div style={{ position:"relative" }}>
                         <input style={{...S.input,marginBottom:0,fontSize:"12px",paddingRight:"32px"}} type="number" min="1" placeholder="days" value={pb.days||""} onChange={e=>updPlantback(c.id,pbi,"days",e.target.value)}/>
@@ -3613,6 +3614,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const[view,setView]      =useState("home");
   const[fields,setFields]  =useState([]);
   const[tenantCrops,setTenantCrops]=useState([]); // loaded from AgriPlan crop list
+  _flCrops = tenantCrops.length > 0 ? tenantCrops : null;
   const[showSettings,setShowSettings]=useState(false);
   const[showProducts,setShowProducts]=useState(false);
   const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]});
