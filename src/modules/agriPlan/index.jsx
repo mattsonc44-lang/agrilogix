@@ -1534,7 +1534,7 @@ ${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;return`<
   <th class="r">Expenses</th><th class="r">Exp $/Ac</th>
   <th class="r">Net Income</th>
 </tr></thead><tbody>
-${fields.map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
+${fields.map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
   <td><span class="badge ent">${(f.entity||"").slice(0,8)||"—"}</span></td>
   <td>${f.farm}</td>
   <td><strong>${f.common}</strong></td>
@@ -1577,7 +1577,7 @@ function SCard({label,val,color,sub}){
 function CropSelect({value,onChange,eligibleCrops}){
   const[open,setOpen]=useState(false);const ref=useRef();
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
-  const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!eligibleCrops.includes(c);
+  const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!(eligibleCrops||[]).includes(c);
   return(<div ref={ref} style={{position:"relative",display:"inline-block"}}>
     <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:isInelig(value)?"#c02020":"#3a9020",flexShrink:0}}/>
@@ -2418,7 +2418,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     {tab==="eligibility"&&(<div>
       <p style={{fontSize:12,color:"#5a7a40",marginBottom:16}}>Toggle crops with APH history on this field. Unchecked crops show <span style={{color:"#c02020"}}>red</span> and cannot be planted.</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-        {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=field.eligibleCrops.includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
+        {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=(field.eligibleCrops||[]).includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
           <input type="checkbox" checked={on} onChange={()=>onUpdate(field.id,{eligibleCrops:on?field.eligibleCrops.filter(x=>x!==c):[...field.eligibleCrops,c]})} style={{accentColor:"#3a9020"}}/>
           <span style={{width:8,height:8,borderRadius:"50%",background:on?"#3a9020":"#7a3030",flexShrink:0}}/>{c}
         </label>);})}
@@ -2459,7 +2459,7 @@ function AddFieldForm({onSave,onCancel}){
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>{inp("Bu Guarantee/Ac","bushelGuarantee","number")}{inp("Guarantee Price","priceGuarantee","number")}{inp("Bu Projection/Ac","bushelProjection","number")}{inp("Projected Price","currentPrice","number")}</div>
     <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Crop Insurance Eligibility ────────────────────</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:16}}>
-      {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=eligibleCrops.includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:4,cursor:"pointer",fontSize:11,color:on?"#1a7010":"#904040"}}>
+      {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=(eligibleCrops||[]).includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:4,cursor:"pointer",fontSize:11,color:on?"#1a7010":"#904040"}}>
         <input type="checkbox" checked={on} onChange={()=>setEligibleCrops(p=>on?p.filter(x=>x!==c):[...p,c])} style={{accentColor:"#3a9020"}}/>{c}
       </label>);})}
     </div>
@@ -2500,7 +2500,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={}}){
         <Th label="Acres" k="acres" right/><Th label="Revenue" k="revenue" right/><Th label="Expenses" k="expenses" right/><Th label="Net" k="net" right/>
       </tr></thead>
       <tbody>
-        {sorted.map((f,i)=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+        {sorted.map((f,i)=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
           return(<tr key={f.id} onClick={()=>onSelect(f)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
             <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #141e14"}}>{f.farm}</td>
@@ -3751,7 +3751,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
                 {hasOv&&<span title="One or more fields have custom expense overrides" style={{color:"#8a6010",fontSize:9}}>★</span>}
                 <span style={{color:"#3a7028",fontSize:9}}>{acres.toFixed(0)}ac</span>
               </div>
-              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
                 return(<div key={f.id} onClick={()=>selectField(f)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
                   <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
