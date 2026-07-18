@@ -214,7 +214,7 @@ function CleanDuplicatesBtn({ tenantId, token, T }) {
   const [status, setStatus] = React.useState("idle");
   const [removed, setRemoved] = React.useState(0);
 
-  const norm = s => (s||"").trim().toLowerCase();
+  const norm = s => (s||"").trim().toLowerCase().replace(/[\u2018\u2019\u201A\u201B\u02BC\u2032]/g,"'").replace(/\s+/g," ");
 
   const dedupePath = async (url, nameKey) => {
     const data = await fetch(url).then(r => r.json()).catch(()=>null);
@@ -240,7 +240,9 @@ function CleanDuplicatesBtn({ tenantId, token, T }) {
       // Get all FieldLog farm paths
       const farmsData = await fetch(`${DB}/tenants/${tenantId}/farms.json?auth=${token}&shallow=true`).then(r=>r.json()).catch(()=>null);
       const farmPaths = [`tenants/${tenantId}/fieldlog`];
-      if (farmsData && typeof farmsData === "object") Object.keys(farmsData).forEach(id => farmPaths.push(`tenants/${tenantId}/farms/${id}/fieldlog`));
+      if (farmsData && typeof farmsData === "object") {
+        Object.keys(farmsData).filter(k=>k!=="profile").forEach(id => farmPaths.push(`tenants/${tenantId}/farms/${id}/fieldlog`));
+      }
 
       // Build set of all field names across ALL named farms (not default)
       const namedFarmNames = new Set();
