@@ -2339,35 +2339,8 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         </div>
       </div>
     )}
-    {/* ── Seeding Banner from AgriField ─────────────────────────── */}
-    {(()=>{
-      const logs = (flSeedLogs||{})[field.common] || [];
-      if(!logs.length && tenantId) return (
-        <div style={{background:"#f8f4ee",border:"1px dashed #c8b870",borderRadius:6,padding:"8px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#8a7040"}}>
-          <span style={{fontSize:15}}>🌱</span>
-          <span>No seeding logged in AgriField yet for {new Date().getFullYear()}.</span>
-        </div>
-      );
-      return logs.map((log,i)=>{
-        const cropNames=log.crops.map(c=>c.crop).filter(Boolean).join(", ");
-        const matches=!field.crop||cropNames.toLowerCase().includes((field.crop||"").toLowerCase());
-        return(
-          <div key={i} style={{background:matches?"#eaf8e0":"#fff8e0",border:`1px solid ${matches?"#5cb850":"#c8a030"}`,borderRadius:6,padding:"8px 14px",marginBottom:8,fontSize:12}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:15}}>🌱</span>
-              <strong style={{color:matches?"#1a6010":"#7a5000"}}>Seeded {new Date(log.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</strong>
-              {log.crops.map((c,j)=>(
-                <span key={j} style={{background:matches?"#c8f0b0":"#f0dea0",padding:"1px 8px",borderRadius:3,fontSize:11,fontWeight:700,color:matches?"#1a5010":"#6a4000"}}>
-                  {c.crop}{c.variety?` — ${c.variety}`:""}{c.seedRate?` @ ${c.seedRate} lbs/ac`:""}
-                </span>
-              ))}
-              {log.equipment&&<span style={{color:"#7a9260",fontSize:11}}>{log.equipment}</span>}
-              {!matches&&field.crop&&<span style={{marginLeft:"auto",fontSize:11,color:"#8a6000",fontStyle:"italic"}}>⚠ Plan shows {field.crop}</span>}
-            </div>
-          </div>
-        );
-      });
-    })()}
+    {/* ── Seeding Log from AgriField ───────────────────────────────── */}
+    <SeedLogSection fieldName={field.common} plannedCrop={field.crop} logs={(flSeedLogs||{})[field.common]||[]} tenantId={tenantId}/>
 
     {/* Tabs */}
     <div style={{borderBottom:"1px solid #1e3020",marginBottom:20}}>{TB("income","Income")}{TB("expenses","Expenses")}{TB("eligibility","Crop Eligibility")}{TB("history","📋 History & Plan")}</div>
@@ -2699,6 +2672,131 @@ function ManageCropsModal({ tenantId, token, tenantCrops, onSave, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ── Seed Log Section (shown in FieldDetail) ───────────────────────────────────
+function SeedLogSection({ fieldName, plannedCrop, logs, tenantId }) {
+  const [expanded, setExpanded] = useState(null); // index of expanded log
+
+  if (!logs.length) {
+    return tenantId ? (
+      <div style={{background:"#f8f4ee",border:"1px dashed #c8b870",borderRadius:6,
+        padding:"8px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8,
+        fontSize:12,color:"#8a7040"}}>
+        <span>🌱</span>
+        <span>No seeding logged in AgriField yet for {new Date().getFullYear()}.</span>
+      </div>
+    ) : null;
+  }
+
+  const row = (label, value) => value ? (
+    <div style={{display:"flex",gap:8,padding:"3px 0",borderBottom:"1px solid #e8f0d8"}}>
+      <span style={{fontSize:11,color:"#7a9260",minWidth:130,flexShrink:0}}>{label}</span>
+      <span style={{fontSize:11,color:"#1a3010",fontWeight:500}}>{value}</span>
+    </div>
+  ) : null;
+
+  return (
+    <div style={{marginBottom:14}}>
+      {logs.map((log, i) => {
+        const cropNames = log.crops.map(c=>c.crop).filter(Boolean).join(", ");
+        const matches = !plannedCrop || cropNames.toLowerCase().includes((plannedCrop||"").toLowerCase());
+        const isOpen = expanded === i;
+        const bg = matches ? "#eaf8e0" : "#fff8e0";
+        const border = matches ? "#5cb850" : "#c8a030";
+
+        return (
+          <div key={i} style={{border:`1px solid ${border}`,borderRadius:7,marginBottom:8,overflow:"hidden"}}>
+            {/* Summary row — always visible */}
+            <div style={{background:bg,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:15}}>🌱</span>
+              <strong style={{fontSize:12,color:matches?"#1a6010":"#7a5000"}}>
+                Seeded {new Date(log.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+              </strong>
+              {log.crops.map((c,j) => (
+                <span key={j} style={{background:matches?"#c8f0b0":"#f0dea0",padding:"1px 8px",
+                  borderRadius:3,fontSize:11,fontWeight:700,color:matches?"#1a5010":"#6a4000"}}>
+                  {c.crop}{c.variety?` — ${c.variety}`:""}{c.seedRate?` @ ${c.seedRate} lbs/ac`:""}
+                </span>
+              ))}
+              {!matches && plannedCrop && (
+                <span style={{fontSize:11,color:"#8a6000",fontStyle:"italic"}}>⚠ Plan shows {plannedCrop}</span>
+              )}
+              {/* Expand/collapse link */}
+              <button onClick={()=>setExpanded(isOpen?null:i)} style={{
+                marginLeft:"auto",background:"none",border:"none",cursor:"pointer",
+                fontSize:11,color:matches?"#2a7a18":"#8a5000",fontFamily:"'Barlow',sans-serif",
+                fontWeight:600,textDecoration:"underline",padding:0,flexShrink:0
+              }}>
+                {isOpen ? "▲ Hide details" : "▼ Full log"}
+              </button>
+            </div>
+
+            {/* Full detail — expanded */}
+            {isOpen && (
+              <div style={{padding:"12px 16px",background:"#fff",fontSize:12}}>
+                {/* Seed */}
+                {log.crops.length > 0 && (
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
+                      color:"#5a8a40",marginBottom:4}}>🌾 Seed</div>
+                    {log.crops.map((c,j) => (
+                      <div key={j} style={{marginBottom:4}}>
+                        {row("Crop", c.crop)}
+                        {row("Variety", c.variety)}
+                        {row("Seed Rate", c.seedRate ? `${c.seedRate} lbs/ac` : null)}
+                        {row("Total Seed", c.totalSeed ? `${c.totalSeed} lbs` : null)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Fertilizer */}
+                {log.ferts?.length > 0 && (
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
+                      color:"#5a8a40",marginBottom:4}}>🧪 Fertilizer</div>
+                    {log.ferts.map((f,j) => (
+                      <div key={j} style={{marginBottom:4}}>
+                        {row("Blend", f.blend||f.custom)}
+                        {row("Rate", f.rate ? `${f.rate} lbs/ac` : null)}
+                        {row("Total", f.total ? `${f.total} lbs` : null)}
+                        {row("Placement", f.placement)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Inoculants */}
+                {log.inoculants?.length > 0 && (
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
+                      color:"#5a8a40",marginBottom:4}}>💉 Inoculant</div>
+                    {log.inoculants.map((n,j) => (
+                      <div key={j} style={{marginBottom:4}}>
+                        {row("Product", n.product)}
+                        {row("Rate", n.rate)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Equipment & conditions */}
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
+                    color:"#5a8a40",marginBottom:4}}>⚙️ Equipment & Conditions</div>
+                  {row("Equipment", log.equipment)}
+                  {row("Seeding Depth", log.depth ? `${log.depth}"` : null)}
+                  {row("Notes", log.notes)}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -3343,7 +3441,18 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
             const crops = a.data?.crops?.length > 0 ? a.data.crops :
               (a.data?.crop ? [{crop: a.data.crop, seedRate: a.data.seedRate, variety: a.data.variety}] : []);
             if(!logs[name]) logs[name] = [];
-            logs[name].push({ date: a.date, crops, equipment: a.data?.equipment, notes: a.notes });
+            // Normalise fertilisers (new array format or legacy single-entry)
+            const ferts = a.data?.ferts?.length>0 ? a.data.ferts
+              : a.data?.fertBlend ? [{blend:a.data.fertBlend==="Custom Blend"?a.data.fertCustom:a.data.fertBlend,rate:a.data.fertRate,total:a.data.totalFert,placement:"Seed-placed"}]
+              : [];
+            // Normalise inoculants
+            const inoculants = a.data?.inoculants?.length>0 ? a.data.inoculants
+              : a.data?.inoculantProduct ? [{product:a.data.inoculantProduct,rate:a.data.inoculantRate}]
+              : [];
+            logs[name].push({
+              id: a.id, date: a.date, crops, ferts, inoculants,
+              equipment: a.data?.equipment, depth: a.data?.depth, notes: a.notes
+            });
           });
           setFlSeedLogs(logs);
         } catch(e) { console.warn("FieldLog seed log load failed:", e.message); }
