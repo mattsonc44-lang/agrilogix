@@ -3619,7 +3619,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       try{
         const data=await fetch(`${DB}/${flPath}/fields.json?auth=${token}`).then(r=>r.json());
         const existing=data?Object.values(data):[];
-        if(existing.some(f=>f.name===field.common)) return;
+        const norm = s => (s||"").trim().toLowerCase();
+        if(existing.some(f=>norm(f.name)===norm(field.common))) return;
         const flId=`fl${Date.now()}${Math.floor(Math.random()*9999)}`;
         await fetch(`${DB}/${flPath}/fields/${flId}.json?auth=${token}`,{
           method:"PUT",headers:{"Content-Type":"application/json"},
@@ -3724,14 +3725,14 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
               <div onClick={()=>setExpanded(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;})} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",cursor:"pointer",fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8,background:"#e4f0d0",borderBottom:"1px solid #162016"}}>
                 <span style={{fontSize:8}}>{open?"▾":"▸"}</span>
                 <span style={{flex:1}}>{g.farm}</span>
-                {hasOv&&<span style={{color:"#8a6010",fontSize:9}}>★</span>}
+                {hasOv&&<span title="One or more fields have custom expense overrides" style={{color:"#8a6010",fontSize:9}}>★</span>}
                 <span style={{color:"#3a7028",fontSize:9}}>{acres.toFixed(0)}ac</span>
               </div>
               {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!f.eligibleCrops.includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
                 return(<div key={f.id} onClick={()=>selectField(f)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
                   <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
-                  {hasOv&&<span style={{color:"#8a6010",fontSize:9}}>★</span>}
+                  {hasOv&&<span title="This field has custom expense overrides — see Expenses tab to review or reset" style={{color:"#8a6010",fontSize:9}}>★</span>}
                   <span style={{fontSize:9,color:"#7a9260",flexShrink:0}}>{f.acres.toFixed(0)}ac</span>
                 </div>);
               })}
