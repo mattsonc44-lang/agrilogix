@@ -46,11 +46,25 @@ export default function App() {
   // When admin is viewing a tenant, use that tenantId instead of their own
   const effectiveTenantId = adminViewTenantId || profile?.tenantId;
 
-  // ── Bootstrap ────────────────────────────────────────────────────
+  // ── Bootstrap — always refresh token on load so it never expires silently ────
   useEffect(() => {
-    const saved = loadSession();
-    if (saved?.idToken && saved?.localId) { setSession(saved); loadUserProfile(saved); }
-    else setLoading(false);
+    const boot = async () => {
+      const saved = loadSession();
+      if (!saved?.idToken || !saved?.localId) { setLoading(false); return; }
+      let sess = saved;
+      if (saved.refreshToken) {
+        try {
+          const d = await authRefreshToken(saved.refreshToken);
+          if (d?.id_token) {
+            sess = { ...saved, idToken: d.id_token, refreshToken: d.refresh_token || saved.refreshToken, expiresIn: d.expires_in || "3600" };
+            saveSession(sess);
+          }
+        } catch(e) { console.warn("Token refresh on boot failed:", e.message); }
+      }
+      setSession(sess);
+      loadUserProfile(sess);
+    };
+    boot();
   }, []);
 
   // ── Token refresh ─────────────────────────────────────────────────
@@ -329,17 +343,11 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
-        {loading && !profile && (
-          <div style={{ ...S.content, textAlign:"center", paddingTop:"80px" }}>
-            <div style={{ fontSize:"32px", marginBottom:"12px", opacity:0.4 }}>🌾</div>
-            <p style={{ color:T.faint, fontSize:"13px" }}>Loading…</p>
-          </div>
-        )}
-        {profile && module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
-        {profile && module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
-        {profile && module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
-        {profile && module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
-        {profile && !module && enabledModules.length === 0 && (
+        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
+        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
+        {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
+        {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
             <p style={{ color:T.muted }}>No modules enabled. Contact your administrator.</p>
