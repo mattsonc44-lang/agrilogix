@@ -2827,24 +2827,23 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
   const save = async () => {
     setSaving(true); setErr("");
     try {
-      // Sanitize: ensure all values are finite numbers (Firebase rejects NaN/Infinity/undefined)
-      const clean = {};
-      Object.entries(prices).forEach(([crop, vals]) => {
+      // Sanitize values and store as array (crop names as values, not keys — avoids Firebase key restrictions)
+      const asArray = Object.entries(prices).map(([crop, vals]) => {
         const pg = parseFloat(vals.priceGuar);
         const pp = parseFloat(vals.projPrice);
-        clean[crop] = {
-          priceGuar: isFinite(pg) ? pg : 0,
-          projPrice: isFinite(pp) ? pp : 0,
-        };
+        return { crop, priceGuar: isFinite(pg)?pg:0, projPrice: isFinite(pp)?pp:0 };
       });
       const res = await fetch(
         `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
-        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(clean) }
+        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(asArray) }
       );
       if (!res.ok) {
         const errBody = await res.text().catch(()=>"");
         throw new Error(`Save failed: ${res.status} — ${errBody.slice(0,120)}`);
       }
+      // Convert back to {crop: {priceGuar, projPrice}} for local state
+      const clean = {};
+      asArray.forEach(({crop,priceGuar,projPrice}) => { clean[crop]={priceGuar,projPrice}; });
       onSave(clean);
       onClose();
     } catch(e) { setErr(e.message); }
@@ -3293,7 +3292,17 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
       // Load tenant crop price elections from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setCropPrices(d); }).catch(()=>{});
+        .then(r=>r.json()).then(d=>{
+          if(!d) return;
+          if(Array.isArray(d)){
+            // New array format: [{crop, priceGuar, projPrice}]
+            const obj={}; d.forEach(({crop,priceGuar,projPrice})=>{ if(crop) obj[crop]={priceGuar,projPrice}; });
+            setCropPrices(obj);
+          } else if(typeof d==="object"){
+            // Legacy object format
+            setCropPrices(d);
+          }
+        }).catch(()=>{});
       // Load tenant crop list from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
