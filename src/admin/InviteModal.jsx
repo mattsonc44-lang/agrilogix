@@ -19,7 +19,7 @@ export default function InviteModal({ tenantId, tenantName, sentBy, token_auth, 
       const token     = generateToken();
       const inviteUrl = `${APP_URL}?invite=${token}`;
       await createInvite(token, { tenantId, tenantName, email:email.trim(), role, createdBy:sentBy }, token_auth);
-      const result = await sendInviteEmail({ toEmail:email.trim(), toName:"", tenantName, role, inviteUrl });
+      const result = await sendInviteEmail({ toEmail:email.trim(), toName:"", tenantName, role, inviteUrl, token_auth });
       setDone({ inviteUrl, warning: result.warning });
     } catch(e) {
       setErr(e.message);
@@ -82,8 +82,8 @@ export default function InviteModal({ tenantId, tenantName, sentBy, token_auth, 
             <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"18px",marginBottom:"8px"}}>Invite sent!</h3>
             <p style={{color:T.muted,fontSize:"13px",marginBottom:"16px"}}>
               {done.warning
-                ? "Email not sent — EmailJS not configured. Share this link manually:"
-                : `An invitation has been sent to ${email}.`}
+                ? `⚠ ${done.warning} — copy the link below to share manually:`
+                : `✅ Invitation sent to ${email}.`}
             </p>
             {/* Always show the link so admin can copy it */}
             <div style={{background:"#F5F0E8",border:`1px solid ${T.border}`,borderRadius:"6px",padding:"10px 12px",fontSize:"12px",wordBreak:"break-all",textAlign:"left",marginBottom:"16px"}}>
