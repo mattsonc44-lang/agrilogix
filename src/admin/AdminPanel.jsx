@@ -232,50 +232,47 @@ function CleanDuplicatesBtn({ tenantId, token, T }) {
   };
 
   const clean = async () => {
-    if (!window.confirm(`Remove duplicate fields from AgriPlan and AgriField (all farms) for this tenant?`)) return;
+    if (!window.confirm(`Remove duplicate fields from AgriField (all farms) for this tenant? AgriPlan fields are not affected.`)) return;
     setStatus("running");
     const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
     const yr = new Date().getFullYear();
     try {
-      // Get all FieldLog farm paths
+      // ── Get all FieldLog farm paths ──────────────────────────────────────
       const farmsData = await fetch(`${DB}/tenants/${tenantId}/farms.json?auth=${token}&shallow=true`).then(r=>r.json()).catch(()=>null);
       const farmPaths = [`tenants/${tenantId}/fieldlog`];
-      if (farmsData && typeof farmsData === "object") {
+      if (farmsData && typeof farmsData === "object")
         Object.keys(farmsData).filter(k=>k!=="profile").forEach(id => farmPaths.push(`tenants/${tenantId}/farms/${id}/fieldlog`));
-      }
 
-      // Build set of all field names across ALL named farms (not default)
-      const namedFarmNames = new Set();
-      await Promise.all(farmPaths.slice(1).map(async p => {
+      // ── Load ALL fields from ALL farms ───────────────────────────────────
+      const allEntries = []; // {path, key, field}
+      await Promise.all(farmPaths.map(async p => {
         const d = await fetch(`${DB}/${p}/fields.json?auth=${token}`).then(r=>r.json()).catch(()=>null);
-        if (d) Object.values(d).forEach(f => { if(f?.name) namedFarmNames.add(norm(f.name)); });
+        if (d) Object.entries(d).forEach(([k,f]) => { if(f?.name) allEntries.push({path:p, key:k, field:f}); });
       }));
 
-      // Clean AgriPlan dupes
-      const apDupes = await dedupePath(`${DB}/tenants/${tenantId}/agriPlan/fields/${yr}.json?auth=${token}`, "common");
+      // ── Group by normalised name ─────────────────────────────────────────
+      const groups = {};
+      allEntries.forEach(e => {
+        const n = norm(e.field.name);
+        if (!groups[n]) groups[n] = [];
+        groups[n].push(e);
+      });
 
-      // Clean AgriField Default Farm — remove dupes AND fields that exist in named farms (sync orphans)
-      const defaultData = await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`).then(r=>r.json()).catch(()=>null);
+      // ── For each group with dupes: keep best, delete rest ────────────────
+      // "Best" = has boundary with points > has boundary array > has most data
+      const score = f => (f.boundary?.length > 0 ? 1000 : 0) + (f.acres ? 10 : 0) + (f.legalDesc ? 5 : 0) + (f.notes ? 1 : 0);
       let flDupes = 0;
-      if (defaultData) {
-        const seen = {}, cleaned = {};
-        Object.entries(defaultData).forEach(([k, f]) => {
-          const n = f?.name; if (!n) return;
-          const key = norm(n);
-          // Remove if: already seen (dupe within default farm) OR exists in a named farm
-          if (seen[key] || namedFarmNames.has(key)) { flDupes++; return; }
-          seen[key] = true; cleaned[k] = f;
-        });
-        if (flDupes > 0) await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(cleaned) });
-      }
-
-      // Also dedupe within each named farm
-      let namedDupes = 0;
-      await Promise.all(farmPaths.slice(1).map(async p => {
-        namedDupes += await dedupePath(`${DB}/${p}/fields.json?auth=${token}`, "name");
+      await Promise.all(Object.values(groups).map(async group => {
+        if (group.length < 2) return;
+        group.sort((a,b) => score(b.field) - score(a.field)); // best first
+        // Delete all but the first (best) entry
+        await Promise.all(group.slice(1).map(async ({path, key}) => {
+          await fetch(`${DB}/${path}/fields/${key}.json?auth=${token}`, {method:"DELETE"}).catch(()=>{});
+          flDupes++;
+        }));
       }));
 
-      setRemoved(apDupes + flDupes + namedDupes);
+      setRemoved(flDupes);
       setStatus("done");
       setTimeout(() => setStatus("idle"), 5000);
     } catch(e) {
