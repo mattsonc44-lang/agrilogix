@@ -41,11 +41,13 @@ export const markInviteUsed = async (token, uid, token_auth) => {
 };
 
 // Send invite email via Netlify function (SMTP through Network Solutions)
-export const sendInviteEmail = async ({ toEmail, toName, tenantName, role, inviteUrl }) => {
+export const sendInviteEmail = async ({ toEmail, toName, tenantName, role, inviteUrl, token_auth }) => {
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (token_auth) headers["Authorization"] = `Bearer ${token_auth}`;
     const res = await fetch("/.netlify/functions/send-invite", {
       method:  "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ toEmail, toName, tenantName, role, inviteUrl }),
     });
 
