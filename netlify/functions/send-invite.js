@@ -41,12 +41,16 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: "SMTP_PASSWORD not configured" }) };
   }
 
+  // Try port 465 (SSL) — more reliable from cloud environments than 587 (STARTTLS)
   const transporter = nodemailer.createTransport({
     host:   SMTP_HOST,
-    port:   587,
-    secure: false, // STARTTLS on port 587
+    port:   465,
+    secure: true, // SSL on port 465
     auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-    tls: { rejectUnauthorized: false }, // hostingplatform certs are valid but this prevents edge cases
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10000,
+    greetingTimeout:   10000,
+    socketTimeout:     15000,
   });
 
   const roleName = role
@@ -104,7 +108,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ success: true }) };
 
   } catch (err) {
-    console.error(`[INVITE FAILED] ${err.message}`);
-    return { statusCode: 500, body: JSON.stringify({ error: "Failed to send email: " + err.message }) };
+    console.error(`[INVITE FAILED] host=${SMTP_HOST} user=${SMTP_USER} error=${err.message} code=${err.code||""}`);
+    return { statusCode: 500, body: JSON.stringify({ error: `SMTP error: ${err.message}` }) };
   }
 };
