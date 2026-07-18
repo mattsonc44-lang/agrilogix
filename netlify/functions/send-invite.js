@@ -1,7 +1,27 @@
+// netlify/functions/send-invite.js
+// Sends invite emails via Network Solutions SMTP using nodemailer
+// Env vars required:
+//   SMTP_HOST     = netsol-smtp-oxcs.hostingplatform.com
+//   SMTP_USER     = cmattson@agrilogixsolutions.com
+//   SMTP_PASSWORD = (already set in Netlify)
+
+const nodemailer = require("nodemailer");
+
+const { checkAuth } = require("./auth-check");
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
+
+  // ── Auth check ────────────────────────────────────────────────────────────
+  const auth = await checkAuth(event);
+  if (auth.error) {
+    const ip = event.headers["x-forwarded-for"] || "unknown";
+    console.warn(`[REJECTED ${new Date().toISOString()}] invite from ${ip}`);
+    return auth.error;
+  }
+  console.log(`[${new Date().toISOString()}] invite sent by uid=${auth.uid}`);
 
   let body;
   try { body = JSON.parse(event.body); }
@@ -12,13 +32,26 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: "Missing required fields" }) };
   }
 
-  const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  if (!RESEND_API_KEY) {
-    return { statusCode: 500, body: JSON.stringify({ error: "RESEND_API_KEY not set" }) };
+  const SMTP_HOST     = process.env.SMTP_HOST     || "netsol-smtp-oxcs.hostingplatform.com";
+  const SMTP_USER     = process.env.SMTP_USER     || "cmattson@agrilogixsolutions.com";
+  const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
+  const FROM_EMAIL    = `"Agri Logix Solutions" <${SMTP_USER}>`;
+
+  if (!SMTP_PASSWORD) {
+    return { statusCode: 500, body: JSON.stringify({ error: "SMTP_PASSWORD not configured" }) };
   }
 
-  const roleName = role ? role.charAt(0).toUpperCase() + role.slice(1) : "Team Member";
-  const FROM_EMAIL = "info@agrilogixsolutions.com";
+  const transporter = nodemailer.createTransport({
+    host:   SMTP_HOST,
+    port:   587,
+    secure: false, // STARTTLS on port 587
+    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+    tls: { rejectUnauthorized: false }, // hostingplatform certs are valid but this prevents edge cases
+  });
+
+  const roleName = role
+    ? role.charAt(0).toUpperCase() + role.slice(1)
+    : "Team Member";
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -51,7 +84,7 @@ exports.handler = async (event) => {
     </div>
     <div style="background:#E8E0D0;padding:18px 36px;border-top:1px solid #D8CEC0;">
       <p style="font-size:11px;color:#9A8A78;margin:0;text-align:center;">
-        1836 Laird Rd, Chester, MT 59522<br/>Agri Logix Solutions · Built for the Hi-Line<br>
+        1836 Laird Rd, Chester, MT 59522<br>Agri Logix Solutions · Built for the Hi-Line<br>
         <a href="https://agrilogixsolutions.com" style="color:#C07010;text-decoration:none;">agrilogixsolutions.com</a>
       </p>
     </div>
@@ -59,30 +92,19 @@ exports.handler = async (event) => {
 </body></html>`;
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: `Agri Logix Solutions <${FROM_EMAIL}>`,
-        to: [toEmail],
-        subject: `You've been invited to join ${tenantName} on Agri Logix`,
-        html,
-        text: `You've been invited to join ${tenantName} on Agri Logix Solutions as a ${roleName}.\n\nAccept your invitation: ${inviteUrl}\n\nThis link expires in 7 days.`,
-      }),
+    await transporter.sendMail({
+      from:    FROM_EMAIL,
+      to:      toEmail,
+      subject: `You're invited to ${tenantName} on Agri Logix Solutions`,
+      html,
+      text: `You've been invited to join ${tenantName} on Agri Logix Solutions as a ${roleName}.\n\nAccept your invitation here:\n${inviteUrl}\n\nThis link expires in 7 days.\n\n— Agri Logix Solutions\nagrilogixsolutions.com`,
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      console.error("Resend error:", data);
-      return { statusCode: 500, body: JSON.stringify({ error: data.message || "Email failed" }) };
-    }
+    console.log(`[INVITE SENT] to=${toEmail} tenant=${tenantName}`);
+    return { statusCode: 200, body: JSON.stringify({ success: true }) };
 
-    return { statusCode: 200, body: JSON.stringify({ ok: true, id: data.id }) };
   } catch (err) {
-    console.error("Resend fetch error:", err.message);
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    console.error(`[INVITE FAILED] ${err.message}`);
+    return { statusCode: 500, body: JSON.stringify({ error: "Failed to send email: " + err.message }) };
   }
 };
