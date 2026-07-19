@@ -292,6 +292,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     };
     // Always save locally first
     saveToQueue(payload);
+    asSaveCache(payload); // keep the offline fallback snapshot current with local edits too
     skipRef.current = true;
     setSyncStatus("pushing");
     try {
