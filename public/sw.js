@@ -1,50 +1,74 @@
-// AgriLogix Service Worker — offline shell caching
-const CACHE = 'agrilogix-v2';
-const SHELL = ['/', '/index.html', '/bundle.js', '/config.js'];
+// public/sw.js
+//
+// Caches the app shell (index.html, bundle.js, config.js, manifest) so
+// Agri Logix opens even with zero signal. Strategy: network-first, cache
+// fallback. Since your build doesn't hash filenames (bundle.js is always
+// bundle.js), network-first means anyone with signal always gets the
+// latest deploy — the cache only kicks in the moment a fetch actually
+// fails, which is exactly the "no bars in the field" case you're after.
+//
+// Bump CACHE_NAME (e.g. -v2) only if you ever need to force every device
+// to drop its cached shell — normally not needed since network-first
+// keeps the cache fresh automatically on every successful load.
 
-// Cache app shell on install
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())
-  );
-});
+const CACHE_NAME = 'agrilogix-shell-v1';
+const CORE_ASSETS = [
+  '/',
+  '/index.html',
+  '/bundle.js',
+  '/config.js',
+  '/manifest.json',
+];
 
-// Activate: remove old caches
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
-});
-
-// Fetch: network first, fall back to cache for shell assets
-self.addEventListener('fetch', e => {
-  const url = e.request.url;
-
-  // Let Firebase, Netlify functions, and external APIs go straight through
-  if (
-    url.includes('firebase') ||
-    url.includes('netlify/functions') ||
-    url.includes('googleapis.com') ||
-    url.includes('gstatic.com') ||
-    url.includes('unpkg.com') ||
-    url.includes('resend.com') ||
-    url.includes('anthropic.com') ||
-    e.request.method !== 'GET'
-  ) return;
-
-  // For app shell: network first, cache fallback
-  e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        // Cache fresh copy if it's a shell asset
-        if (SHELL.some(s => url.endsWith(s) || url === self.location.origin + s)) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(CORE_ASSETS).catch((err) => {
+        // Don't let one missing asset (e.g. config.js in a local dev build
+        // without the Netlify env-var step) block caching the rest.
+        console.warn('SW install: some core assets failed to precache', err);
       })
-      .catch(() => caches.match(e.request).then(r => r || caches.match('/index.html')))
+    )
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+  // Only handle same-origin requests — never intercept Firebase/API calls,
+  // those need their own real network behavior (and offlineSync.js already
+  // handles their offline fallback at the data layer).
+  if (url.origin !== self.location.origin) return;
+
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(request).then((cached) => {
+          if (cached) return cached;
+          // No exact cache match (e.g. a route path) — fall back to the
+          // shell itself so the app still boots; your client-side routing
+          // takes it from there.
+          if (request.mode === 'navigate') return caches.match('/index.html');
+          return new Response('', { status: 504, statusText: 'Offline and not cached' });
+        })
+      )
   );
 });
