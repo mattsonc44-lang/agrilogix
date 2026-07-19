@@ -375,17 +375,51 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     finally { setFLLoading(false); }
   };
 
-  const importFLFields = () => {
+  const importFLFields = async () => {
     const toImport = flFields.filter(f => flSelected.has(f.id));
-    const newFields = toImport.map(f => ({
-      id: genId(),
-      name: f.name,
-      acres: f.acres || 0,
-      farmId: farmId || "default",
-      loads: [], costs: {}, grainPrice: "", landlord: "",
-      cropShare: "", insCoverageLevel: "", insGuaranteedYield: "",
-      insPriceElection: "", insType: "", insInsuredAcres: "",
-    }));
+    if(!toImport.length) { setFLImportModal(false); return; }
+
+    // Pull AgriPlan fields for this tenant to get insurance/landlord/share data
+    let apFields = [];
+    let cropPrices = {};
+    try {
+      const yr = new Date().getFullYear();
+      const [apData, cpData] = await Promise.all([
+        dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).catch(()=>null),
+        dbRead(`tenants/${tenantId}/agriPlan/cropPrices`, token).catch(()=>null),
+      ]);
+      apFields = obj2arr(apData||{}).filter(Boolean);
+      // cropPrices may be array or object
+      const cpArr = Array.isArray(cpData) ? cpData : obj2arr(cpData||{});
+      cpArr.forEach(p=>{ if(p?.crop) cropPrices[p.crop]={priceGuar:p.priceGuar||0,projPrice:p.projPrice||0}; });
+    } catch(e) { console.warn("AgriScale: could not load AgriPlan data", e.message); }
+
+    const norm = s => (s||"").trim().toLowerCase();
+
+    const newFields = toImport.map(f => {
+      // Match to AgriPlan field by name
+      const ap = apFields.find(a => norm(a.common) === norm(f.name));
+      // Get price election for the planned crop
+      const cp = ap?.crop ? cropPrices[ap.crop] : null;
+
+      return {
+        id: genId(),
+        name: f.name,
+        acres: f.acres || ap?.acres || 0,
+        farmId: farmId || "default",
+        loads: [], costs: {},
+        grainPrice: cp?.projPrice ? String(cp.projPrice) : "",
+        // Pull from AgriPlan if available
+        landlord:          ap?.landlord         || "",
+        cropShare:         ap?.sharePercent!=null ? String(ap.sharePercent) : "",
+        insType:           ap?.insuranceType     || "",
+        insCoverageLevel:  ap?.coverageLevel!=null ? String(ap.coverageLevel) : "",
+        insGuaranteedYield:ap?.aphYield!=null    ? String(ap.aphYield)        : "",
+        insPriceElection:  cp?.priceGuar         ? String(cp.priceGuar)       : "",
+        insInsuredAcres:   ap?.insuredAcres!=null ? String(ap.insuredAcres)   : "",
+      };
+    });
+
     const nf = [...fields, ...newFields];
     setFields(nf); save(nf, bins, grains, trucks);
     setFLImportModal(false);
