@@ -5,6 +5,7 @@ import { dbRead, dbWrite, dbListen } from "./core/firebase.js";
 import { authRefreshToken } from "./core/firebase.js";
 import { obj2arr, genId } from "./core/helpers.js";
 import AuthScreen  from "./auth/AuthScreen.jsx";
+import TermsModal from "./onboarding/TermsModal.jsx";
 import OnboardingWizard from "./onboarding/OnboardingWizard.jsx";
 import AdminPanel  from "./admin/AdminPanel.jsx";
 import OrgPanel    from "./admin/OrgPanel.jsx";
@@ -29,6 +30,7 @@ const ADMIN_UID = (typeof window !== "undefined" && window.__ADMIN_UID__) || "";
 
 export default function App() {
   const [session,    setSession]    = useState(null);
+  const [showTerms,  setShowTerms]  = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [profile,    setProfile]    = useState(null);
   const [tenant,     setTenant]     = useState(null);
@@ -82,6 +84,13 @@ export default function App() {
     }, Math.max(ms, 30000));
     return () => clearTimeout(refreshTimer.current);
   }, [session]);
+
+  // ── Terms acceptance check — fires for ALL users on every login ─────────────
+  useEffect(()=>{
+    if(!session?.idToken||!session?.localId) return;
+    fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/users/${session.localId}/termsAccepted.json?auth=${session.idToken}`)
+      .then(r=>r.json()).then(d=>{ if(!d?.version) setShowTerms(true); }).catch(()=>{});
+  },[session?.idToken,session?.localId]);
 
   // ── Onboarding wizard trigger ────────────────────────────────────
   useEffect(()=>{
@@ -336,7 +345,14 @@ export default function App() {
         </div>
       )}
 
-      {showWizard&&profile?.role==="owner"&&<OnboardingWizard
+      {showTerms&&session?.localId&&(
+        <TermsModal
+          tenantId={effectiveTenantId}
+          token={session.idToken}
+          userId={session.localId}
+          onAccept={()=>setShowTerms(false)}/>
+      )}
+      {!showTerms&&showWizard&&profile?.role==="owner"&&<OnboardingWizard
         tenantId={effectiveTenantId}
         token={session?.idToken}
         profile={profile}
