@@ -569,6 +569,7 @@ function getCropDefault(crop,key){
   return cd&&cd[key]!==undefined?cd[key]:rates[key]??0;
 }
 function calc(field){
+  if(!field||typeof field!=="object"||!field.income){ return {valAcre:0,guarantee:0,revenue:0,risk:0,expRate:0,expenses:0,net:0}; }
   const{acres,income:i}=field;
   const valAcre=i.bushelGuarantee*i.priceGuarantee;
   const guarantee=valAcre*acres;
@@ -3534,7 +3535,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
           if(!firstLoad || tenantId){
             // Normalise eligibleCrops — restore script may have set it to []
             // giving all crops eligibility by default when not set
-            const normalized = fbFields.map(f=>({
+            const normalized = fbFields.filter(f=>f && typeof f==="object" && f.income && f.id!=null).map(f=>({
               ...f,
               eligibleCrops: (()=>{ const raw=f.eligibleCrops; const arr=Array.isArray(raw)?raw:raw&&typeof raw==="object"?Object.values(raw):[]; return arr.length>0?arr:(_tenantCrops||ALL_CROPS); })()
             }));
