@@ -5,6 +5,7 @@ import { dbRead, dbWrite, dbListen } from "./core/firebase.js";
 import { authRefreshToken } from "./core/firebase.js";
 import { obj2arr, genId } from "./core/helpers.js";
 import AuthScreen  from "./auth/AuthScreen.jsx";
+import OnboardingWizard from "./onboarding/OnboardingWizard.jsx";
 import AdminPanel  from "./admin/AdminPanel.jsx";
 import OrgPanel    from "./admin/OrgPanel.jsx";
 import FieldLogModule   from "./modules/fieldlog/index.jsx";
@@ -28,6 +29,7 @@ const ADMIN_UID = (typeof window !== "undefined" && window.__ADMIN_UID__) || "";
 
 export default function App() {
   const [session,    setSession]    = useState(null);
+  const [showWizard, setShowWizard] = useState(false);
   const [profile,    setProfile]    = useState(null);
   const [tenant,     setTenant]     = useState(null);
   const [module,     setModule]     = useState(()=>window.location.hash.slice(1)||null);
@@ -80,6 +82,14 @@ export default function App() {
     }, Math.max(ms, 30000));
     return () => clearTimeout(refreshTimer.current);
   }, [session]);
+
+  // ── Onboarding wizard trigger ────────────────────────────────────
+  useEffect(()=>{
+    if(!profile?.tenantId||!session?.idToken) return;
+    if(profile.role!=="owner") return;
+    fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${profile.tenantId}/setup.json?auth=${session.idToken}`)
+      .then(r=>r.json()).then(d=>{ if(!d?.completed) setShowWizard(true); }).catch(()=>{});
+  },[profile?.tenantId,profile?.role,session?.idToken]);
 
   // ── Live tenant profile listener ─────────────────────────────────
   useEffect(() => {
@@ -326,6 +336,12 @@ export default function App() {
         </div>
       )}
 
+      {showWizard&&profile?.role==="owner"&&<OnboardingWizard
+        tenantId={effectiveTenantId}
+        token={session?.idToken}
+        profile={profile}
+        tenant={tenant}
+        onComplete={()=>setShowWizard(false)}/>}
       {showOrg && <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>}
 
       {/* ── Admin view banner ── */}
