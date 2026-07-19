@@ -181,6 +181,7 @@ export default function App() {
           ? tenantMods.filter(m => userAllowlist.includes(m)) : tenantMods;
         setProfile(userProfile);
         setTenant({ profile: tenantProfile });
+        try{ localStorage.setItem('al_profile_cache', JSON.stringify({userProfile, tenantProfile})); }catch(_){}
         if (mods.length) {
           const hash = window.location.hash.slice(1);
           const target = hash && mods.includes(hash) ? hash : mods[0];
@@ -191,7 +192,14 @@ export default function App() {
         setProfile({ email: sess.email, pendingSetup: true });
       }
     } catch(e) {
-      setAuthErr("Could not load your account. Please try again.");
+      let cached = null;
+      try { cached = JSON.parse(localStorage.getItem('al_profile_cache')); } catch(_){}
+      if (cached && cached.userProfile) {
+        setProfile(cached.userProfile);
+        setTenant({ profile: cached.tenantProfile });
+      } else {
+        setAuthErr("Could not load your account. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -375,10 +383,10 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
-        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
-        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
-        {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
+        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile?.moduleRoles?.fieldlog   || profile?.role}} persist={persist}/>}
+        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile?.moduleRoles?.agriScale   || profile?.role}} persist={persist}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile?.moduleRoles?.serviceLog  || profile?.role}} persist={persist}/>}
+        {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile?.moduleRoles?.agriPlan   || profile?.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
