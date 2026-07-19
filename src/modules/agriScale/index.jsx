@@ -705,16 +705,27 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             {(activeField?.loads||[]).length > 0 && (
               <div style={{marginTop:"10px",background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"8px"}}>
                 <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>RECENT LOADS — {activeField.name}</div>
-                <div style={{maxHeight:"160px",overflowY:"auto"}}>
+                <div style={{maxHeight:"320px",overflowY:"auto"}}>
                   {[...(activeField?.loads||[])].reverse().slice(0,10).map(l=>{
                     const f=fmtWt(l.net,unit,l.grainBushelLbs||60);
+                    const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
                     const tHex=l.truckColor||"#f0f0f0";
                     const bn=bins.find(b=>b.id===l.binId);
-                    return(<div key={l.id} style={{borderBottom:"1px solid #ddd8d0",padding:"4px 2px",fontSize:"9px",color:"#4a5568",display:"flex",gap:"6px",alignItems:"center"}}>
-                      <div style={{width:"8px",height:"8px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
-                      <span style={{flex:1}}><strong>{f.value}</strong> {f.label}</span>
-                      <span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
-                      <span style={{color:"#9a8a72"}}>{l.timeOnly}</span>
+                    return(<div key={l.id} style={{borderBottom:"1px solid #ddd8d0",padding:"8px 4px",color:"#4a5568"}}>
+                      <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+                        <div style={{width:"10px",height:"10px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
+                        <span style={{flex:1,fontSize:"20px",fontWeight:700,color:"#c47d0a"}}>{bu} <span style={{fontSize:"12px",color:"#8a6a40"}}>BU</span></span>
+                        <span style={{fontSize:"13px",color:"#4a5568"}}>{f.value} {f.label}</span>
+                      </div>
+                      <div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"4px",fontSize:"10px"}}>
+                        <span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
+                        {l.splitLabel&&<span style={{color:"#8a6a40"}}>#{l.splitLabel}</span>}
+                        <span style={{color:"#9a8a72"}}>{l.date} {l.timeOnly}</span>
+                        <span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
+                          <button onClick={()=>setEL({load:l,fieldId:activeField.id})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",border:"1px solid #ccc4b8"}}>EDIT</button>
+                          <button onClick={()=>{if(confirm("Delete this load?"))deleteLoad(l);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>
+                        </span>
+                      </div>
                     </div>);
                   })}
                 </div>
@@ -781,8 +792,6 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                         <span>{l.grainName}</span>
                         <span>{bn?.name||"?"}</span>
                         <span style={{marginLeft:"auto"}}>{l.date} {l.timeOnly}</span>
-                        {perms.canEditFields&&<button onClick={()=>setEL({load:l,fieldId:f.id})} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#ede9e4",color:"#4a5568",boxShadow:"none",border:"1px solid #ccc4b8"}}>EDIT</button>}
-                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;deleteLoad(l);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
                       </div>);
                     })}
                   </div>
