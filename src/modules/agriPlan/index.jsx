@@ -2567,7 +2567,7 @@ function saveTenantQueue(tid, year, fields){
 }
 function clearTenantQueue(tid, year){
   try{ localStorage.removeItem(tenantQueueKey(tid,year)); }catch{}
-
+}
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
 function loadYears(){
