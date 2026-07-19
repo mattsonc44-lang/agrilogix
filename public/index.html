@@ -1,46 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#F4EFE6"/>
+  <link rel="manifest" href="/manifest.json"/>
   <title>Agri Logix</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; padding: 0; background: #F4EFE6; color: #1E1408; font-family: 'Barlow', sans-serif; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #F4EFE6; color: #1E1408; font-family: sans-serif; }
     #root { min-height: 100vh; }
-    .leaflet-div-icon { background: transparent; border: none; }
-    @keyframes fl-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-    /* Loading state */
-    #app-loading { display:flex; align-items:center; justify-content:center; min-height:100vh; flex-direction:column; gap:12px; }
-    #app-loading .logo { font-family:'Playfair Display',serif; font-size:32px; color:#1A3A1A; font-weight:700; }
-    #app-loading .logo span { color:#C07010; }
-    #app-loading .sub { font-size:13px; color:#7A6A58; letter-spacing:0.1em; text-transform:uppercase; }
+    select option { background: #fff; color: #1E1408; }
   </style>
 </head>
 <body>
-  <div id="root">
-    <div id="app-loading">
-      <div class="logo">Agri<span>Logix</span></div>
-      <div class="sub">Loading…</div>
-    </div>
-  </div>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/shpjs@4.0.4/dist/shp.js"></script>
-  <script src="/config.js"></script>
-  <script src="/bundle.js"></script>
-
+  <div id="root"></div>
+  <script src="config.js"></script>
+  <script src="bundle.js"></script>
   <script>
-    // Service Worker — offline support
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then(r => console.log('SW registered:', r.scope))
-          .catch(e => console.warn('SW registration failed:', e));
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.warn('Service worker registration failed:', err);
+        });
       });
     }
   </script>
