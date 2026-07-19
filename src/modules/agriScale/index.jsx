@@ -37,7 +37,7 @@ const fmtWt = (lbs, unit, bushelLbs=60) => {
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
-  .as-wrap { font-family: 'Share Tech Mono', monospace; }
+  .as-wrap { font-family: 'IBM Plex Mono', monospace; }
   .as-wrap * { box-sizing: border-box; }
   @keyframes as-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(45,122,31,0.25)} 50%{box-shadow:0 0 0 4px rgba(45,122,31,0)} }
   .as-record-btn:not(:disabled):hover { filter: brightness(1.08); }
@@ -93,7 +93,7 @@ function BinGauge({ bin, grains, small }) {
             {/* Glow outline */}
             <polygon points={bodyPts} fill="none" stroke={fillColor} strokeWidth="1.5" style={{filter:pct>0?`drop-shadow(0 0 4px ${fillGlow})`:"none"}}/>
             {/* Pct label */}
-            {pct > 12 && <text x={10+binW/2} y={fillY+fillH/2+5} textAnchor="middle" fontFamily="Share Tech Mono, monospace" fontSize={small?"10":"13"} fontWeight="bold" fill="#fff" style={{filter:`drop-shadow(0 0 4px ${fillGlow})`}}>{pct.toFixed(1)}%</text>}
+            {pct > 12 && <text x={10+binW/2} y={fillY+fillH/2+5} textAnchor="middle" fontFamily="IBM Plex Mono, monospace" fontSize={small?"10":"13"} fontWeight="bold" fill="#fff" >{pct.toFixed(1)}%</text>}
             {/* Tick marks */}
             {[25,50,75].map(t=>{
               const ty=roofH+binH-t/100*binH;
@@ -346,7 +346,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
   const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
   const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
-  const btnBase = {cursor:"pointer",fontFamily:"'Share Tech Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
+  const btnBase = {cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
 
   // ── Import fields from FieldLog ──────────────────────────────────
   const openFLImport = async () => {
@@ -499,12 +499,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   };
 
   const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
-  if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'Share Tech Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
+  if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'IBM Plex Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
 
   return (
     <>
       <style>{CSS}</style>
-      <div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:"#f0eeea",backgroundImage:"radial-gradient(ellipse at 30% 20%, #e8f2dc 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, #f5eed8 0%, transparent 60%)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'Share Tech Mono',monospace"}}>
+      <div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:"#f0eeea",backgroundImage:"radial-gradient(ellipse at 30% 20%, #e8f2dc 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, #f5eed8 0%, transparent 60%)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace"}}>
         <div style={{width:"100%",maxWidth:"520px"}}>
 
           {/* Header */}
@@ -513,7 +513,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
               AGRI<span style={{color:"#4a7535"}}>SCALE</span>
             </div>
             <div style={{textAlign:"right"}}>
-              <div style={{color:"#4a5568",fontSize:"11px",letterSpacing:"0.08em",textShadow:"0 0 6px #4a5568"}}>{activeField?.name}</div>
+              <div style={{color:"#4a5568",fontSize:"11px",letterSpacing:"0.08em"}}>{activeField?.name}</div>
               <div style={{color:"#4a7535",fontSize:"10px",letterSpacing:"0.06em"}}>→ {activeBin?.name}</div>
               <div style={{display:"flex",gap:"5px",justifyContent:"flex-end",alignItems:"center",marginTop:"3px",flexWrap:"wrap"}}>
                 <span style={{fontSize:"8px",color:"#fff",background:"#5a6878",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em"}}>{operatorName}</span>
@@ -612,19 +612,19 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             </div>
 
             {/* Weight display */}
-            <div style={{background:"#ede9e4",border:"3px solid #b0c8a0",borderRadius:"8px",padding:"20px 28px 16px",boxShadow:"inset 0 2px 8px rgba(0,0,0,.06), 0 0 0 1px #9a8a72",marginBottom:"10px",position:"relative",overflow:"hidden"}}>
+            <div style={{background:"#f5f7f2",border:"2px solid #8ab870",borderRadius:"8px",padding:"20px 28px 16px",boxShadow:"inset 0 1px 4px rgba(0,0,0,.04)",marginBottom:"10px",position:"relative",overflow:"hidden"}}>
               <div style={{textAlign:"center"}}>
                 <div style={{fontSize:"9px",color:"#6a8060",letterSpacing:"0.2em",marginBottom:"4px"}}>NET WEIGHT</div>
-                <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"54px",fontWeight:700,color:"#4a5568",textShadow:"0 0 10px #4a5568, 0 0 20px #4a5568",letterSpacing:"0.05em",lineHeight:1}}>
+                <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"54px",fontWeight:700,color:"#1a2a1a",letterSpacing:"0.05em",lineHeight:1,WebkitFontSmoothing:"antialiased",MozOsxFontSmoothing:"grayscale"}}>
                   {fmtWt(netLbs,unit,grain.bushel_lbs).value}
                 </div>
-                <div style={{fontSize:"18px",color:"#5a6878",marginLeft:"10px",letterSpacing:"0.1em"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</div>
+                <div style={{fontSize:"16px",color:"#4a6040",marginLeft:"8px",letterSpacing:"0.15em",fontWeight:700,fontFamily:"'Barlow',sans-serif"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</div>
               </div>
               <div style={{display:"flex",gap:"32px",marginTop:"14px",paddingTop:"10px",borderTop:"1px solid #ccc4b8",justifyContent:"center"}}>
                 {[{label:"GROSS",lbs:rawLbs},{label:"TARE",lbs:tare}].map(({label,lbs})=>(
                   <div key={label} style={{fontFamily:"monospace",textAlign:"center"}}>
                     <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em"}}>{label}</div>
-                    <div style={{fontSize:"18px",color:"#4a5568",textShadow:"0 0 6px #4a5568"}}>{fmtWt(lbs,unit,grain.bushel_lbs).value} <span style={{fontSize:"10px",color:"#5a6878"}}>{fmtWt(lbs,unit,grain.bushel_lbs).label}</span></div>
+                    <div style={{fontSize:"18px",color:"#1a2a1a",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,WebkitFontSmoothing:"antialiased"}}>{fmtWt(lbs,unit,grain.bushel_lbs).value} <span style={{fontSize:"10px",color:"#5a6878"}}>{fmtWt(lbs,unit,grain.bushel_lbs).label}</span></div>
                   </div>
                 ))}
               </div>
@@ -794,7 +794,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                 ["TOTAL TONS",(safeFields.reduce((s,f)=>s+(f.loads||[]).reduce((ss,l)=>ss+l.net,0),0)/2000).toFixed(1)],
               ].map(([l,v])=>(
                 <div key={l} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",textAlign:"center"}}>
-                  <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"24px",color:"#4a7535",textShadow:"0 0 8px #4a7535"}}>{v}</div>
+                  <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"24px",color:"#4a7535"}}>{v}</div>
                   <div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginTop:"2px"}}>{l}</div>
                 </div>
               ))}
@@ -828,10 +828,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
           <div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"480px",maxHeight:"85vh",display:"flex",flexDirection:"column",gap:"12px"}}>
             <div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>EXPORT HARVEST TO FIELDLOG</div>
             {flExportData.length===0&&(
-              <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>NO FIELDS WITH LOADS TO EXPORT</div>
+              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>NO FIELDS WITH LOADS TO EXPORT</div>
             )}
             {flExportData.length>0&&(<>
-              <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'Share Tech Mono',monospace",letterSpacing:"0.08em",lineHeight:1.6}}>
+              <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em",lineHeight:1.6}}>
                 SELECT FIELDS TO WRITE AS HARVEST ACTIVITIES IN FIELDLOG.
                 FIELDS WITHOUT A NAME MATCH IN FIELDLOG ARE GREYED OUT.
               </div>
@@ -845,12 +845,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       <div style={{flex:1}}>
                         <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{r.name}</div>
                         <div style={{display:"flex",gap:"12px",marginTop:"5px",flexWrap:"wrap"}}>
-                          <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.grainName}</span>
-                          <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalBu.toLocaleString()} BU</span>
-                          {r.yieldPerAc&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.yieldPerAc} BU/AC</span>}
-                          <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalLbs.toLocaleString()} LBS</span>
+                          <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.grainName}</span>
+                          <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalBu.toLocaleString()} BU</span>
+                          {r.yieldPerAc&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.yieldPerAc} BU/AC</span>}
+                          <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalLbs.toLocaleString()} LBS</span>
                         </div>
-                        {!canSel&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#c06060",marginTop:"4px"}}>⚠ NO MATCHING FIELD IN FIELDLOG</div>}
+                        {!canSel&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060",marginTop:"4px"}}>⚠ NO MATCHING FIELD IN FIELDLOG</div>}
                       </div>
                     </label>
                   );
@@ -869,16 +869,16 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
           <div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"420px",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"12px"}}>
             <div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>IMPORT FROM FIELDLOG</div>
-            {flLoading&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>READING FIELDLOG...</div>}
+            {flLoading&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>READING FIELDLOG...</div>}
             {!flLoading&&flFields.length===0&&(
-              <div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px",lineHeight:1.8}}>
+              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px",lineHeight:1.8}}>
                 {fields.length>0
                   ? "ALL SEEDED FIELDS ALREADY IN AGRISCALE"
                   : "NO SEEDED FIELDS FOUND IN FIELDLOG\nLOG A SEEDING ACTIVITY FIRST"}
               </div>
             )}
             {!flLoading&&flFields.length>0&&(<>
-              <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'Share Tech Mono',monospace",letterSpacing:"0.08em"}}>
+              <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em"}}>
                 SELECT FIELDS TO IMPORT ({flSelected.size} OF {flFields.length} SELECTED)
               </div>
               <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
@@ -889,7 +889,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(flSelected);sel?n.delete(f.id):n.add(f.id);setFLSelected(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
                       <div>
                         <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{f.name}</div>
-                        {f.acres&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"#6a8060",marginTop:"2px"}}>{f.acres} ACRES</div>}
+                        {f.acres&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#6a8060",marginTop:"2px"}}>{f.acres} ACRES</div>}
                       </div>
                     </label>
                   );
@@ -916,11 +916,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
 
 // ── Modal helpers ─────────────────────────────────────────────────
 const moStyle = {position:"fixed",inset:0,background:"rgba(20,30,10,.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"};
-const cardStyle = {background:"#fff",border:"2px solid #b0a08a",borderRadius:"8px",padding:"24px",width:"100%",maxWidth:"340px",fontFamily:"'Share Tech Mono',monospace"};
+const cardStyle = {background:"#fff",border:"2px solid #b0a08a",borderRadius:"8px",padding:"24px",width:"100%",maxWidth:"340px",fontFamily:"'IBM Plex Mono',monospace"};
 const lblStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px",textAlign:"left"};
-const inStyle = {width:"100%",padding:"10px",fontFamily:"'Share Tech Mono',monospace",fontSize:"13px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
+const inStyle = {width:"100%",padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"13px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
 const seStyle = {...inStyle,cursor:"pointer"};
-const MoBtn = ({children,onClick,variant="ghost"})=><button onClick={onClick} style={{flex:1,padding:"10px",fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:"pointer"}}>{children}</button>;
+const MoBtn = ({children,onClick,variant="ghost"})=><button onClick={onClick} style={{flex:1,padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:"pointer"}}>{children}</button>;
 const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
 
 function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
@@ -977,12 +977,12 @@ function TruckMo({truck,onSave,onClose}){
     <div style={lblStyle}>COLOR</div>
     <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px"}}>
       <input type="color" value={f.hex} onChange={e=>{const hex=e.target.value;s("hex",hex);s("text",isLight(hex)?"#333":"#fff");}} style={{width:"48px",height:"36px",border:"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer",padding:"2px"}}/>
-      <div style={{flex:1,padding:"8px 12px",background:f.hex,borderRadius:"4px",border:"1px solid #b0a08a",fontFamily:"'Share Tech Mono',monospace",fontSize:"12px",color:f.text,letterSpacing:"0.08em",textAlign:"center"}}>{f.name||"PREVIEW"}</div>
+      <div style={{flex:1,padding:"8px 12px",background:f.hex,borderRadius:"4px",border:"1px solid #b0a08a",fontFamily:"'IBM Plex Mono',monospace",fontSize:"12px",color:f.text,letterSpacing:"0.08em",textAlign:"center"}}>{f.name||"PREVIEW"}</div>
     </div>
     <div style={lblStyle}>TEXT COLOR</div>
     <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
       {["#333333","#ffffff"].map(c=>(
-        <button key={c} onClick={()=>s("text",c)} style={{flex:1,padding:"7px",fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",letterSpacing:"0.1em",background:f.hex,color:c,border:f.text===c?"2px solid #4a5568":"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer"}}>
+        <button key={c} onClick={()=>s("text",c)} style={{flex:1,padding:"7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.1em",background:f.hex,color:c,border:f.text===c?"2px solid #4a5568":"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer"}}>
           {c==="#333333"?"DARK TEXT":"LIGHT TEXT"}
         </button>
       ))}
