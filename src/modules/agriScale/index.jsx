@@ -343,6 +343,58 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     setRawInput("0"); setTare(0);
   };
 
+  // ── Edit / delete / split a recorded load ──────────────────────
+  // (shared by the FIELDS-tab load rows and the LoadMo modal)
+  const findLoadOwner = (loadId) => safeFields.find(f=>(f.loads||[]).some(l=>l.id===loadId));
+
+  const updateLoad = (updatedLoad) => {
+    const owner = findLoadOwner(updatedLoad.id);
+    if(!owner) return;
+    const oldLoad = owner.loads.find(l=>l.id===updatedLoad.id);
+    const nb = safeBins.map(b=>{
+      let s = b.storedLbs;
+      if(b.id===oldLoad.binId) s = Math.max(0, s - oldLoad.net);
+      if(b.id===updatedLoad.binId) s = s + updatedLoad.net;
+      return {...b, storedLbs:s};
+    });
+    const nf = safeFields.map(f=>f.id===owner.id?{...f,loads:f.loads.map(l=>l.id===updatedLoad.id?updatedLoad:l)}:f);
+    setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
+    setEL(null);
+  };
+
+  const deleteLoad = (load) => {
+    const owner = findLoadOwner(load.id);
+    if(!owner) return;
+    const nf = safeFields.map(f=>f.id===owner.id?{...f,loads:f.loads.filter(l=>l.id!==load.id)}:f);
+    const nb = safeBins.map(b=>b.id===load.binId?{...b,storedLbs:Math.max(0,b.storedLbs-load.net)}:b);
+    setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
+    setEL(null);
+  };
+
+  const splitLoad = ({ load, splitA, splitB, binAId, binBId, labelBase }) => {
+    const owner = findLoadOwner(load.id);
+    if(!owner) return;
+    const base = labelBase || owner.loads.findIndex(l=>l.id===load.id) + 1;
+    const loadA = { ...load, net:splitA, binId:binAId, splitLabel:`${base}a` };
+    const loadB = { ...load, id:nextId.current++, net:splitB, binId:binBId, splitLabel:`${base}b` };
+    const nb = safeBins.map(b=>{
+      let s = b.storedLbs;
+      if(b.id===load.binId) s = Math.max(0, s - load.net);
+      if(b.id===binAId) s = s + splitA;
+      if(b.id===binBId) s = s + splitB;
+      return {...b, storedLbs:s};
+    });
+    const nf = safeFields.map(f=>{
+      if(f.id!==owner.id) return f;
+      const newLoads = f.loads.map(l=>l.id===load.id?loadA:l);
+      const idx = newLoads.findIndex(l=>l.id===loadA.id);
+      newLoads.splice(idx+1, 0, loadB);
+      return {...f, loads:newLoads};
+    });
+    setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
+    setEL(null);
+  };
+
   const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
   const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
   const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
@@ -725,12 +777,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       const bn=bins.find(b=>b.id===l.binId);
                       return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",fontSize:"9px",color:"#6a7280",padding:"2px 0",borderBottom:"1px solid #e8e4dc"}}>
                         <div style={{width:"7px",height:"7px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
-                        <span style={{color:"#4a5568",fontWeight:"bold"}}>{bu} BU</span>
+                        <span style={{color:"#4a5568",fontWeight:"bold"}}>{bu} BU {l.splitLabel?`#${l.splitLabel}`:""}</span>
                         <span>{l.grainName}</span>
                         <span>{bn?.name||"?"}</span>
                         <span style={{marginLeft:"auto"}}>{l.date} {l.timeOnly}</span>
                         {perms.canEditFields&&<button onClick={()=>setEL({load:l,fieldId:f.id})} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#ede9e4",color:"#4a5568",boxShadow:"none",border:"1px solid #ccc4b8"}}>EDIT</button>}
-                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=safeFields.map(ff=>ff.id===f.id?{...ff,loads:f(f.loads||[]).filter(ll=>ll.id!==l.id)}:ff);const nb=safeBins.map(b=>b.id===l.binId?{...b,storedLbs:Math.max(0,b.storedLbs-l.net)}:b);setFields(nf);setBins(nb);save(nf,nb,grains,trucks);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
+                        {perms.canEditFields&&<button onClick={()=>{if(!confirm("Delete?"))return;deleteLoad(l);}} style={{...btnBase,padding:"1px 5px",fontSize:"8px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0",boxShadow:"none"}}>✕</button>}
                       </div>);
                     })}
                   </div>
@@ -909,7 +961,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       )}
       {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
       {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
-      {editLoad&&<LoadMo load={editLoad.load} bins={bins} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editLoad.fieldId?{...ff,loads:f(f.loads||[]).map(l=>l.id===editLoad.load.id?{...l,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)}:l)}:ff);setFields(nf);save(nf,bins,grains,trucks);setEL(null);}} onClose={()=>setEL(null)}/>}
+      {editLoad&&<LoadMo load={editLoad.load} bins={safeBins} grains={safeGrains} onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL(null)}/>}
     </>
   );
 }
@@ -920,11 +972,12 @@ const cardStyle = {background:"#fff",border:"2px solid #b0a08a",borderRadius:"8p
 const lblStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px",textAlign:"left"};
 const inStyle = {width:"100%",padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"13px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
 const seStyle = {...inStyle,cursor:"pointer"};
-const MoBtn = ({children,onClick,variant="ghost"})=><button onClick={onClick} style={{flex:1,padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:"pointer"}}>{children}</button>;
+const MoBtn = ({children,onClick,variant="ghost",disabled})=><button onClick={onClick} disabled={disabled} style={{flex:1,padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:disabled?"#f0f0f0":variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:disabled?"#b0a870":variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:disabled?"not-allowed":"pointer"}}>{children}</button>;
 const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
 
 function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
   const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName,shared:bin.farmId==="shared"||!bin.farmId});
+  const safeGrains=(Array.isArray(grains)?grains:[]).filter(Boolean);
   return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
     <div style={hdrStyle}>EDIT {bin.name}</div>
     <div style={lblStyle}>BIN NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/>
@@ -991,16 +1044,95 @@ function TruckMo({truck,onSave,onClose}){
   </div></div>);
 }
 
-function LoadMo({load,bins,onSave,onClose}){
+// LoadMo — edit / delete a load, or switch into split mode to divide it
+// between two bins. Mirrors the split flow from the old standalone
+// grain-cart app (component_final.jsx), adapted to this module's data
+// shape (load.net in lbs, load.grainBushelLbs, load.binId).
+function LoadMo({load,bins,grains,onSave,onDelete,onSplit,onClose}){
   const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||""});
+  const[splitMode,setSplitMode]=useState(false);
+  const[splitAmt,setSplitAmt]=useState("");
+  const[splitBinId,setSplitBinId]=useState((bins.find(b=>b.id!==load.binId)||bins[0])?.id);
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const safeGrains=(Array.isArray(grains)?grains:[]).filter(Boolean);
+
+  const parsedNet = Math.max(0, parseInt(f.net)||0);
+  const bushelLbs = parseInt(f.grainBushelLbs)||60;
+
+  if(splitMode){
+    const totalBu = parsedNet / bushelLbs;
+    const splitABu = Math.max(0, Math.min(totalBu, parseFloat(splitAmt)||0));
+    const splitBBu = totalBu - splitABu;
+    const splitALbs = Math.round(splitABu*bushelLbs);
+    const splitBLbs = parsedNet - splitALbs;
+    const label = load.splitLabel || "";
+    const canApply = splitABu>0 && splitBBu>1e-3 && f.binId!==splitBinId;
+    const binName = id => (bins.find(b=>b.id===id)||{}).name || "?";
+
+    return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+      <div style={hdrStyle}>SPLIT LOAD{label?` #${label}`:""}</div>
+      <div style={{background:"#ede9e4",border:"1px solid #c0b8ac",borderRadius:"6px",padding:"12px",marginBottom:"14px"}}>
+        <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px"}}>TOTAL LOAD</div>
+        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"22px",color:"#4a5568"}}>{totalBu.toFixed(1)} <span style={{fontSize:"12px",color:"#5a6878"}}>BU</span></div>
+        <div style={{fontSize:"9px",color:"#6a7280",marginTop:"2px"}}>{parsedNet.toLocaleString()} lbs · {bushelLbs} lbs/bu</div>
+      </div>
+
+      <div style={lblStyle}>FIRST BIN — BUSHELS</div>
+      <input style={inStyle} type="number" value={splitAmt} onChange={e=>setSplitAmt(e.target.value)} placeholder={`Max ${totalBu.toFixed(1)} bu`}/>
+      {splitABu>0&&(
+        <div style={{marginBottom:"10px",marginTop:"-4px"}}>
+          <div style={{display:"flex",height:"6px",borderRadius:"3px",overflow:"hidden"}}>
+            <div style={{width:`${(splitABu/totalBu)*100}%`,background:"#4a5568"}}/>
+            <div style={{flex:1,background:"#c47d0a"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:"5px",fontSize:"9px"}}>
+            <span style={{color:"#4a5568",fontWeight:700}}>A: {splitABu.toFixed(1)} bu ({splitALbs.toLocaleString()} lbs)</span>
+            <span style={{color:"#c47d0a",fontWeight:700}}>B: {splitBBu.toFixed(1)} bu ({splitBLbs.toLocaleString()} lbs)</span>
+          </div>
+        </div>
+      )}
+
+      <div style={lblStyle}>BIN A (KEEPS THIS LOAD'S BIN)</div>
+      <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"10px"}}>
+        {bins.map(b=>(
+          <button key={b.id} onClick={()=>s("binId",b.id)} style={{...btnBase_static,padding:"5px 10px",fontSize:"10px",background:f.binId===b.id?"#e8e2d8":"transparent",border:f.binId===b.id?"1px solid #4a5568":"1px solid #ccc4b8",color:f.binId===b.id?"#4a5568":"#6a7280"}}>{b.name}</button>
+        ))}
+      </div>
+      <div style={lblStyle}>BIN B — REMAINDER</div>
+      <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"12px"}}>
+        {bins.map(b=>(
+          <button key={b.id} onClick={()=>setSplitBinId(b.id)} style={{...btnBase_static,padding:"5px 10px",fontSize:"10px",background:splitBinId===b.id?"#e8e2d8":"transparent",border:splitBinId===b.id?"1px solid #c47d0a":"1px solid #ccc4b8",color:splitBinId===b.id?"#c47d0a":"#6a7280"}}>{b.name}</button>
+        ))}
+      </div>
+      {f.binId===splitBinId&&<div style={{fontSize:"9px",color:"#b04030",textAlign:"center",marginBottom:"10px"}}>BIN A AND BIN B MUST BE DIFFERENT</div>}
+
+      <div style={{display:"flex",gap:"8px"}}>
+        <MoBtn onClick={()=>setSplitMode(false)}>← BACK</MoBtn>
+        <MoBtn variant="primary" disabled={!canApply} onClick={()=>onSplit({load,splitA:splitALbs,splitB:splitBLbs,binAId:f.binId,binBId:splitBinId,labelBase:load.splitLabel||undefined})}>APPLY SPLIT</MoBtn>
+      </div>
+    </div></div>);
+  }
+
   return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
-    <div style={hdrStyle}>EDIT LOAD</div>
-    <div style={lblStyle}>GRAIN</div><input style={inStyle} value={f.grainName} onChange={e=>s("grainName",e.target.value)}/>
+    <div style={hdrStyle}>EDIT LOAD{load.splitLabel?` #${load.splitLabel}`:""}</div>
+    <div style={lblStyle}>GRAIN</div>
+    {safeGrains.length
+      ? <select style={seStyle} value={f.grainName} onChange={e=>{const g=safeGrains.find(x=>x.name===e.target.value);s("grainName",e.target.value);if(g)s("grainBushelLbs",g.bushel_lbs);}}>{safeGrains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</select>
+      : <input style={inStyle} value={f.grainName} onChange={e=>s("grainName",e.target.value)}/>
+    }
     <div style={lblStyle}>LBS/BU</div><input style={inStyle} type="number" value={f.grainBushelLbs} onChange={e=>s("grainBushelLbs",e.target.value)}/>
     <div style={lblStyle}>NET WEIGHT (LBS)</div><input style={inStyle} type="number" value={f.net} onChange={e=>s("net",e.target.value)}/>
-    <div style={lblStyle}>BIN</div><select style={seStyle} value={f.binId} onChange={e=>s("binId",Number(e.target.value))}>{safeBins.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
+    {parsedNet>0&&bushelLbs>0&&<div style={{marginTop:"-6px",marginBottom:"10px",fontSize:"14px",fontWeight:600,color:"#c47d0a"}}>{(parsedNet/bushelLbs).toFixed(1)} <span style={{fontSize:"10px",color:"#6a7280"}}>bu</span></div>}
+    <div style={lblStyle}>BIN</div><select style={seStyle} value={f.binId} onChange={e=>s("binId",Number(e.target.value))}>{bins.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
     <div style={lblStyle}>OPERATOR</div><input style={inStyle} value={f.operator} onChange={e=>s("operator",e.target.value)}/>
-    <div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn></div>
+    <div style={{display:"flex",gap:"8px",marginBottom:"8px"}}>
+      <MoBtn onClick={onClose}>CANCEL</MoBtn>
+      <MoBtn variant="primary" onClick={()=>onSave({...load,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)})}>SAVE</MoBtn>
+    </div>
+    <div style={{display:"flex",gap:"8px"}}>
+      <MoBtn onClick={()=>setSplitMode(true)}>⇄ SPLIT LOAD</MoBtn>
+      <MoBtn variant="danger" onClick={()=>{if(confirm("Delete this load?"))onDelete(load);}}>✕ DELETE</MoBtn>
+    </div>
   </div></div>);
 }
+const btnBase_static = {cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s"};
