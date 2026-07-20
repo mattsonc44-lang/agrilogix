@@ -293,6 +293,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [flFields,      setFLFields]      = useState([]);
   const [flSelected,    setFLSelected]    = useState(new Set());
   const [flLoading,     setFLLoading]     = useState(false);
+  const [apImportModal, setAPImportModal] = useState(false);
+  const [apFields,      setAPFields]      = useState([]);
+  const [apSelected,    setAPSelected]    = useState(new Set());
+  const [apLoading,     setAPLoading]     = useState(false);
+  const [apCrops,       setApCrops]       = useState({}); // field name (lowercase) -> planned/actual crop from AgriPlan
   const [flExportModal, setFLExportModal] = useState(false);
   const [flExportData,  setFLExportData]  = useState([]);
   const [flExportSel,   setFLExportSel]   = useState(new Set());
@@ -463,6 +468,27 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const activeBin   = safeBins.find(b=>b.id===activeBinId)     || safeBins[0];
   const activeTruck = safeTrucks.find(t=>t.id===truckColor)    || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
+  // ── Pull this year's planned/actual crop per field from AgriPlan, keyed by field name ──
+  useEffect(()=>{
+    if(!tenantId) return;
+    const yr = new Date().getFullYear();
+    dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).then(d=>{
+      const apArr = obj2arr(d||{}).filter(Boolean);
+      const map = {};
+      apArr.forEach(a=>{ if(a?.common && a?.crop) map[a.common.trim().toLowerCase()] = a.crop; });
+      setApCrops(map);
+    }).catch(()=>{});
+  },[tenantId, token]);
+
+  // ── Auto-select the commodity that matches the active field's AgriPlan crop ──
+  useEffect(()=>{
+    if(!activeField || !activeField.name) return;
+    const crop = apCrops[activeField.name.trim().toLowerCase()];
+    if(!crop) return;
+    const idx = safeGrains.findIndex(g=>(g.name||"").toLowerCase()===crop.toLowerCase());
+    if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
+  },[activeFieldId, apCrops]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Numpad ────────────────────────────────────────────────────
   const onKey = k => {
     if(k==="CLR"||k==="C") { setRawInput("0"); return; }
@@ -620,6 +646,58 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     const nf = [...fields, ...newFields];
     setFields(nf); save(nf, bins, grains, trucks);
     setFLImportModal(false);
+  };
+
+  // ── Import fields directly from AgriPlan (for tenants not using FieldLog) ──
+  const openAPImport = async () => {
+    setAPLoading(true); setAPImportModal(true); setAPSelected(new Set());
+    try {
+      const yr = new Date().getFullYear();
+      const apData = await dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).catch(() => null);
+      const apAll = obj2arr(apData || {}).filter(Boolean);
+      // Exclude fields already in AgriScale by name
+      const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
+      const newOnly = apAll.filter(a => a?.common && !existingNames.has(a.common.trim().toLowerCase()));
+      setAPFields(newOnly);
+      setAPSelected(new Set(newOnly.map(a => a.common)));
+    } catch(e) { setAPFields([]); }
+    finally { setAPLoading(false); }
+  };
+
+  const importAPFields = async () => {
+    const toImport = apFields.filter(a => apSelected.has(a.common));
+    if(!toImport.length) { setAPImportModal(false); return; }
+
+    let cropPrices = {};
+    try {
+      const cpData = await dbRead(`tenants/${tenantId}/agriPlan/cropPrices`, token).catch(()=>null);
+      const cpArr = Array.isArray(cpData) ? cpData : obj2arr(cpData||{});
+      cpArr.forEach(p=>{ if(p?.crop) cropPrices[p.crop]={priceGuar:p.priceGuar||0,projPrice:p.projPrice||0}; });
+    } catch(e) {}
+
+    const newFields = toImport.map(ap => {
+      const cp = ap.crop ? cropPrices[ap.crop] : null;
+      return {
+        id: genId(),
+        name: ap.common,
+        acres: ap.acres || 0,
+        farmId: farmId || "default",
+        loads: [], costs: {},
+        grainPrice: cp?.projPrice ? String(cp.projPrice) : "",
+        // Pull straight from AgriPlan
+        landlord:          ap.landlord         || "",
+        cropShare:         ap.sharePercent!=null ? String(ap.sharePercent) : "",
+        insType:           ap.insuranceType     || "",
+        insCoverageLevel:  ap.coverageLevel!=null ? String(ap.coverageLevel) : "",
+        insGuaranteedYield:ap.aphYield!=null    ? String(ap.aphYield)        : "",
+        insPriceElection:  cp?.priceGuar         ? String(cp.priceGuar)       : "",
+        insInsuredAcres:   ap.insuredAcres!=null ? String(ap.insuredAcres)   : "",
+      };
+    });
+
+    const nf = [...fields, ...newFields];
+    setFields(nf); save(nf, bins, grains, trucks);
+    setAPImportModal(false);
   };
 
   // ── Export harvest to FieldLog ────────────────────────────────────
@@ -911,6 +989,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>FIELDS</div>
               <div style={{display:"flex",gap:"6px"}}>
                 {perms.canEditFields&&<button onClick={openFLImport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↓ FROM FIELDLOG</button>}
+                {perms.canEditFields&&<button onClick={openAPImport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f0ede4",color:"#7a5a3a",border:"1px solid #c8b090",boxShadow:"0 2px 0 #a89070"}}>↓ FROM AGRIPLAN</button>}
                 {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
               </div>
             </div>
@@ -1122,6 +1201,48 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
               </button>
             </>)}
             <button onClick={()=>setFLImportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#6a8060"}}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {apImportModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+          <div style={{background:"#1a2010",border:"1px solid #7a5a3a",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"420px",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"12px"}}>
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#d0b890",letterSpacing:"0.12em"}}>IMPORT FROM AGRIPLAN</div>
+            {apLoading&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#8a7860",textAlign:"center",padding:"20px"}}>READING AGRIPLAN...</div>}
+            {!apLoading&&apFields.length===0&&(
+              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#8a7860",textAlign:"center",padding:"20px",lineHeight:1.8}}>
+                {fields.length>0
+                  ? "ALL AGRIPLAN FIELDS ALREADY IN AGRISCALE"
+                  : "NO FIELDS FOUND IN AGRIPLAN FOR THIS YEAR"}
+              </div>
+            )}
+            {!apLoading&&apFields.length>0&&(<>
+              <div style={{fontSize:"10px",color:"#8a7860",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em"}}>
+                SELECT FIELDS TO IMPORT ({apSelected.size} OF {apFields.length} SELECTED)
+              </div>
+              <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
+                {apFields.map(a=>{
+                  const sel = apSelected.has(a.common);
+                  return(
+                    <label key={a.common} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(122,90,58,0.18)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#7a5a3a":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
+                      <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(apSelected);sel?n.delete(a.common):n.add(a.common);setAPSelected(n);}} style={{accentColor:"#7a5a3a",width:"14px",height:"14px",flexShrink:0}}/>
+                      <div>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{a.common}</div>
+                        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860",marginTop:"2px"}}>{a.acres?`${a.acres} ACRES`:""}{a.acres&&a.crop?" · ":""}{a.crop||""}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:"8px",paddingTop:"4px"}}>
+                <button onClick={()=>setAPSelected(new Set(apFields.map(a=>a.common)))} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#a89880"}}>SELECT ALL</button>
+                <button onClick={()=>setAPSelected(new Set())} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#a89880"}}>CLEAR</button>
+              </div>
+              <button onClick={importAPFields} disabled={apSelected.size===0} style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:apSelected.size>0?"#7a5a3a":"#302820",color:apSelected.size>0?"#f0eeea":"#554838",boxShadow:apSelected.size>0?"0 2px 0 #503a20":"none",cursor:apSelected.size>0?"pointer":"not-allowed"}}>
+                IMPORT {apSelected.size>0?apSelected.size:""} FIELD{apSelected.size!==1?"S":""}
+              </button>
+            </>)}
+            <button onClick={()=>setAPImportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#8a7860"}}>CANCEL</button>
           </div>
         </div>
       )}
