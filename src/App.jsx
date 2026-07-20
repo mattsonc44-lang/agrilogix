@@ -157,7 +157,7 @@ export default function App() {
   useEffect(() => {
     if (!profile?.tenantId) return;
     const saved = localStorage.getItem(`al_farm_${profile.tenantId}`);
-    if (saved === "default") { setActiveFarm(DEFAULT_FARM); return; }
+    if (saved === "default") { const d = farms.find(f=>f.id==="default"); setActiveFarm(d || DEFAULT_FARM); return; }
     if (saved) {
       const f = farms.find(f => f.id === saved);
       if (f) setActiveFarm(f);
@@ -209,13 +209,14 @@ export default function App() {
   // ── Farm management ───────────────────────────────────────────────
   const saveFarm = async (name, color, editId) => {
     const tenantId = profile.tenantId;
-    if (editId && editId !== "default") {
-      // Edit existing
-      const updated = { ...farms.find(f=>f.id===editId), name, color };
+    if (editId) {
+      // Edit existing (including the built-in "default" farm — it can now be renamed)
+      const base = editId === "default" ? (farms.find(f=>f.id==="default") || DEFAULT_FARM) : farms.find(f=>f.id===editId);
+      const updated = { ...base, id: editId, name, color };
       await dbWrite(`tenants/${tenantId}/farms/${editId}/profile`, updated, session.idToken);
-      setFarms(f => f.map(x => x.id===editId ? updated : x));
+      setFarms(f => f.some(x=>x.id===editId) ? f.map(x => x.id===editId ? updated : x) : [...f, updated]);
       if (activeFarm.id === editId) setActiveFarm(updated);
-    } else if (!editId) {
+    } else {
       // Create new
       const id = genId();
       const farm = { id, name, color, createdAt: new Date().toISOString() };
@@ -255,7 +256,8 @@ export default function App() {
     ? tenantModules.filter(m => userAllowlist.includes(m)) : tenantModules;
   const syncDot = { idle:"#D8CEBC", saving:T.gold, saved:T.green, error:T.danger }[syncStatus];
   const showFarmPicker = ["fieldlog","agriScale"].includes(module);
-  const allFarms = [DEFAULT_FARM, ...farms];
+  const customDefaultFarm = farms.find(f => f.id === "default");
+  const allFarms = [customDefaultFarm || DEFAULT_FARM, ...farms.filter(f => f.id !== "default")];
 
   return (
     <div style={S.app}>
@@ -308,9 +310,9 @@ export default function App() {
               <div key={f.id} style={{ display:"flex", alignItems:"center", gap:"0", flexShrink:0 }}>
                 <button onClick={()=>setActiveFarm(f)} style={{
                   display:"flex", alignItems:"center", gap:"7px", padding:"5px 12px",
-                  borderRadius: f.id !== "default" ? "6px 0 0 6px" : "6px",
+                  borderRadius: "6px 0 0 6px",
                   border:`1px solid ${active ? f.color : T.border}`,
-                  borderRight: f.id !== "default" ? "none" : undefined,
+                  borderRight: "none",
                   background: active ? f.color : "#FDFAF4",
                   color: active ? "#FFFFFF" : T.text,
                   cursor:"pointer", fontSize:"12px", fontWeight: active ? 700 : 400,
@@ -319,15 +321,13 @@ export default function App() {
                   <div style={{ width:"10px", height:"10px", borderRadius:"50%", background: active ? "rgba(255,255,255,0.8)" : f.color, flexShrink:0 }}/>
                   {f.name}
                 </button>
-                {f.id !== "default" && (
-                  <button onClick={()=>setFarmModal({id:f.id, name:f.name, color:f.color})} style={{
-                    padding:"5px 7px", borderRadius:"0 6px 6px 0",
-                    border:`1px solid ${active ? f.color : T.border}`,
-                    background: active ? f.color+"CC" : "#F0EBE0",
-                    color: active ? "#FFFFFF" : T.muted,
-                    cursor:"pointer", fontSize:"11px", lineHeight:1,
-                  }}>✏️</button>
-                )}
+                <button onClick={()=>setFarmModal({id:f.id, name:f.name, color:f.color})} style={{
+                  padding:"5px 7px", borderRadius:"0 6px 6px 0",
+                  border:`1px solid ${active ? f.color : T.border}`,
+                  background: active ? f.color+"CC" : "#F0EBE0",
+                  color: active ? "#FFFFFF" : T.muted,
+                  cursor:"pointer", fontSize:"11px", lineHeight:1,
+                }}>✏️</button>
               </div>
             );
           })}
@@ -375,8 +375,8 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
-        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
-        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
+        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
+        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
         {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
         {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
@@ -391,7 +391,7 @@ export default function App() {
       {farmModal && <FarmModal
         initial={farmModal === "new" ? null : farmModal}
         onSave={saveFarm}
-        onDelete={farmModal !== "new" ? ()=>deleteFarm(farmModal.id) : null}
+        onDelete={(farmModal !== "new" && farmModal.id !== "default") ? ()=>deleteFarm(farmModal.id) : null}
         onClose={()=>setFarmModal(null)}
       />}
     </div>
