@@ -598,6 +598,22 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     finally { setFLLoading(false); }
   };
 
+  // ── Make sure every crop coming in from an import exists as a commodity ──
+  const ensureGrainsForCrops = (cropNames, currentGrains) => {
+    let ng = [...currentGrains];
+    cropNames.forEach(crop => {
+      if(!crop) return;
+      const label = crop.trim().toUpperCase();
+      if(!label || label.toLowerCase()==="chem-fallow") return;
+      const exists = ng.some(g=>(g.name||"").toUpperCase()===label);
+      if(!exists){
+        const color = GRAIN_COLORS[ng.length % GRAIN_COLORS.length];
+        ng.push({ name: label, bushel_lbs: 60, color });
+      }
+    });
+    return ng;
+  };
+
   const importFLFields = async () => {
     const toImport = flFields.filter(f => flSelected.has(f.id));
     if(!toImport.length) { setFLImportModal(false); return; }
@@ -643,8 +659,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       };
     });
 
+    const cropsUsed = toImport.map(f => apFields.find(a => norm(a.common) === norm(f.name))?.crop).filter(Boolean);
+    const ng = ensureGrainsForCrops(cropsUsed, grains);
+
     const nf = [...fields, ...newFields];
-    setFields(nf); save(nf, bins, grains, trucks);
+    setFields(nf); setGrains(ng); save(nf, bins, ng, trucks);
     setFLImportModal(false);
   };
 
@@ -696,7 +715,9 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     });
 
     const nf = [...fields, ...newFields];
-    setFields(nf); save(nf, bins, grains, trucks);
+    const cropsUsed = toImport.map(a => a.crop).filter(Boolean);
+    const ng = ensureGrainsForCrops(cropsUsed, grains);
+    setFields(nf); setGrains(ng); save(nf, bins, ng, trucks);
     setAPImportModal(false);
   };
 
