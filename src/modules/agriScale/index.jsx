@@ -951,9 +951,14 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                         <span style={{flex:1,fontSize:"20px",fontWeight:700,color:"#c47d0a"}}>{bu} <span style={{fontSize:"12px",color:"#8a6a40"}}>BU</span></span>
                         <span style={{fontSize:"13px",color:"#4a5568"}}>{f.value} {f.label}</span>
                       </div>
-                      <div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"4px",fontSize:"10px"}}>
+                      <div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"4px",fontSize:"10px",flexWrap:"wrap"}}>
+                        <span style={{background:"#f0ede4",borderRadius:"3px",padding:"1px 7px",color:"#7a5a3a"}}>{l.grainName||"?"}</span>
                         <span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
                         {l.splitLabel&&<span style={{color:"#8a6a40"}}>#{l.splitLabel}</span>}
+                        <span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
+                          <span style={{width:"9px",height:"9px",borderRadius:"2px",background:tHex,border:"1px solid rgba(0,0,0,.2)",flexShrink:0}}/>
+                          <span style={{color:"#9a8a72"}}>{l.truckName||""}</span>
+                        </span>
                         <span style={{color:"#9a8a72"}}>{l.date} {l.timeOnly}</span>
                         <span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
                           <button onClick={()=>setEL({load:l,fieldId:activeField.id})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",border:"1px solid #ccc4b8"}}>EDIT</button>
