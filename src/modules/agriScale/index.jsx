@@ -117,7 +117,150 @@ function BinGauge({ bin, grains, small }) {
 }
 
 // ── Main module ───────────────────────────────────────────────────
-export default function AgriScaleModule({ tenantId, token, userProfile, persist, farmId }) {
+function PrintReport({ fields, bins, grains, onClose }) {
+  const reportRef = useRef(null);
+  const allLoads = [];
+  (fields||[]).forEach(field => (field.loads||[]).forEach(load => allLoads.push({...load, fieldName: field.name})));
+  allLoads.sort((a,b)=>(a.ts||0)-(b.ts||0));
+  const grainFor = (name) => (grains||[]).find(g=>g.name===name) || FALLBACK_GRAIN;
+  const buOf = (load) => load.net / ((grainFor(load.grainName).bushel_lbs)||60);
+  const grandTotalLbs = allLoads.reduce((s,l)=>s+l.net,0);
+  const grandTotalBu = allLoads.reduce((s,l)=>s+buOf(l),0);
+  const reportDate = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+  const printTime = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+
+  const handlePrint = () => {
+    const content = reportRef.current.innerHTML;
+    const win = window.open("", "_blank");
+    let html = "<!DOCTYPE html><html><head><title>AgriScale Load Report</title><style>";
+    html += "* { box-sizing: border-box; margin:0; padding:0; }";
+    html += "body { font-family: 'IBM Plex Sans', sans-serif; background:#fff; color:#111; padding:32px 40px; font-size:11pt; }";
+    html += ".report-wrap { max-width: 760px; margin:0 auto; }";
+    html += "table { width:100%; border-collapse:collapse; font-size:10pt; margin-bottom:16px; }";
+    html += "th { font-family:'IBM Plex Mono',monospace; font-size:8pt; letter-spacing:0.12em; text-transform:uppercase; padding:6px 10px; text-align:left; color:#444; border-bottom:2px solid #111; }";
+    html += "td { padding:7px 10px; border-bottom:1px solid #eee; }";
+    html += "tr:nth-child(even) td { background:#f9f9f9; }";
+    html += "@media print { body{padding:16px 20px;} }";
+    html += "</style></head><body><div class=\"report-wrap\">" + content + "</div></body></html>";
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(()=>win.print(), 400);
+  };
+
+  const th = {fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.12em",color:"#666",padding:"6px 10px",borderBottom:"2px solid #111",textAlign:"left"};
+  const td = {padding:"7px 10px",borderBottom:"1px solid #eee",fontSize:"11px"};
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(30,50,20,0.65)",zIndex:400,overflowY:"auto",padding:"20px"}}>
+      <div style={{maxWidth:"800px",margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
+          <span style={{color:"#e8f0e0",fontFamily:"'IBM Plex Mono',monospace",fontSize:"12px",letterSpacing:"0.15em"}}>PRINT PREVIEW</span>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button onClick={handlePrint} style={{background:"#e8e2d8",border:"1px solid #4a5568",color:"#4a5568",fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",padding:"8px 20px",borderRadius:"4px",cursor:"pointer"}}>🖨 PRINT / SAVE PDF</button>
+            <button onClick={onClose} style={{background:"#fff0f0",border:"1px solid #e0c0c0",color:"#c05040",fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",padding:"8px 16px",borderRadius:"4px",cursor:"pointer"}}>✕ CLOSE</button>
+          </div>
+        </div>
+        <div ref={reportRef} style={{background:"#fff",color:"#111",fontFamily:"'IBM Plex Sans',sans-serif",padding:"28px 32px",borderRadius:"6px",border:"1px solid #ddd"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderBottom:"3px solid #111",paddingBottom:"14px",marginBottom:"20px"}}>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"20px",fontWeight:700,letterSpacing:"0.05em"}}>AGRI<span style={{color:"#888"}}>SCALE</span></div>
+            <div style={{textAlign:"right",fontSize:"11px",color:"#666",lineHeight:1.7}}>
+              <div style={{fontWeight:700}}>{reportDate}</div>
+              <div>Printed: {printTime}</div>
+            </div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"12px",marginBottom:"20px"}}>
+            {[
+              ["TOTAL LOADS", String(allLoads.length)],
+              ["TOTAL WEIGHT", grandTotalLbs.toLocaleString()+" lbs"],
+              ["TOTAL BUSHELS", grandTotalBu.toLocaleString("en-US",{maximumFractionDigits:0})+" bu"],
+              ["FIELDS ACTIVE", (fields||[]).filter(f=>(f.loads||[]).length>0).length+" of "+(fields||[]).length],
+            ].map(([label,val])=>(
+              <div key={label} style={{border:"1px solid #ddd",borderRadius:"4px",padding:"10px 14px"}}>
+                <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"8px",letterSpacing:"0.18em",color:"#888",marginBottom:"4px"}}>{label}</div>
+                <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"18px",fontWeight:700}}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>ALL LOADS — DETAILED</div>
+          <table>
+            <thead><tr>
+              {["#","DATE","TIME","OPERATOR","FIELD","PRODUCT","BIN","TRUCK","NET WEIGHT","BUSHELS"].map((h,i)=>(
+                <th key={h} style={{...th,textAlign:i>=8?"right":"left"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {allLoads.map((load,i)=>{
+                const binForLoad = (bins||[]).find(b=>b.id===load.binId);
+                return (
+                  <tr key={load.id} style={{background:i%2===1?"#f9f9f9":"#fff"}}>
+                    <td style={{...td,fontFamily:"'IBM Plex Mono',monospace",color:"#aaa",fontSize:"10px"}}>#{load.splitLabel||i+1}</td>
+                    <td style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.date}</td>
+                    <td style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.timeOnly}</td>
+                    <td style={td}>{load.operator ? <span style={{background:"#e8f4e0",borderRadius:"3px",padding:"1px 7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#3a6a28"}}>{load.operator}</span> : <span style={{color:"#bbb",fontSize:"10px"}}>—</span>}</td>
+                    <td style={td}><span style={{background:"#f0f0f0",borderRadius:"3px",padding:"1px 7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.fieldName}</span></td>
+                    <td style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.grainName}</td>
+                    <td style={td}><span style={{background:"#e8f0e8",borderRadius:"3px",padding:"1px 7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{binForLoad?binForLoad.name:"—"}</span></td>
+                    <td style={td}>
+                      {load.truckColor ? (
+                        <span style={{display:"inline-flex",alignItems:"center",gap:"5px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>
+                          <span style={{display:"inline-block",width:"10px",height:"10px",borderRadius:"2px",background:load.truckColor,border:"1px solid rgba(0,0,0,.2)",flexShrink:0}}/>
+                          {load.truckName||""}
+                        </span>
+                      ) : <span style={{color:"#aaa",fontSize:"10px"}}>—</span>}
+                    </td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600}}>{load.net.toLocaleString()} lbs</td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,color:"#c47d0a"}}>{buOf(load).toFixed(1)} bu</td>
+                  </tr>
+                );
+              })}
+              {allLoads.length===0 && <tr><td colSpan={10} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
+              {allLoads.length>0 && (
+                <tr>
+                  <td colSpan={8} style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,fontSize:"10px",borderTop:"2px solid #111"}}>GRAND TOTAL ({allLoads.length} loads)</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,borderTop:"2px solid #111"}}>{grandTotalLbs.toLocaleString()} lbs</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,borderTop:"2px solid #111",color:"#c47d0a"}}>{grandTotalBu.toLocaleString("en-US",{maximumFractionDigits:0})} bu</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY FIELD</div>
+          <table>
+            <thead><tr>
+              {["FIELD","ACRES","LOADS","TOTAL WEIGHT","TOTAL BU","YIELD / ACRE"].map((h,i)=>(
+                <th key={h} style={{...th,textAlign:i>=3?"right":"left"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {(fields||[]).map(field=>{
+                const loads=(field.loads||[]).filter(Boolean);
+                if(!loads.length) return null;
+                const totLbs=loads.reduce((s,l)=>s+l.net,0);
+                const totBu=loads.reduce((s,l)=>s+buOf(l),0);
+                const acres=parseFloat(field.acres)||0;
+                return (
+                  <tr key={field.id}>
+                    <td style={td}>{field.name}</td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{acres||"—"}</td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{loads.length}</td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{totLbs.toLocaleString()} lbs</td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{totBu.toFixed(0)} bu</td>
+                    <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{acres>0?(totBu/acres).toFixed(1)+" bu/ac":"—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AgriScaleModule({ tenantId, token, userProfile, persist, farmId, farmName }) {
   const BASE = `tenants/${tenantId}/agriScale`;
   // Fields on non-default farms use the farm path
   const FIELD_BASE = (!farmId || farmId === "default")
@@ -162,6 +305,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [editTruck,  setET]     = useState(null);
   const [addTruck,   setAT]     = useState(false);
   const [editLoad,   setEL]     = useState(null);
+  const [showReport, setShowReport] = useState(false);
 
   const skipRef = useRef(false);
   const nextId  = useRef(Date.now());
@@ -292,6 +436,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     };
     // Always save locally first
     saveToQueue(payload);
+    asSaveCache(payload); // keep the offline fallback snapshot current with local edits too
     skipRef.current = true;
     setSyncStatus("pushing");
     try {
@@ -542,6 +687,16 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
           notes: `Exported from AgriScale — ${r.totalLbs.toLocaleString()} lbs`,
         };
         await dbWrite(`${r.flBase}/activities/${actId}`, activity, token);
+        // Also push the harvested yield into AgriPlan's field history so it shows up
+        // in that field's crop history / APH suggestions for this year.
+        try {
+          const hYr = new Date(r.date).getFullYear();
+          await fetch(
+            `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory/${encodeURIComponent(r.name)}/${hYr}.json?auth=${token}`,
+            { method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres) }) }
+          );
+        } catch(_) {}
       }
       setFLExportModal(false);
       alert(`✅ ${toExport.length} harvest ${toExport.length===1?"activity":"activities"} added to FieldLog!`);
@@ -563,6 +718,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
             <div style={{fontFamily:"'Orbitron',monospace",fontSize:"20px",fontWeight:700,color:"#4a5568",letterSpacing:"0.08em"}}>
               AGRI<span style={{color:"#4a7535"}}>SCALE</span>
+              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",fontWeight:400,color:"#8a9a80",letterSpacing:"0.1em",marginTop:"2px"}}>{farmName || "Default Farm"}</div>
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{color:"#4a5568",fontSize:"11px",letterSpacing:"0.08em"}}>{activeField?.name}</div>
@@ -846,6 +1002,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>HARVEST REPORT</div>
               <button onClick={openFLExport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↑ EXPORT TO FIELDLOG</button>
+              <button onClick={()=>setShowReport(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f0ede4",color:"#7a5a3a",border:"1px solid #c8b090",boxShadow:"0 2px 0 #a89070"}}>🖨 PRINT REPORT</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
               {[
@@ -971,6 +1128,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
       {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
       {editLoad&&<LoadMo load={editLoad.load} bins={safeBins} grains={safeGrains} onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL(null)}/>}
+      {showReport&&<PrintReport fields={safeFields} bins={safeBins} grains={safeGrains} onClose={()=>setShowReport(false)}/>}
     </>
   );
 }
