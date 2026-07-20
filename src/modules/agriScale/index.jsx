@@ -475,7 +475,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).then(d=>{
       const apArr = obj2arr(d||{}).filter(Boolean);
       const map = {};
-      apArr.forEach(a=>{ if(a?.common && a?.crop) map[a.common.trim().toLowerCase()] = a.crop; });
+      apArr.forEach(a=>{ if(a?.common && a?.crop && a.crop.trim().toLowerCase()!=="chem-fallow") map[a.common.trim().toLowerCase()] = a.crop; });
       setApCrops(map);
     }).catch(()=>{});
   },[tenantId, token]);
@@ -657,7 +657,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const apAll = obj2arr(apData || {}).filter(Boolean);
       // Exclude fields already in AgriScale by name
       const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
-      const newOnly = apAll.filter(a => a?.common && !existingNames.has(a.common.trim().toLowerCase()));
+      const newOnly = apAll.filter(a => a?.common && a.crop?.trim().toLowerCase()!=="chem-fallow" && !existingNames.has(a.common.trim().toLowerCase()));
       setAPFields(newOnly);
       setAPSelected(new Set(newOnly.map(a => a.common)));
     } catch(e) { setAPFields([]); }
