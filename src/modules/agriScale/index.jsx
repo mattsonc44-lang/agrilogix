@@ -297,7 +297,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [apFields,      setAPFields]      = useState([]);
   const [apSelected,    setAPSelected]    = useState(new Set());
   const [apLoading,     setAPLoading]     = useState(false);
-  const [apCrops,       setApCrops]       = useState({}); // field name (lowercase) -> planned/actual crop from AgriPlan
+  const [apCrops,       setApCrops]       = useState({}); // field name (lowercase) -> planned crop from AgriPlan
+  const [flCrops,       setFlCrops]       = useState({}); // field name (lowercase) -> actually-seeded crop from FieldLog
   const [flExportModal, setFLExportModal] = useState(false);
   const [flExportData,  setFLExportData]  = useState([]);
   const [flExportSel,   setFLExportSel]   = useState(new Set());
@@ -468,7 +469,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const activeBin   = safeBins.find(b=>b.id===activeBinId)     || safeBins[0];
   const activeTruck = safeTrucks.find(t=>t.id===truckColor)    || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
-  // ── Pull this year's planned/actual crop per field from AgriPlan, keyed by field name ──
+  // ── Pull this year's PLANNED crop per field from AgriPlan, keyed by field name ──
   useEffect(()=>{
     if(!tenantId) return;
     const yr = new Date().getFullYear();
@@ -480,14 +481,62 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     }).catch(()=>{});
   },[tenantId, token]);
 
-  // ── Auto-select the commodity that matches the active field's AgriPlan crop ──
+  // ── Pull the crop actually SEEDED per field from FieldLog's most recent seeding activity ──
+  useEffect(()=>{
+    if(!tenantId) return;
+    const flBase = (!farmId || farmId === "default")
+      ? `tenants/${tenantId}/fieldlog`
+      : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
+    Promise.all([
+      dbRead(`${flBase}/fields`, token).catch(()=>null),
+      dbRead(`${flBase}/activities`, token).catch(()=>null),
+    ]).then(([fieldData, actData])=>{
+      const flFieldsAll = obj2arr(fieldData||{}).filter(Boolean);
+      const flById = {};
+      flFieldsAll.forEach(f=>{ if(f?.id) flById[f.id]=f; });
+      const seedings = obj2arr(actData||{}).filter(Boolean).filter(a=>a.type==="seeding" && a.data?.crop);
+      // keep only the most recent seeding activity per FieldLog field
+      const latestByField = {};
+      seedings.forEach(a=>{
+        const existing = latestByField[a.fieldId];
+        if(!existing || new Date(a.date) > new Date(existing.date)) latestByField[a.fieldId]=a;
+      });
+      const map = {};
+      Object.values(latestByField).forEach(a=>{
+        const f = flById[a.fieldId];
+        if(f?.name) map[f.name.trim().toLowerCase()] = a.data.crop;
+      });
+      setFlCrops(map);
+    }).catch(()=>{});
+  },[tenantId, farmId, token]);
+
+  // ── Look up a crop by field name, tolerating name differences between modules ──
+  // (AgriPlan often keeps a short "common" name separate from farm/landlord, while
+  //  AgriScale field names are sometimes a combined string like "Field 2 - Duncan's" —
+  //  so an exact match won't always exist even for the same real field.)
+  const lookupCropByName = (fieldName, cropMap) => {
+    if(!fieldName) return null;
+    const name = fieldName.trim().toLowerCase();
+    if(cropMap[name]) return cropMap[name]; // exact match first
+    let best = null, bestLen = 0;
+    for(const key in cropMap){
+      if(key.length < 3) continue; // skip trivially short names to avoid false positives
+      if((name.includes(key) || key.includes(name)) && key.length > bestLen){
+        best = cropMap[key]; bestLen = key.length;
+      }
+    }
+    return best;
+  };
+
+  // ── Auto-select the commodity that matches what's actually seeded on the active field ──
+  // (FieldLog's real seeding record wins; AgriPlan's plan is only a fallback if nothing's seeded yet)
   useEffect(()=>{
     if(!activeField || !activeField.name) return;
-    const crop = apCrops[activeField.name.trim().toLowerCase()];
+    const crop = lookupCropByName(activeField.name, flCrops) || lookupCropByName(activeField.name, apCrops);
     if(!crop) return;
     const idx = safeGrains.findIndex(g=>(g.name||"").toLowerCase()===crop.toLowerCase());
     if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
-  },[activeFieldId, apCrops]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[activeFieldId, apCrops, flCrops]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Numpad ────────────────────────────────────────────────────
   const onKey = k => {
