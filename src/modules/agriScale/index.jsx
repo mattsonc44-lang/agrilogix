@@ -315,10 +315,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     if(!tenantId) return;
     dbRead(BASE,token).then(d=>{
       if(d){
-        const fl=obj2arr(d.fields||{});
-        const bl=obj2arr(d.bins||{});
-        const gl=obj2arr(d.customGrains||{});
-        const tl=obj2arr(d.trucks||{});
+        const fl=obj2arr(d.fields||{}).filter(Boolean);
+        const bl=obj2arr(d.bins||{}).filter(Boolean);
+        const gl=obj2arr(d.customGrains||{}).filter(Boolean);
+        const tl=obj2arr(d.trucks||{}).filter(Boolean);
         if(fl.length){
           const farmFields = (!farmId||farmId==="default") ? fl.filter(f=>!f.farmId||f.farmId==="default") : fl.filter(f=>f.farmId===farmId);
           setFields(farmFields); setAFId(farmFields[0]?.id||null);
@@ -335,10 +335,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     }).catch(()=>{
       const cached = asLoadCache();
       if(cached){
-        const fl=obj2arr(cached.fields||{});
-        const bl=obj2arr(cached.bins||{});
-        const gl=obj2arr(cached.customGrains||{});
-        const tl=obj2arr(cached.trucks||{});
+        const fl=obj2arr(cached.fields||{}).filter(Boolean);
+        const bl=obj2arr(cached.bins||{}).filter(Boolean);
+        const gl=obj2arr(cached.customGrains||{}).filter(Boolean);
+        const tl=obj2arr(cached.trucks||{}).filter(Boolean);
         if(fl.length){ const ff=(!farmId||farmId==="default")?fl.filter(f=>!f.farmId||f.farmId==="default"):fl.filter(f=>f.farmId===farmId); setFields(ff); setAFId(ff[0]?.id||null); }
         if(bl.length){ setBins(bl); setABId(bl[0].id); }
         if(gl.length) setGrains(gl);
@@ -383,16 +383,16 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const mergeWithRemote = (remote, localData) => {
     if(!remote?.fields) return localData;
     const remoteIds = new Set();
-    obj2arr(remote.fields||{}).forEach(f=>(f.loads||[]).forEach(l=>remoteIds.add(l.id)));
-    const localFields = obj2arr(localData.fields||{});
-    const merged = obj2arr(remote.fields||{}).map(rf=>{
+    obj2arr(remote.fields||{}).filter(Boolean).forEach(f=>(f.loads||[]).forEach(l=>remoteIds.add(l.id)));
+    const localFields = obj2arr(localData.fields||{}).filter(Boolean);
+    const merged = obj2arr(remote.fields||{}).filter(Boolean).map(rf=>{
       const lf = localFields.find(f=>f.id===rf.id);
       const extra = lf ? (lf.loads||[]).filter(l=>!remoteIds.has(l.id)) : [];
       return {...rf, loads:[...(rf.loads||[]),...extra].sort((a,b)=>(a.ts||0)-(b.ts||0))};
     });
     localFields.forEach(lf=>{ if(!merged.find(mf=>mf.id===lf.id)) merged.push(lf); });
     const allLoads = merged.flatMap(f=>f.loads||[]);
-    const mergedBins = obj2arr(remote.bins||{}).map(rb=>({...rb, storedLbs:allLoads.filter(l=>l.binId===rb.id).reduce((s,l)=>s+l.net,0)}));
+    const mergedBins = obj2arr(remote.bins||{}).filter(Boolean).map(rb=>({...rb, storedLbs:allLoads.filter(l=>l.binId===rb.id).reduce((s,l)=>s+l.net,0)}));
     return {...localData, fields:Object.fromEntries(merged.map(f=>[f.id,f])), bins:Object.fromEntries(mergedBins.map(b=>[b.id,b]))};
   };
 
