@@ -535,14 +535,22 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   // Priority: exact match (FieldLog seeding, then AgriPlan plan) beats ANY fuzzy match —
   // a fuzzy guess from either source should never override a real exact match from the other.
   useEffect(()=>{
-    if(!activeField || !activeField.name) return;
-    const crop = exactCrop(activeField.name, flCrops)
-              || exactCrop(activeField.name, apCrops)
-              || fuzzyCrop(activeField.name, flCrops)
-              || fuzzyCrop(activeField.name, apCrops);
-    if(!crop) return;
+    if(!activeField || !activeField.name) { console.log("[CROP-DEBUG2] no active field"); return; }
+    const flExact = exactCrop(activeField.name, flCrops);
+    const apExact = exactCrop(activeField.name, apCrops);
+    const flFuzzy = fuzzyCrop(activeField.name, flCrops);
+    const apFuzzy = fuzzyCrop(activeField.name, apCrops);
+    const crop = flExact || apExact || flFuzzy || apFuzzy;
+    console.log("[CROP-DEBUG2] field:", JSON.stringify(activeField.name));
+    console.log("[CROP-DEBUG2]   flExact:", flExact, "| apExact:", apExact, "| flFuzzy:", flFuzzy, "| apFuzzy:", apFuzzy);
+    console.log("[CROP-DEBUG2]   resolved crop:", JSON.stringify(crop));
+    console.log("[CROP-DEBUG2]   current commodities:", JSON.stringify(safeGrains.map(g=>g.name)));
+    if(!crop) { console.log("[CROP-DEBUG2]   -> no crop resolved, stopping here"); return; }
     const idx = safeGrains.findIndex(g=>(g.name||"").toLowerCase()===crop.toLowerCase());
-    if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
+    console.log("[CROP-DEBUG2]   matching", JSON.stringify(crop.toLowerCase()), "against commodities lowercased:", JSON.stringify(safeGrains.map(g=>(g.name||"").toLowerCase())), "-> index", idx);
+    if(idx>=0 && idx!==grainIdx) { console.log("[CROP-DEBUG2]   -> SETTING grainIdx to", idx); setGrainIdx(idx); }
+    else if (idx<0) { console.log("[CROP-DEBUG2]   -> NO MATCHING COMMODITY FOUND"); }
+    else { console.log("[CROP-DEBUG2]   -> already selected, no change needed"); }
   },[activeFieldId, apCrops, flCrops]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Numpad ────────────────────────────────────────────────────
