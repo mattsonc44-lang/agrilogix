@@ -3,8 +3,6 @@ import JSZip from "jszip";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
 
-const ANTHROPIC_KEY = (typeof window !== "undefined" && window.__ANTHROPIC_KEY__) || "";
-
 // ── Google Fonts ──────────────────────────────────────────────────────
 if (!document.getElementById("fl-fonts")) {
   const l=document.createElement("link");
@@ -2021,7 +2019,7 @@ function AddFieldView({onBack,onSave}){
 }
 
 // ── Import Fields Modal ───────────────────────────────────────────────
-function ImportFieldsModal({onClose,onImport}){
+function ImportFieldsModal({onClose,onImport,token}){
   const[tab,setTab]      =useState("file");
   const[step,setStep]    =useState("upload");
   const[parsed,setParsed]=useState([]);
@@ -2092,8 +2090,6 @@ function ImportFieldsModal({onClose,onImport}){
     const file=e.target.files[0]; if(!file) return;
     setBusy(true); setErr(""); setScanNote("");
     try{
-      if(!ANTHROPIC_KEY) throw new Error("API key not configured — check ANTHROPIC_KEY in Netlify environment variables.");
-
       // Resize to max 1600px JPEG to keep payload manageable
       const base64=await new Promise((res,rej)=>{
         const img=new Image();
@@ -2115,46 +2111,21 @@ function ImportFieldsModal({onClose,onImport}){
         img.onerror=rej; img.src=url;
       });
 
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{
+      const resp=await fetch("/.netlify/functions/scan-farm-map",{
         method:"POST",
         headers:{
           "Content-Type":"application/json",
-          "x-api-key":ANTHROPIC_KEY,
-          "anthropic-version":"2023-06-01",
-          "anthropic-dangerous-direct-browser-access":"true",
+          "Authorization":`Bearer ${token}`,
         },
-        body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001",
-          max_tokens:2000,
-          messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:`This is a USDA FSA farm map from Montana.
-
-Step 1 — Read every field label: tract numbers, field numbers, legal descriptions (Section-Township-Range), and acreages.
-
-Step 2 — For each field, calculate four corner GPS coordinates using the Montana PLSS system:
-- Montana Principal Meridian: 45.7764°N, 111.0667°W
-- Townships go north (N) from baseline, each 6 miles (0.08682° lat)
-- Ranges go east (E) or west (W) from meridian, each 6 miles
-- Sections are 1×1 mile, numbered 1-36 (row 1 north: 6,5,4,3,2,1 west to east; row 2: 7,8,9,10,11,12 west to east; etc.)
-- Quarter sections (NW/NE/SW/SE) are 0.5×0.5 mile (160 ac)
-
-Reply ONLY with valid JSON, no markdown fences:
-{"fields":[{"name":"Tract 1 Field 1","acres":160,"legalDesc":"NW Sec 12 T34N R15E","boundary":[[lat,lng],[lat,lng],[lat,lng],[lat,lng]]}],"notes":"accuracy note"}`}
-          ]}]
-        })
+        body:JSON.stringify({ image: base64 })
       });
 
       if(!resp.ok){
         const body=await resp.text();
         throw new Error(`API ${resp.status}: ${body.slice(0,300)}`);
       }
-      const data=await resp.json();
-      const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
-      if(!txt) throw new Error("Empty response — check API key and credits at console.anthropic.com");
-      const match=txt.match(/\{[\s\S]*\}/);
-      if(!match) throw new Error("Response wasn't JSON. Got: "+txt.slice(0,200));
-      const result=JSON.parse(match[0]);
+      const result=await resp.json();
+      if(result.error) throw new Error(result.error);
       setScanNote(result.notes||"");
       const fields=(result.fields||[]).map(f=>({
         id:genId(), name:f.name||"Scanned Field",
@@ -4061,7 +4032,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         onClose={()=>setShowAdd(false)}
         onSave={addActivity}
       />}
-      {showImport&&<ImportFieldsModal onClose={()=>setShowImport(false)} onImport={importFields}/>}
+      {showImport&&<ImportFieldsModal onClose={()=>setShowImport(false)} onImport={importFields} token={token}/>}
       {showSettings&&<SettingsModal settings={settings} onSave={setSettings} onClose={()=>setShowSettings(false)} onBulkImport={bulkImportAgriScale} bulkLoading={bulkLoading}/>}
       {showProducts&&<ProductsModal products={products} onSave={saveProducts} onClose={()=>setShowProducts(false)}/>}
       {showPending&&<PendingLoadsModal
