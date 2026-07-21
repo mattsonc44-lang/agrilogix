@@ -1535,7 +1535,7 @@ ${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;return`<
   <th class="r">Expenses</th><th class="r">Exp $/Ac</th>
   <th class="r">Net Income</th>
 </tr></thead><tbody>
-${fields.map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
+${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numeric:true,sensitivity:"base"})||(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
   <td><span class="badge ent">${(f.entity||"").slice(0,8)||"—"}</span></td>
   <td>${f.farm}</td>
   <td><strong>${f.common}</strong></td>
@@ -3277,7 +3277,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
                         onChange={e => setMatches(m => ({ ...m, [i]: e.target.value }))}
                         style={{ width:"100%", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 6px", fontSize:11, background:"#f8fbf5", color:"#1a3010" }}>
                         <option value="">— skip —</option>
-                        {fields.map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
+                        {[...fields].sort((a,b)=>(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
                       </select>
                     </td>
                   </tr>
@@ -3645,7 +3645,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   },[years]);
   const filtered=useMemo(()=>{let fs=fields;if(entityFilter!=="all")fs=fs.filter(f=>f.entity===entityFilter);if(searchQ){const q=searchQ.toLowerCase();fs=fs.filter(f=>f.common?.toLowerCase().includes(q)||f.farm?.toLowerCase().includes(q)||f.crop?.toLowerCase().includes(q)||f.legal?.toLowerCase().includes(q));}return fs;},[fields,entityFilter,searchQ]);
   const totals=useMemo(()=>filtered.reduce((a,f)=>{const c=calc(f);return{acres:a.acres+f.acres,revenue:a.revenue+c.revenue,guarantee:a.guarantee+c.guarantee,expenses:a.expenses+c.expenses,net:a.net+c.net};},{acres:0,revenue:0,guarantee:0,expenses:0,net:0}),[filtered]);
-  const farmGroups=useMemo(()=>{const g={};filtered.forEach(f=>{const k=`${f.entity}::${f.farm}`;if(!g[k])g[k]={entity:f.entity,farm:f.farm,fields:[]};g[k].fields.push(f);});return Object.values(g);},[filtered]);
+  const farmGroups=useMemo(()=>{const g={};filtered.forEach(f=>{const k=`${f.entity}::${f.farm}`;if(!g[k])g[k]={entity:f.entity,farm:f.farm,fields:[]};g[k].fields.push(f);});const cmp=(a,b)=>(a||"").localeCompare(b||"",undefined,{numeric:true,sensitivity:"base"});const groups=Object.values(g);groups.forEach(grp=>grp.fields.sort((a,b)=>cmp(a.common,b.common)));groups.sort((a,b)=>cmp(a.farm,b.farm)||cmp(a.entity,b.entity));return groups;},[filtered]);
   const pushUndo = useCallback((prev)=>{
     undoStack.current=[...undoStack.current.slice(-19),prev]; // keep last 20
     setCanUndo(true);
