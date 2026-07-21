@@ -477,7 +477,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).then(d=>{
       const apArr = obj2arr(d||{}).filter(Boolean);
       const map = {};
-      apArr.forEach(a=>{ if(a?.common && a?.crop && a.crop.trim().toLowerCase()!=="chem-fallow") map[a.common.trim().toLowerCase()] = a.crop; });
+      apArr.forEach(a=>{ if(a?.common && a?.crop && a.crop.trim().toLowerCase()!=="chem-fallow") map[a.common.trim().toLowerCase()] = normalizeCropName(a.crop); });
       setApCrops(map);
     }).catch(()=>{});
   },[tenantId, token]);
@@ -506,7 +506,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       Object.values(latestByField).forEach(a=>{
         const f = flById[a.fieldId];
         const cropNames = a.data.crops.map(c=>c?.crop).filter(Boolean);
-        if(f?.name && cropNames.length) map[f.name.trim().toLowerCase()] = cropNames.join("/");
+        if(f?.name && cropNames.length) map[f.name.trim().toLowerCase()] = cropNames.join(" + ");
       });
       setFlCrops(map);
     }).catch(()=>{});
@@ -655,6 +655,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   };
 
   // ── Make sure every crop coming in from an import exists as a commodity ──
+  // ── Normalize a crop name so blends read the same everywhere, regardless of source ──
+  // AgriPlan stores blends like "Austrians/Mustard"; FieldLog shows them as "Austrians + Mustard".
+  // Canonical form used throughout AgriScale is " + ", so both sources resolve to one commodity.
+  const normalizeCropName = (crop) => (crop||"").replace(/\s*\/\s*/g, " + ").trim();
+
   const ensureGrainsForCrops = (cropNames, currentGrains) => {
     let ng = [...currentGrains];
     cropNames.forEach(crop => {
@@ -715,7 +720,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       };
     });
 
-    const cropsUsed = toImport.map(f => apFields.find(a => norm(a.common) === norm(f.name))?.crop).filter(Boolean);
+    const cropsUsed = toImport.map(f => apFields.find(a => norm(a.common) === norm(f.name))?.crop).filter(Boolean).map(normalizeCropName);
     const ng = ensureGrainsForCrops(cropsUsed, grains);
 
     const nf = [...fields, ...newFields];
@@ -771,7 +776,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     });
 
     const nf = [...fields, ...newFields];
-    const cropsUsed = toImport.map(a => a.crop).filter(Boolean);
+    const cropsUsed = toImport.map(a => a.crop).filter(Boolean).map(normalizeCropName);
     const ng = ensureGrainsForCrops(cropsUsed, grains);
     setFields(nf); setGrains(ng); save(nf, bins, ng, trucks);
     setAPImportModal(false);
