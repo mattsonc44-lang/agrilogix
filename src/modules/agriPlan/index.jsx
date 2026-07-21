@@ -2373,10 +2373,10 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       {/* Prior year toggle */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"8px 12px",background:"#ffffff",borderRadius:6,border:"1px solid #1e3020"}}>
         <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Compare to:</span>
-        {Object.keys(YEAR_LABELS).map(yr=>(<button key={yr} onClick={()=>setPriorYear(yr)} style={{background:priorYear===yr?"#2a7a18":"transparent",border:"1px solid #2a4030",borderRadius:3,padding:"4px 10px",color:priorYear===yr?"#1a7010":"#6a8a50",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>{yr}</button>))}
+        {Object.keys(YEAR_LABELS).map(yr=>(<button key={yr} onClick={()=>setPriorYear(yr)} style={{background:priorYear===yr?"#2a7a18":"transparent",border:"1px solid #2a4030",borderRadius:3,padding:"4px 10px",color:priorYear===yr?"#ffffff":"#6a8a50",fontSize:10,fontWeight:priorYear===yr?700:400,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>{yr}</button>))}
         <span style={{marginLeft:"auto",fontSize:10}}>
-          <span style={{background:"#1a2a10",padding:"2px 8px",borderRadius:3,color:"#2a7010",marginRight:6}}>● Crop Default</span>
-          <span style={{background:"#2a1a05",padding:"2px 8px",borderRadius:3,color:"#9a6010"}}>★ Field Override</span>
+          <span style={{background:"#e8f4e0",padding:"2px 8px",borderRadius:3,color:"#1a5010",fontWeight:600,marginRight:6}}>● Crop Default</span>
+          <span style={{background:"#f4ecd8",padding:"2px 8px",borderRadius:3,color:"#7a4a10",fontWeight:600}}>★ Field Override</span>
         </span>
       </div>
       {/* Column headers */}
