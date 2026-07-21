@@ -3810,7 +3810,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       {/* Sidebar */}
       <div style={{width:235,background:"#e6eed8",borderRight:"1px solid #162016",overflowY:"auto",flexShrink:0,display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",gap:4,padding:"8px 10px",borderBottom:"1px solid #162016"}}>
-          {[["all","All"],...([...new Set(fields.map(f=>f.entity))].filter(Boolean).map(e=>[e,e.length>8?e.slice(0,7)+"…":e]))].map(([v,l])=>(<button key={v} onClick={()=>setEntityFilter(v)} style={{flex:1,fontSize:10,padding:"4px 0",borderRadius:3,border:"none",cursor:"pointer",background:entityFilter===v?"#2a7a18":"#eef4e6",color:entityFilter===v?"#1a7010":"#6a8a50",fontFamily:"'Barlow',sans-serif"}}>{l}</button>))}
+          {[["all","All"],...([...new Set(fields.map(f=>f.entity))].filter(Boolean).map(e=>[e,e.length>8?e.slice(0,7)+"…":e]))].map(([v,l])=>(<button key={v} onClick={()=>setEntityFilter(v)} style={{flex:1,fontSize:10,padding:"4px 0",borderRadius:3,border:"none",cursor:"pointer",background:entityFilter===v?"#2a7a18":"#eef4e6",color:entityFilter===v?"#ffffff":"#6a8a50",fontWeight:entityFilter===v?700:400,fontFamily:"'Barlow',sans-serif"}}>{l}</button>))}
         </div>
         <div style={{padding:"6px 10px",borderBottom:"1px solid #162016"}}>
           <input placeholder="🔍 search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"4px 8px",color:"#1a7010",fontFamily:"'Barlow',sans-serif",fontSize:11,width:"100%",outline:"none"}}/>
