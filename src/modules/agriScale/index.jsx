@@ -535,22 +535,18 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   // Priority: exact match (FieldLog seeding, then AgriPlan plan) beats ANY fuzzy match —
   // a fuzzy guess from either source should never override a real exact match from the other.
   useEffect(()=>{
-    if(!activeField || !activeField.name) { console.log("[CROP-DEBUG2] no active field"); return; }
-    const flExact = exactCrop(activeField.name, flCrops);
-    const apExact = exactCrop(activeField.name, apCrops);
-    const flFuzzy = fuzzyCrop(activeField.name, flCrops);
-    const apFuzzy = fuzzyCrop(activeField.name, apCrops);
-    const crop = flExact || apExact || flFuzzy || apFuzzy;
-    console.log("[CROP-DEBUG2] field:", JSON.stringify(activeField.name));
-    console.log("[CROP-DEBUG2]   flExact:", flExact, "| apExact:", apExact, "| flFuzzy:", flFuzzy, "| apFuzzy:", apFuzzy);
-    console.log("[CROP-DEBUG2]   resolved crop:", JSON.stringify(crop));
-    console.log("[CROP-DEBUG2]   current commodities:", JSON.stringify(safeGrains.map(g=>g.name)));
-    if(!crop) { console.log("[CROP-DEBUG2]   -> no crop resolved, stopping here"); return; }
-    const idx = safeGrains.findIndex(g=>(g.name||"").toLowerCase()===crop.toLowerCase());
-    console.log("[CROP-DEBUG2]   matching", JSON.stringify(crop.toLowerCase()), "against commodities lowercased:", JSON.stringify(safeGrains.map(g=>(g.name||"").toLowerCase())), "-> index", idx);
-    if(idx>=0 && idx!==grainIdx) { console.log("[CROP-DEBUG2]   -> SETTING grainIdx to", idx); setGrainIdx(idx); }
-    else if (idx<0) { console.log("[CROP-DEBUG2]   -> NO MATCHING COMMODITY FOUND"); }
-    else { console.log("[CROP-DEBUG2]   -> already selected, no change needed"); }
+    if(!activeField || !activeField.name) return;
+    const crop = exactCrop(activeField.name, flCrops)
+              || exactCrop(activeField.name, apCrops)
+              || fuzzyCrop(activeField.name, flCrops)
+              || fuzzyCrop(activeField.name, apCrops);
+    if(!crop) return;
+    // Compare on letters/numbers only — AgriPlan and FieldLog don't always agree on how
+    // to separate blend crops ("Austrians/Mustard" vs "Austrians Mustard" vs "Austrians + Mustard"),
+    // so ignore spacing/punctuation entirely rather than requiring one exact delimiter convention.
+    const canon = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const idx = safeGrains.findIndex(g => canon(g.name) === canon(crop));
+    if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
   },[activeFieldId, apCrops, flCrops]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Numpad ────────────────────────────────────────────────────
@@ -669,12 +665,13 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const normalizeCropName = (crop) => (crop||"").replace(/\s*\/\s*/g, " + ").trim();
 
   const ensureGrainsForCrops = (cropNames, currentGrains) => {
+    const canon = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g, "");
     let ng = [...currentGrains];
     cropNames.forEach(crop => {
       if(!crop) return;
       const label = crop.trim().toUpperCase();
       if(!label || label.toLowerCase()==="chem-fallow") return;
-      const exists = ng.some(g=>(g.name||"").toUpperCase()===label);
+      const exists = ng.some(g=>canon(g.name)===canon(label));
       if(!exists){
         const color = GRAIN_COLORS[ng.length % GRAIN_COLORS.length];
         ng.push({ name: label, bushel_lbs: 60, color });
