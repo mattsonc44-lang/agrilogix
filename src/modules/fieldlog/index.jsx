@@ -800,7 +800,7 @@ function SeedingForm({v,set,products={},onAddProduct,cropList=CROPS}){
                   <SavePrompt
                     name={n.product}
                     dismissed={sp.inocs[n.id]==="dismissed"}
-                    onYes={()=>addProduct("chemicals",{_id:n.id, name:n.product, type:"Inoculant/Seed Treatment", defaultRate:n.rate||"", unit:"oz/cwt"})}
+                    onYes={()=>addProduct("inoculants",{_id:n.id, name:n.product, defaultRate:n.rate||""})}
                     onNo={()=>dismiss("inocs",n.id)}
                   />
                 </div>
@@ -3061,6 +3061,7 @@ function ProductsModal({ products, onSave, onClose }) {
     seeds:           (products?.seeds           || []).map(x=>({...x})),
     chemicals:       (products?.chemicals       || []).map(x=>({...x})),
     fertilizers:     (products?.fertilizers     || []).map(x=>({...x})),
+    inoculants:      (products?.inoculants      || []).map(x=>({...x})),
     tankMixPresets:  (products?.tankMixPresets  || []).map(x=>({...x, chemicals:(x.chemicals||[]).map(c=>({...c}))})),
   });
 
@@ -3115,7 +3116,7 @@ function ProductsModal({ products, onSave, onClose }) {
 
   const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","g/ac"];
   const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
-  const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Inoculant/Seed Treatment","Other"];
+  const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
 
   const add = (cat, defaults) => setItems(p => ({ ...p, [cat]: [...p[cat], { id: genId(), ...defaults }] }));
   const upd = (cat, id, k, v) => setItems(p => ({ ...p, [cat]: p[cat].map(x => x.id === id ? { ...x, [k]: v } : x) }));
@@ -3127,6 +3128,7 @@ function ProductsModal({ products, onSave, onClose }) {
     { id: "seeds",          icon: "🌱", label: "Seeds",       color: "#4A8A4A" },
     { id: "chemicals",      icon: "💧", label: "Chemicals",   color: "#2563EB" },
     { id: "fertilizers",    icon: "⚗️", label: "Fertilizers", color: "#C07010" },
+    { id: "inoculants",     icon: "🧪", label: "Inoculants",  color: "#2A6A28" },
     { id: "tankMixPresets", icon: "🧪", label: "Tank Mixes",  color: "#7A3090" },
   ];
 
@@ -3341,6 +3343,36 @@ function ProductsModal({ products, onSave, onClose }) {
             <button onClick={()=>add("fertilizers",{name:"",analysis:"",defaultRate:"",unit:"lbs/ac"})}
               style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#D8C090",color:"#7A6020",fontSize:"12px" }}>
               + Add Fertilizer
+            </button>
+          </div>
+        )}
+
+        {/* ── Inoculants Tab ── */}
+        {tab === "inoculants" && (
+          <div>
+            {items.inoculants.length === 0 && (
+              <div style={{ textAlign:"center",padding:"20px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px",marginBottom:"12px" }}>
+                No inoculants saved yet. Add your products below.
+              </div>
+            )}
+            {items.inoculants.map((n, i) => (
+              <div key={n.id} style={{ background:"#EFF7ED",border:"1px solid #A8CCA4",borderRadius:"7px",padding:"10px",marginBottom:"8px" }}>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 140px 32px",gap:"6px",alignItems:"flex-end" }}>
+                  <div>
+                    {i===0&&<label style={S.label}>Product Name</label>}
+                    <input style={S.input} placeholder="e.g. Nodulator PRO, TagTeam, Optimize" value={n.name||""} onChange={e=>upd("inoculants",n.id,"name",e.target.value)}/>
+                  </div>
+                  <div>
+                    {i===0&&<label style={S.label}>Default Rate</label>}
+                    <input style={S.input} type="text" placeholder="e.g. 4 oz/cwt" value={n.defaultRate||""} onChange={e=>upd("inoculants",n.id,"defaultRate",e.target.value)}/>
+                  </div>
+                  <button onClick={()=>del("inoculants",n.id)} style={{ ...mkBtn("ghost"),padding:"7px",color:T.danger,border:"none",background:"transparent",fontSize:"15px",alignSelf:"flex-end" }}>✕</button>
+                </div>
+              </div>
+            ))}
+            <button onClick={()=>add("inoculants",{name:"",defaultRate:""})}
+              style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#A8CCA4",color:"#2A6A28",fontSize:"12px" }}>
+              + Add Inoculant
             </button>
           </div>
         )}
