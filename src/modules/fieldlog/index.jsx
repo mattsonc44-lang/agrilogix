@@ -3115,7 +3115,7 @@ function ProductsModal({ products, onSave, onClose }) {
 
   const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","g/ac"];
   const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
-  const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
+  const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Inoculant/Seed Treatment","Other"];
 
   const add = (cat, defaults) => setItems(p => ({ ...p, [cat]: [...p[cat], { id: genId(), ...defaults }] }));
   const upd = (cat, id, k, v) => setItems(p => ({ ...p, [cat]: p[cat].map(x => x.id === id ? { ...x, [k]: v } : x) }));
