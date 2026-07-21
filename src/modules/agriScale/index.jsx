@@ -510,14 +510,15 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     }).catch(()=>{});
   },[tenantId, farmId, token]);
 
-  // ── Look up a crop by field name, tolerating name differences between modules ──
-  // (AgriPlan often keeps a short "common" name separate from farm/landlord, while
-  //  AgriScale field names are sometimes a combined string like "Field 2 - Duncan's" —
-  //  so an exact match won't always exist even for the same real field.)
-  const lookupCropByName = (fieldName, cropMap) => {
+  // ── Look up a crop by field name, exact match only ──
+  const exactCrop = (fieldName, cropMap) => {
+    if(!fieldName) return null;
+    return cropMap[fieldName.trim().toLowerCase()] || null;
+  };
+  // ── Look up a crop by field name, tolerating combined/partial names (last resort only) ──
+  const fuzzyCrop = (fieldName, cropMap) => {
     if(!fieldName) return null;
     const name = fieldName.trim().toLowerCase();
-    if(cropMap[name]) return cropMap[name]; // exact match first
     let best = null, bestLen = 0;
     for(const key in cropMap){
       if(key.length < 3) continue; // skip trivially short names to avoid false positives
@@ -529,10 +530,14 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   };
 
   // ── Auto-select the commodity that matches what's actually seeded on the active field ──
-  // (FieldLog's real seeding record wins; AgriPlan's plan is only a fallback if nothing's seeded yet)
+  // Priority: exact match (FieldLog seeding, then AgriPlan plan) beats ANY fuzzy match —
+  // a fuzzy guess from either source should never override a real exact match from the other.
   useEffect(()=>{
     if(!activeField || !activeField.name) return;
-    const crop = lookupCropByName(activeField.name, flCrops) || lookupCropByName(activeField.name, apCrops);
+    const crop = exactCrop(activeField.name, flCrops)
+              || exactCrop(activeField.name, apCrops)
+              || fuzzyCrop(activeField.name, flCrops)
+              || fuzzyCrop(activeField.name, apCrops);
     if(!crop) return;
     const idx = safeGrains.findIndex(g=>(g.name||"").toLowerCase()===crop.toLowerCase());
     if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
