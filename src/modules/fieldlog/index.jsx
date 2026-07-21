@@ -611,6 +611,7 @@ const PULSE_CROPS = ["Peas","Lentils","Chickpeas","Soybeans"];
 function SeedingForm({v,set,products={},onAddProduct,cropList=CROPS}){
   const mySeeds = products.seeds || [];
   const myFerts = products.fertilizers || [];
+  const myInocs = products.inoculants || [];
   // When a saved seed is picked, auto-fill rate
   const pickSeed = (cropId, seedName) => {
     const found = mySeeds.find(s => s.name === seedName);
@@ -789,6 +790,19 @@ function SeedingForm({v,set,products={},onAddProduct,cropList=CROPS}){
             <div style={{display:"flex",gap:"8px",alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:"2 1 180px"}}>
                 <label style={S.label}>Product #{i+1}</label>
+                {myInocs.length>0&&(
+                  <select style={{...S.input,marginBottom:"6px"}} value="" onChange={e=>{
+                    const val=e.target.value;
+                    if(!val) return;
+                    const saved=myInocs.find(mi=>mi.name===val);
+                    updInoculant(n.id,"product",val);
+                    if(saved && saved.defaultRate) updInoculant(n.id,"rate",saved.defaultRate);
+                    if(sp.inocs[n.id]==="dismissed") setSP(p=>({...p,inocs:{...p.inocs,[n.id]:undefined}}));
+                  }}>
+                    <option value="">── Pick from My Products (or type below) ──</option>
+                    {myInocs.map(mi=><option key={mi.id} value={mi.name}>{mi.name}</option>)}
+                  </select>
+                )}
                 <div>
                   <input style={S.input} type="text" placeholder="e.g. Nodulator PRO, TagTeam, Optimize"
                     value={n.product}
