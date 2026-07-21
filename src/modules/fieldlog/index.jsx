@@ -3713,7 +3713,10 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       if(!tenantId) return;
       setSync("saving");
       try{
-        if(q) await dbSafeWrite(BASE,q.data,token);
+        if(q) await Promise.all([
+          dbSafeWrite(`${BASE}/fields`, q.data.fields||{}, token),
+          dbSafeWrite(`${BASE}/activities`, q.data.activities||{}, token),
+        ]);
         // Re-fetch fresh data from Firebase after reconnecting
         const fresh = await dbRead(BASE, token);
         if(fresh){
@@ -3758,13 +3761,17 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const persist=useCallback(async(newFields,newActs)=>{
     setSync("saving");
     skipSSE.current=true;
-    const payload={
-      fields:    Object.fromEntries(newFields.map(f=>[f.id,f])),
-      activities:Object.fromEntries(newActs.map(a=>[a.id,a])),
-    };
+    const fieldsObj = Object.fromEntries(newFields.map(f=>[f.id,f]));
+    const actsObj   = Object.fromEntries(newActs.map(a=>[a.id,a]));
+    const payload={ fields: fieldsObj, activities: actsObj };
     flSaveQ(payload);
     try{
-      await dbSafeWrite(BASE, payload, token);
+      // Write to their own sub-paths — never PUT to BASE itself, since that would
+      // replace the whole node and silently wipe sibling data (products, settings).
+      await Promise.all([
+        dbSafeWrite(`${BASE}/fields`, fieldsObj, token),
+        dbSafeWrite(`${BASE}/activities`, actsObj, token),
+      ]);
       flClearQ();
       flSaveCache(newFields, newActs, products, settings);
       setSync("saved");
