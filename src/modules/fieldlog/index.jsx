@@ -3581,10 +3581,6 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
   const BASE = (!farmId || farmId === "default")
     ? `tenants/${tenantId}/fieldlog`
     : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
-  // Products (seeds/chemicals/fertilizers/tank mixes) are shared inventory across the whole
-  // operation, not tied to one farm — always read/write them at the tenant-wide path so
-  // switching farms never hides them.
-  const PRODUCTS_BASE = `tenants/${tenantId}/fieldlog/products`;
 
   const[view,setView]      =useState("home");
   const[fields,setFields]  =useState([]);
@@ -3598,7 +3594,7 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     const stamped = {...newProds, _v: PRODUCTS_VERSION};
     setProducts(stamped);
     skipSSE.current = true;
-    try { await dbWrite(PRODUCTS_BASE, stamped, token); } catch(e) { console.warn("Products save failed",e); }
+    try { await dbWrite(`${BASE}/products`, stamped, token); } catch(e) { console.warn("Products save failed",e); }
     finally { setTimeout(() => { skipSSE.current = false; }, 5000); }
   };
   const[settings,setSettings]=useState({
@@ -3637,12 +3633,16 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
       if(data){
         const f = obj2arr(data.fields||{});
         const a = obj2arr(data.activities||{});
+        const p = data.products || {seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]};
         const s = data.settings || {};
         setFields(f); setActs(a);
         if(data.settings) setSettings(prev=>({...prev,...s}));
+        if(data.products) setProducts(prev=>({...prev,...p}));
+        // Save to local cache for offline use
+        try{ localStorage.setItem(`fl_cache_${tenantId}_${farmId||"default"}`, JSON.stringify({fields:f,activities:a,products:p,settings:s,_at:Date.now()})); }catch(e){}
       }
     }).catch(()=>{
-      // Offline — load fields/activities/settings from local cache
+      // Offline — load from local cache
       try{
         const raw = localStorage.getItem(`fl_cache_${tenantId}_${farmId||"default"}`);
         const cached = raw ? JSON.parse(raw) : null;
@@ -3650,25 +3650,12 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
           const f = Array.isArray(cached.fields)     ? cached.fields     : obj2arr(cached.fields||{});
           const a = Array.isArray(cached.activities)  ? cached.activities : obj2arr(cached.activities||{});
           setFields(f); setActs(a);
+          if(cached.products) setProducts(p=>({...p,...cached.products}));
           if(cached.settings) setSettings(s=>({...s,...cached.settings}));
           setSync("offline");
         } else { setSync("error"); }
       }catch(e){ setSync("error"); }
     }).finally(()=>setLoading(false));
-
-    // Products load independently from the tenant-wide path
-    dbRead(PRODUCTS_BASE, token).then(p=>{
-      if(p){
-        setProducts(prev=>({...prev,...p}));
-        try{ localStorage.setItem(`fl_products_cache_${tenantId}`, JSON.stringify({products:p,_at:Date.now()})); }catch(e){}
-      }
-    }).catch(()=>{
-      try{
-        const raw = localStorage.getItem(`fl_products_cache_${tenantId}`);
-        const cached = raw ? JSON.parse(raw) : null;
-        if(cached?.products) setProducts(p=>({...p,...cached.products}));
-      }catch(e){}
-    });
   },[tenantId,token]);
 
   // ── Real-time listener ────────────────────────────────────
@@ -3676,23 +3663,14 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
     if(loading||!tenantId) return;
     return dbListen(BASE, token, ({data})=>{
       if(skipSSE.current||!data) return;
-      // Only update fields/acts if present — partial snapshots (e.g. settings-only write) omit them
+      // Only update fields/acts if present — partial snapshots (e.g. products-only write) omit them
       const f2 = data.fields     ? obj2arr(data.fields)     : null;
       const a2 = data.activities ? obj2arr(data.activities) : null;
       if(f2 !== null) setFields(f2);
       if(a2 !== null) setActs(a2);
       if(data.settings) setSettings(s=>({...s,...data.settings}));
-      if(f2 !== null && a2 !== null) flSaveCache(f2, a2, products, data.settings||{});
-    });
-  },[loading,tenantId,token]);
-
-  // Products listen independently at the tenant-wide path
-  useEffect(()=>{
-    if(loading||!tenantId) return;
-    return dbListen(PRODUCTS_BASE, token, ({data})=>{
-      if(skipSSE.current||!data) return;
-      setProducts(p=>({...p,...data}));
-      try{ localStorage.setItem(`fl_products_cache_${tenantId}`, JSON.stringify({products:data,_at:Date.now()})); }catch(e){}
+      if(data.products) setProducts(p=>({...p,...data.products}));
+      if(f2 !== null && a2 !== null) flSaveCache(f2, a2, data.products||{}, data.settings||{});
     });
   },[loading,tenantId,token]);
 
@@ -3706,14 +3684,13 @@ export default function FieldLogModule({ tenantId, token, userProfile, persist: 
         if(q) await dbSafeWrite(BASE,q.data,token);
         // Re-fetch fresh data from Firebase after reconnecting
         const fresh = await dbRead(BASE, token);
-        const freshProducts = await dbRead(PRODUCTS_BASE, token).catch(()=>null);
         if(fresh){
           const f3=obj2arr(fresh.fields||{});
           const a3=obj2arr(fresh.activities||{});
           setFields(f3); setActs(a3);
           if(fresh.settings) setSettings(s=>({...s,...fresh.settings}));
-          if(freshProducts) setProducts(p=>({...p,...freshProducts}));
-          flSaveCache(f3,a3,freshProducts||products,fresh.settings||{});
+          if(fresh.products) setProducts(p=>({...p,...fresh.products}));
+          flSaveCache(f3,a3,fresh.products||{},fresh.settings||{});
         }
         flClearQ();
         setSync("saved");
