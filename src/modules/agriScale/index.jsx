@@ -235,7 +235,7 @@ function PrintReport({ fields, bins, grains, onClose }) {
               ))}
             </tr></thead>
             <tbody>
-              {(fields||[]).map(field=>{
+              {[...(fields||[])].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"})).map(field=>{
                 const loads=(field.loads||[]).filter(Boolean);
                 if(!loads.length) return null;
                 const totLbs=loads.reduce((s,l)=>s+l.net,0);
@@ -458,6 +458,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   // ── Scale computed (null-safe) ────────────────────────────────
   const safeArr    = a => (Array.isArray(a)?a:[]).filter(Boolean);
   const safeFields = safeArr(fields);
+  const sortedFields = [...safeFields].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
   const safeBins   = safeArr(bins);
   const safeGrains = safeArr(grains);
   const safeTrucks = safeArr(trucks);
@@ -494,7 +495,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const flFieldsAll = obj2arr(fieldData||{}).filter(Boolean);
       const flById = {};
       flFieldsAll.forEach(f=>{ if(f?.id) flById[f.id]=f; });
-      const seedings = obj2arr(actData||{}).filter(Boolean).filter(a=>a.type==="seeding" && a.data?.crop);
+      const seedings = obj2arr(actData||{}).filter(Boolean).filter(a=>a.type==="seeding" && Array.isArray(a.data?.crops) && a.data.crops.length>0);
       // keep only the most recent seeding activity per FieldLog field
       const latestByField = {};
       seedings.forEach(a=>{
@@ -504,7 +505,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const map = {};
       Object.values(latestByField).forEach(a=>{
         const f = flById[a.fieldId];
-        if(f?.name) map[f.name.trim().toLowerCase()] = a.data.crop;
+        const cropNames = a.data.crops.map(c=>c?.crop).filter(Boolean);
+        if(f?.name && cropNames.length) map[f.name.trim().toLowerCase()] = cropNames.join("/");
       });
       setFlCrops(map);
     }).catch(()=>{});
@@ -951,7 +953,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
               <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
                 <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>FIELD</div>
                 <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                  {safeFields.map(f=>{
+                  {sortedFields.map(f=>{
                     const isActive=f.id===activeFieldId;
                     return(<button key={f.id} onClick={()=>setAFId(f.id)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:isActive?"#e8e2d8":"transparent",border:isActive?"1px solid #6a8a60":"1px solid #ccc4b8",color:isActive?"#4a6a40":"#6a7280"}}>
                       {f.name} <span style={{fontSize:"8px",color:"#8a9a80",marginLeft:"3px"}}>{(f.loads||[]).length}</span>
@@ -1073,7 +1075,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                 {perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
               </div>
             </div>
-            {safeFields.map(f=>{
+            {sortedFields.map(f=>{
               const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
               return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"6px",padding:"10px 12px",marginBottom:"8px"}}>
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
@@ -1176,7 +1178,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                 </div>
               ))}
             </div>
-            {safeFields.map(f=>{
+            {sortedFields.map(f=>{
               const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
               if(!(f.loads||[]).length) return null;
               return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
