@@ -984,7 +984,7 @@ function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHist
         return true;
       })
       .sort((a,b) => {
-        if (sortKey==="farm") return (a[1].farm+a[1].common).localeCompare(b[1].farm+b[1].common);
+        if (sortKey==="farm") return ((a[1].farm||"")+(a[1].common||"")).localeCompare((b[1].farm||"")+(b[1].common||""),undefined,{numeric:true,sensitivity:"base"});
         if (sortKey==="crop") return (a[1].history[yr]||"").localeCompare(b[1].history[yr]||"");
         if (sortKey==="acres") return b[1].acres - a[1].acres;
         return 0;
@@ -2484,7 +2484,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={}}){
     if(sortKey==="revenue"){av=calc(a).revenue;bv=calc(b).revenue;}
     else if(sortKey==="net"){av=calc(a).net;bv=calc(b).net;}
     else if(sortKey==="acres"){av=a.acres;bv=b.acres;}
-    else{av=(a.farm+a.common).toLowerCase();bv=(b.farm+b.common).toLowerCase();}
+    else{av=(a.farm||"")+(a.common||"");bv=(b.farm||"")+(b.common||"");return sortDir*av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});}
     return sortDir*(av>bv?1:av<bv?-1:0);
   }),[fields,sortKey,sortDir]);
   const ts=k=>{if(sortKey===k)setSortDir(d=>-d);else{setSortKey(k);setSortDir(1);}};
