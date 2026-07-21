@@ -297,8 +297,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [apFields,      setAPFields]      = useState([]);
   const [apSelected,    setAPSelected]    = useState(new Set());
   const [apLoading,     setAPLoading]     = useState(false);
-  const [apCrops,       setApCrops]       = useState({}); // field name (lowercase) -> planned crop from AgriPlan
-  const [flCrops,       setFlCrops]       = useState({}); // field name (lowercase) -> actually-seeded crop from FieldLog
+  const [apCrops,       setApCrops]       = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_apcrops_${tenantId}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> planned crop from AgriPlan
+  const [flCrops,       setFlCrops]       = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_flcrops_${tenantId}_${farmId||"default"}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> actually-seeded crop from FieldLog
   const [flExportModal, setFLExportModal] = useState(false);
   const [flExportData,  setFLExportData]  = useState([]);
   const [flExportSel,   setFLExportSel]   = useState(new Set());
@@ -479,6 +479,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const map = {};
       apArr.forEach(a=>{ if(a?.common && a?.crop && a.crop.trim().toLowerCase()!=="chem-fallow") map[a.common.trim().toLowerCase()] = normalizeCropName(a.crop); });
       setApCrops(map);
+      try{ localStorage.setItem(`as_apcrops_${tenantId}`, JSON.stringify(map)); }catch(e){}
     }).catch(()=>{});
   },[tenantId, token]);
 
@@ -509,6 +510,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
         if(f?.name && cropNames.length) map[f.name.trim().toLowerCase()] = cropNames.join(" + ");
       });
       setFlCrops(map);
+      try{ localStorage.setItem(`as_flcrops_${tenantId}_${farmId||"default"}`, JSON.stringify(map)); }catch(e){}
     }).catch(()=>{});
   },[tenantId, farmId, token]);
 
