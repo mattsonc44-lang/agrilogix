@@ -3264,7 +3264,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
           const errMsg = result?.error || "No result returned — the batch may not have completed";
           console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, errMsg);
           if (result?.raw) console.error(`[APH import] raw Claude response for batch ${b+1}:`, result.raw);
-          throw new Error(result?.raw ? `${errMsg} — Claude returned: "${result.raw.slice(0,300)}"` : errMsg);
+          throw new Error(result?.raw ? `${errMsg} — Claude returned: "${result.raw.slice(0,1500)}"` : errMsg);
         }
         const data = result.data || {};
         mergedUnits = mergeUnits(mergedUnits, data.units);
