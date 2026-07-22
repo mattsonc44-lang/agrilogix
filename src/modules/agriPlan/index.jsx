@@ -3213,7 +3213,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       }
       const res = await fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}/batches.json?auth=${token}`);
       const batches = (await res.json()) || {};
-      const doneCount = Object.keys(batches).filter(k => batches[k]?.status === "done" || batches[k]?.status === "error").length;
+      const doneCount = Object.keys(batches).filter(k => batches[k]?.result?.status === "done" || batches[k]?.result?.status === "error").length;
       setBatchProgress({ done: doneCount, total: totalBatches });
       if (doneCount >= totalBatches) return batches;
       await new Promise(r => setTimeout(r, POLL_MS));
@@ -3235,14 +3235,20 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
 
       const jobId = `aph_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
 
-      // Enqueue every batch as its own background-function invocation. Each fetch resolves
-      // as soon as Netlify accepts the job — the Claude call + Firebase write happen after
-      // that, server-side, so we don't await the response body here.
+      // Background-function invocations are capped around 256KB — far too small for a
+      // batch of page images — so we PUT each batch's images to Firebase first (a plain
+      // HTTPS write, no such limit) and then trigger the background function with just a
+      // small pointer. The function reads the images back out of Firebase itself.
       for (let b = 0; b < batches.length; b++) {
+        await fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}/batches/${b}/input.json?auth=${token}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(batches[b])
+        });
         fetch("/.netlify/functions/aph-parse-background", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ images: batches[b], tenantId, jobId, batchIndex: b })
+          body: JSON.stringify({ tenantId, jobId, batchIndex: b })
         }).catch(err => console.error(`[APH import] failed to enqueue batch ${b+1}:`, err.message));
         // Small stagger so we don't fire a burst of concurrent Claude calls at once.
         if (b < batches.length - 1) await new Promise(r => setTimeout(r, 400));
@@ -3253,7 +3259,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       let mergedUnits = [];
       let insured = "", county = "";
       for (let b = 0; b < batches.length; b++) {
-        const result = results[b];
+        const result = results[b]?.result;
         if (!result || result.status === "error") {
           const errMsg = result?.error || "No result returned — the batch may not have completed";
           console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, errMsg);
