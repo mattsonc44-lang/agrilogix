@@ -149,7 +149,7 @@ If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (ver
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 8000,
+        max_tokens: 32000, // Sonnet supports up to 128k on the standard API — a dense multi-unit page's JSON can easily exceed the old 8000 cap
         messages: [{
           role: "user",
           content: [
@@ -187,7 +187,7 @@ If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (ver
     try { parsed = JSON.parse(text); }
     catch {
       await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
-        status: "error", error: "Could not parse response", raw: text.slice(0, 500) || "(empty response)",
+        status: "error", error: "Could not parse response", raw: text.slice(0, 4000) || "(empty response)",
       });
       return { statusCode: 200, body: "" };
     }
