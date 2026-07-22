@@ -3104,26 +3104,85 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
 
 // ── APH Import Modal ──────────────────────────────────────────────────────────
 function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
-  const [stage, setStage] = useState("upload"); // upload | parsing | review | saving | done
+  const [stage, setStage] = useState("upload"); // upload | converting | parsing | review | saving | done
   const [error, setError] = useState("");
   const [parsed, setParsed] = useState(null);   // raw Claude output
   const [matches, setMatches] = useState({});   // unitIndex → fieldId
+  const [pageProgress, setPageProgress] = useState({ done: 0, total: 0 });
+
+  const MAX_PAGES = 15;           // hard safety cap on page count
+  const MAX_TOTAL_BYTES = 3.5e6;  // stop well under Netlify's ~4.5MB effective limit
+
+  // Load PDF.js from CDN once, reused across uploads
+  const loadPdfJs = () => new Promise((resolve, reject) => {
+    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
+    const existing = document.getElementById("pdfjs-lib");
+    if (existing) { existing.addEventListener("load", () => resolve(window.pdfjsLib)); return; }
+    const s = document.createElement("script");
+    s.id = "pdfjs-lib";
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = () => reject(new Error("Could not load PDF reader — check your connection and try again"));
+    document.head.appendChild(s);
+  });
+
+  // Render each PDF page to a compressed JPEG (base64, no data: prefix) —
+  // keeps the payload well under Netlify's ~4.5MB effective request limit,
+  // where the raw PDF itself often exceeds it once base64-encoded.
+  // Stops early on either page count or cumulative size, whichever comes first,
+  // since a handful of dense/image-heavy pages can add up just as fast as many simple ones.
+  const pdfToImages = async (file) => {
+    const pdfjsLib = await loadPdfJs();
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pageCap = Math.min(pdf.numPages, MAX_PAGES);
+    setPageProgress({ done: 0, total: pageCap });
+    const images = [];
+    let totalBytes = 0;
+    let stoppedEarly = false;
+    for (let i = 1; i <= pageCap; i++) {
+      const page = await pdf.getPage(i);
+      // Start at a sharp scale, but back off if a page comes out unexpectedly large
+      let scale = 2.0, base64 = null;
+      for (const attempt of [2.0, 1.5, 1.0]) {
+        scale = attempt;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+        base64 = await new Promise((res) => {
+          canvas.toBlob((blob) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result.split(",")[1]);
+            r.readAsDataURL(blob);
+          }, "image/jpeg", 0.75);
+        });
+        if (base64.length < 700000 || attempt === 1.0) break; // ~700KB base64 per page budget
+      }
+      if (totalBytes + base64.length > MAX_TOTAL_BYTES) { stoppedEarly = true; break; }
+      images.push(base64);
+      totalBytes += base64.length;
+      setPageProgress({ done: i, total: pageCap });
+    }
+    return { images, truncated: stoppedEarly || pdf.numPages > MAX_PAGES, totalPages: pdf.numPages, pagesUsed: images.length };
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setError(""); setStage("parsing");
+    setError(""); setStage("converting");
     try {
-      const base64 = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = () => rej(new Error("File read failed"));
-        r.readAsDataURL(file);
-      });
+      const { images, truncated, totalPages, pagesUsed } = await pdfToImages(file);
+      if (images.length === 0) throw new Error("Could not process any pages from this PDF");
+      if (truncated) setError(`Note: only used ${pagesUsed} of ${totalPages} pages (file too large/complex to send all of it) — results may be incomplete.`);
+      setStage("parsing");
       const resp = await fetch("/.netlify/functions/aph-parse", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ pdf: base64 })
+        body: JSON.stringify({ images })
       });
       const data = await resp.json();
       if (data.error) throw new Error(data.error);
@@ -3229,6 +3288,16 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
               Choose PDF
               <input type="file" accept="application/pdf,.pdf" onChange={handleFile} style={{ display:"none" }} />
             </label>
+          </div>
+        )}
+
+        {stage === "converting" && (
+          <div style={{ textAlign:"center", padding:"60px 20px" }}>
+            <div style={{ fontSize:36, marginBottom:16, animation:"spin 1.5s linear infinite" }}>📄</div>
+            <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Preparing PDF...</div>
+            <div style={{ fontSize:12, color:"#7a9260", marginTop:8 }}>
+              {pageProgress.total > 0 ? `Converting page ${pageProgress.done} of ${pageProgress.total}` : "Loading PDF reader..."}
+            </div>
           </div>
         )}
 
