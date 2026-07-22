@@ -3177,6 +3177,11 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
     return batches;
   };
 
+  // A farm/field commonly has several insurance units (one per crop it's grown), each
+  // extracted with its own fieldName. Group them by the part of fieldName before any "|"
+  // so a single match on the review screen can apply to every crop-unit on that same ground.
+  const groupKeyOf = (fieldName) => (fieldName || "").toLowerCase().trim().split("|")[0].trim();
+
   // Merge units across batches — a field's history can span a page boundary between
   // two batches, so combine by field+crop instead of just concatenating.
   const mergeUnits = (acc, newUnits) => {
@@ -3289,17 +3294,30 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       }
       const data = { insured, county, units: mergedUnits };
       setParsed(data);
-      // Auto-match units to AgriPlan fields by common name similarity
-      const auto = {};
-      (data.units || []).forEach((unit, i) => {
-        const name = (unit.fieldName || "").toLowerCase().trim();
-        // Exact match first, then partial
-        let match = fields.find(f => f.common?.toLowerCase() === name);
+
+      // A field typically has a separate insurance unit per crop it's grown (Winter Wheat,
+      // Spring Wheat, Barley, Mustard...), so a single field can produce a dozen+ rows here.
+      // Match once per farm/field group instead of once per row — every unit sharing the same
+      // fieldName gets the same match automatically. A mapping saved from a previous import
+      // (aphFieldMap) takes priority, so a farm you've already matched needs no re-matching
+      // on future imports.
+      const savedFieldMap = await fetch(
+        `${DB}/tenants/${tenantId}/agriPlan/aphFieldMap.json?auth=${token}`
+      ).then(r => r.json()).catch(() => null) || {};
+
+      const groupMatch = {}; // groupKey -> fieldId
+      (data.units || []).forEach(unit => {
+        const key = groupKeyOf(unit.fieldName);
+        if (!key || groupMatch[key]) return;
+        if (savedFieldMap[key]) { groupMatch[key] = savedFieldMap[key]; return; }
+        let match = fields.find(f => f.common?.toLowerCase() === key);
         if (!match) match = fields.find(f =>
-          name.includes(f.common?.toLowerCase()) || f.common?.toLowerCase().includes(name.split("|")[0].trim())
+          key.includes(f.common?.toLowerCase()) || f.common?.toLowerCase().includes(key)
         );
-        auto[i] = match?.id || "";
+        if (match) groupMatch[key] = match.id;
       });
+      const auto = {};
+      (data.units || []).forEach((unit, i) => { auto[i] = groupMatch[groupKeyOf(unit.fieldName)] || ""; });
       setMatches(auto);
       setStage("review");
     } catch (err) { setError(err.message); setStage("upload"); }
@@ -3371,6 +3389,25 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
         await fetch(
           `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
           { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(merged) }
+        ).catch(()=>{});
+      }
+
+      // Remember every farm-name → AgriPlan-field match from this import so future imports
+      // (next year's APH PDF, a corrected re-import, etc.) auto-fill without re-matching.
+      const fieldMapUpdates = {};
+      (parsed.units || []).forEach((unit, i) => {
+        const fieldId = matches[i]; if (!fieldId) return;
+        const key = groupKeyOf(unit.fieldName);
+        if (key) fieldMapUpdates[key] = fieldId;
+      });
+      if (Object.keys(fieldMapUpdates).length > 0) {
+        const existingFieldMap = await fetch(
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphFieldMap.json?auth=${token}`
+        ).then(r=>r.json()).catch(()=>({}));
+        const mergedFieldMap = { ...(existingFieldMap||{}), ...fieldMapUpdates };
+        await fetch(
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphFieldMap.json?auth=${token}`,
+          { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(mergedFieldMap) }
         ).catch(()=>{});
       }
 
@@ -3466,11 +3503,28 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
                     <td style={{ padding:"6px 10px" }}>
                       <select
                         value={matches[i] || ""}
-                        onChange={e => setMatches(m => ({ ...m, [i]: e.target.value }))}
+                        onChange={e => {
+                          const val = e.target.value;
+                          const key = groupKeyOf(unit.fieldName);
+                          // Applying a match here also applies it to every other row sharing
+                          // this same farm/field name — no need to re-pick it for each crop.
+                          setMatches(m => {
+                            const next = { ...m };
+                            (parsed.units || []).forEach((u, j) => { if (groupKeyOf(u.fieldName) === key) next[j] = val; });
+                            return next;
+                          });
+                        }}
                         style={{ width:"100%", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 6px", fontSize:11, background:"#f8fbf5", color:"#1a3010" }}>
                         <option value="">— skip —</option>
                         {[...fields].sort((a,b)=>(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
                       </select>
+                      {(() => {
+                        const key = groupKeyOf(unit.fieldName);
+                        const siblingCount = (parsed.units || []).filter(u => groupKeyOf(u.fieldName) === key).length;
+                        return siblingCount > 1
+                          ? <div style={{ fontSize:9, color:"#8a9a70", marginTop:2 }}>applies to {siblingCount} rows for this field</div>
+                          : null;
+                      })()}
                     </td>
                   </tr>
                 ))}
