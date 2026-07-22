@@ -3299,16 +3299,34 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
   const handleSave = async () => {
     setStage("saving");
     try {
-      // Build aphData: { [fieldCommon]: { [year]: { [crop]: {acres, yield, production} }, aphYield, aphYears } }
-      const aphData = {};
+      // Merge into whatever APH data already exists rather than replacing it outright —
+      // aphData.json is a single node, and a PUT overwrites the whole thing. Importing a
+      // second PDF covering different fields must not erase the first import's data, so we
+      // fetch what's there now and only touch the field+crop combos this import matched.
+      const existingAphData = await fetch(
+        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`
+      ).then(r => r.json()).catch(() => ({}));
+
+      // Build aphData: { [fieldCommon]: { [crop]: { years: {[year]: {acres, yield, production}}, aphYield, aphYears } } }
+      const aphData = { ...(existingAphData || {}) };
       (parsed.units || []).forEach((unit, i) => {
         const fieldId = matches[i]; if (!fieldId) return;
         const field = fields.find(f => f.id === fieldId); if (!field) return;
         const key = field.common;
-        if (!aphData[key]) aphData[key] = {};
         const crop = unit.crop;
-        if (!aphData[key][crop]) aphData[key][crop] = { years: {}, aphYield: unit.aphYield, aphYears: unit.aphYears };
+        aphData[key] = { ...(aphData[key] || {}) };
+        const existingCrop = aphData[key][crop];
+        aphData[key][crop] = {
+          years: { ...(existingCrop?.years || {}) },
+          aphYield: unit.aphYield,
+          aphYears: unit.aphYears,
+        };
         (unit.years || []).forEach(y => {
+          // A year with 0 acres means this crop was NOT grown on this unit that year — the
+          // source APH document marks these rows "Z, Zero Acres" (a different unit/crop was
+          // grown there instead, or it was fallow). Including them here would make this crop
+          // incorrectly show up in the field's rotation history for years it wasn't planted.
+          if (!y.acres) return;
           aphData[key][crop].years[String(y.year)] = { acres: y.acres, yield: y.yield, production: y.production };
         });
       });
