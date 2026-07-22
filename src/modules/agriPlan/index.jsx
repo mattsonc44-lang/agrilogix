@@ -3197,6 +3197,29 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
     return acc;
   };
 
+  const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+
+  // aph-parse now runs as a Netlify Background Function (15-min budget instead of ~26s),
+  // which means it can't return a response directly — each batch call just gets accepted
+  // (202) and the real work happens async, writing its result to Firebase. We poll there
+  // until every batch for this job has reported done/error.
+  const pollJob = async (jobId, totalBatches) => {
+    const POLL_MS = 3000;
+    const MAX_WAIT_MS = 12 * 60 * 1000; // background functions get ~15 min; leave headroom
+    const start = Date.now();
+    while (true) {
+      if (Date.now() - start > MAX_WAIT_MS) {
+        throw new Error("Import timed out — the document may be too large or complex. Try a smaller PDF.");
+      }
+      const res = await fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}/batches.json?auth=${token}`);
+      const batches = (await res.json()) || {};
+      const doneCount = Object.keys(batches).filter(k => batches[k]?.status === "done" || batches[k]?.status === "error").length;
+      setBatchProgress({ done: doneCount, total: totalBatches });
+      if (doneCount >= totalBatches) return batches;
+      await new Promise(r => setTimeout(r, POLL_MS));
+    }
+  };
+
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3210,25 +3233,41 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       setBatchProgress({ done: 0, total: batches.length });
       setStage("parsing");
 
+      const jobId = `aph_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+
+      // Enqueue every batch as its own background-function invocation. Each fetch resolves
+      // as soon as Netlify accepts the job — the Claude call + Firebase write happen after
+      // that, server-side, so we don't await the response body here.
+      for (let b = 0; b < batches.length; b++) {
+        fetch("/.netlify/functions/aph-parse-background", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ images: batches[b], tenantId, jobId, batchIndex: b })
+        }).catch(err => console.error(`[APH import] failed to enqueue batch ${b+1}:`, err.message));
+        // Small stagger so we don't fire a burst of concurrent Claude calls at once.
+        if (b < batches.length - 1) await new Promise(r => setTimeout(r, 400));
+      }
+
+      const results = await pollJob(jobId, batches.length);
+
       let mergedUnits = [];
       let insured = "", county = "";
       for (let b = 0; b < batches.length; b++) {
-        const resp = await fetch("/.netlify/functions/aph-parse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ images: batches[b] })
-        });
-        const data = await resp.json();
-        if (data.error) {
-          console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, data.error);
-          if (data.raw) console.error(`[APH import] raw Claude response for batch ${b+1}:`, data.raw);
-          throw new Error(data.raw ? `${data.error} — Claude returned: "${data.raw.slice(0,300)}"` : data.error);
+        const result = results[b];
+        if (!result || result.status === "error") {
+          const errMsg = result?.error || "No result returned — the batch may not have completed";
+          console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, errMsg);
+          if (result?.raw) console.error(`[APH import] raw Claude response for batch ${b+1}:`, result.raw);
+          throw new Error(result?.raw ? `${errMsg} — Claude returned: "${result.raw.slice(0,300)}"` : errMsg);
         }
+        const data = result.data || {};
         mergedUnits = mergeUnits(mergedUnits, data.units);
         insured = insured || data.insured || "";
         county = county || data.county || "";
-        setBatchProgress({ done: b + 1, total: batches.length });
       }
+
+      // Clean up the job node now that we've read the results — no need to keep it around.
+      fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}.json?auth=${token}`, { method: "DELETE" }).catch(()=>{});
 
       if (!mergedUnits.length) throw new Error("No APH units found in PDF — check the file and try again");
       const data = { insured, county, units: mergedUnits };
