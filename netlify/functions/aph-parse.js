@@ -88,12 +88,23 @@ Rules:
       })
     });
 
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return { statusCode: resp.status, headers: {"Content-Type":"application/json"}, body: JSON.stringify({ error: `Anthropic API error (${resp.status}): ${errBody.slice(0,400)}` }) };
+    }
+
     const data = await resp.json();
+    if (data.error) {
+      return { statusCode: 200, headers: {"Content-Type":"application/json"}, body: JSON.stringify({ error: `Anthropic API error: ${data.error.message || JSON.stringify(data.error)}` }) };
+    }
+    if (data.stop_reason === "max_tokens") {
+      return { statusCode: 200, headers: {"Content-Type":"application/json"}, body: JSON.stringify({ error: "Response was cut off (hit the token limit) — try fewer pages per batch." }) };
+    }
     const text = (data.content?.[0]?.text || "").replace(/```json|```/g, "").trim();
 
     let parsed;
     try { parsed = JSON.parse(text); }
-    catch { return { statusCode: 200, headers: {"Content-Type":"application/json"}, body: JSON.stringify({ error: "Could not parse response", raw: text.slice(0, 500) }) }; }
+    catch { return { statusCode: 200, headers: {"Content-Type":"application/json"}, body: JSON.stringify({ error: "Could not parse response", raw: text.slice(0, 500) || "(empty response)" }) }; }
 
     return { statusCode: 200, headers: {"Content-Type":"application/json"}, body: JSON.stringify(parsed) };
 
