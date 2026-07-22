@@ -2,14 +2,20 @@
 // Background version of aph-parse: parses one batch of APH page images using Claude.
 // Netlify Background Functions (name must end in "-background") get a 15-minute execution
 // budget instead of the ~26s synchronous limit, and always return 202 immediately to the
-// caller — the handler keeps running after that response is sent. Because the caller can't
-// get a real response back, this function writes its result to Firebase instead, and the
-// client polls for it.
+// caller — the handler keeps running after that response is sent.
 //
-// Accepts (POST body): { images: ["<base64 JPEG>", ...], tenantId, jobId, batchIndex }
+// IMPORTANT: background function invocations have a ~256KB request payload limit (much
+// smaller than the ~6MB limit for regular synchronous functions), so the page images can't
+// be sent directly in this request. Instead: the client PUTs the batch's images to Firebase
+// first, then invokes this function with just a small pointer ({tenantId, jobId, batchIndex}).
+// This function reads the images back out of Firebase, calls Claude, and writes its result
+// to Firebase — the client polls there for completion.
+//
+// Accepts (POST body): { tenantId, jobId, batchIndex }
 // Requires: Authorization: Bearer <firebase ID token>  (same as the old sync function)
 //
-// Writes result to: tenants/{tenantId}/aphJobs/{jobId}/batches/{batchIndex}
+// Reads images from:  tenants/{tenantId}/aphJobs/{jobId}/batches/{batchIndex}/input
+// Writes result to:   tenants/{tenantId}/aphJobs/{jobId}/batches/{batchIndex}/result
 //   on success: { status: "done", data: { insured, county, units: [...] }, updatedAt }
 //   on failure: { status: "error", error: "<message>", updatedAt }
 
@@ -18,7 +24,7 @@ const { checkAuth } = require("./auth-check");
 const AGRILOGIX_DB_URL = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
 
 async function writeResult(dbUrl, tenantId, jobId, batchIndex, idToken, payload) {
-  const url = `${dbUrl}/tenants/${tenantId}/aphJobs/${jobId}/batches/${batchIndex}.json?auth=${idToken}`;
+  const url = `${dbUrl}/tenants/${tenantId}/aphJobs/${jobId}/batches/${batchIndex}/result.json?auth=${idToken}`;
   try {
     await fetch(url, {
       method: "PUT",
@@ -52,17 +58,32 @@ exports.handler = async (event) => {
   const ua = event.headers["user-agent"] || "unknown";
   console.log(`[${new Date().toISOString()}] ${event.httpMethod} from ${ip} | ${ua.slice(0,80)}`);
 
-  let images, tenantId, jobId, batchIndex;
-  try { ({ images, tenantId, jobId, batchIndex } = JSON.parse(event.body || "{}")); }
+  let tenantId, jobId, batchIndex;
+  try { ({ tenantId, jobId, batchIndex } = JSON.parse(event.body || "{}")); }
   catch { console.error("[aph-parse-background] invalid request body"); return { statusCode: 200, body: "" }; }
 
   if (!tenantId || !jobId || batchIndex === undefined || batchIndex === null) {
     console.error("[aph-parse-background] missing tenantId/jobId/batchIndex");
     return { statusCode: 200, body: "" };
   }
+
+  // Pull the batch's page images back out of Firebase — they were too big to send
+  // in this request directly (background invocations cap out around 256KB).
+  let images;
+  try {
+    const inputUrl = `${AGRILOGIX_DB_URL}/tenants/${tenantId}/aphJobs/${jobId}/batches/${batchIndex}/input.json?auth=${idToken}`;
+    const inputResp = await fetch(inputUrl);
+    images = await inputResp.json();
+  } catch (e) {
+    await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
+      status: "error", error: "Could not read batch images from Firebase: " + e.message,
+    });
+    return { statusCode: 200, body: "" };
+  }
+
   if (!images || !Array.isArray(images) || images.length === 0) {
     await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
-      status: "error", error: "images (array of base64 JPEGs) required",
+      status: "error", error: "images (array of base64 JPEGs) required — none found in Firebase for this batch",
     });
     return { statusCode: 200, body: "" };
   }
