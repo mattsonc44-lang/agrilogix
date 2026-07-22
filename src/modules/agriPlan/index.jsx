@@ -3106,12 +3106,13 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
 function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
   const [stage, setStage] = useState("upload"); // upload | converting | parsing | review | saving | done
   const [error, setError] = useState("");
-  const [parsed, setParsed] = useState(null);   // raw Claude output
+  const [parsed, setParsed] = useState(null);   // merged Claude output across all batches
   const [matches, setMatches] = useState({});   // unitIndex → fieldId
   const [pageProgress, setPageProgress] = useState({ done: 0, total: 0 });
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
 
-  const MAX_PAGES = 15;           // hard safety cap on page count
-  const MAX_TOTAL_BYTES = 3.5e6;  // stop well under Netlify's ~4.5MB effective limit
+  const MAX_PAGES = 60;           // generous hard cap — batching means page count itself isn't the constraint
+  const MAX_BATCH_BYTES = 3.5e6;  // per-batch budget, well under Netlify's ~4.5MB effective limit
 
   // Load PDF.js from CDN once, reused across uploads
   const loadPdfJs = () => new Promise((resolve, reject) => {
@@ -3129,11 +3130,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
     document.head.appendChild(s);
   });
 
-  // Render each PDF page to a compressed JPEG (base64, no data: prefix) —
-  // keeps the payload well under Netlify's ~4.5MB effective request limit,
-  // where the raw PDF itself often exceeds it once base64-encoded.
-  // Stops early on either page count or cumulative size, whichever comes first,
-  // since a handful of dense/image-heavy pages can add up just as fast as many simple ones.
+  // Render every PDF page (up to MAX_PAGES) to a compressed JPEG (base64, no data: prefix).
   const pdfToImages = async (file) => {
     const pdfjsLib = await loadPdfJs();
     const buf = await file.arrayBuffer();
@@ -3141,14 +3138,11 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
     const pageCap = Math.min(pdf.numPages, MAX_PAGES);
     setPageProgress({ done: 0, total: pageCap });
     const images = [];
-    let totalBytes = 0;
-    let stoppedEarly = false;
     for (let i = 1; i <= pageCap; i++) {
       const page = await pdf.getPage(i);
       // Start at a sharp scale, but back off if a page comes out unexpectedly large
-      let scale = 2.0, base64 = null;
-      for (const attempt of [2.0, 1.5, 1.0]) {
-        scale = attempt;
+      let base64 = null;
+      for (const scale of [2.0, 1.5, 1.0]) {
         const viewport = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         canvas.width = viewport.width; canvas.height = viewport.height;
@@ -3160,14 +3154,47 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
             r.readAsDataURL(blob);
           }, "image/jpeg", 0.75);
         });
-        if (base64.length < 700000 || attempt === 1.0) break; // ~700KB base64 per page budget
+        if (base64.length < 700000 || scale === 1.0) break; // ~700KB base64 per page budget
       }
-      if (totalBytes + base64.length > MAX_TOTAL_BYTES) { stoppedEarly = true; break; }
       images.push(base64);
-      totalBytes += base64.length;
       setPageProgress({ done: i, total: pageCap });
     }
-    return { images, truncated: stoppedEarly || pdf.numPages > MAX_PAGES, totalPages: pdf.numPages, pagesUsed: images.length };
+    return { images, truncated: pdf.numPages > MAX_PAGES, totalPages: pdf.numPages };
+  };
+
+  // Group page images into batches that each stay under the per-request byte budget.
+  const chunkIntoBatches = (images) => {
+    const batches = [];
+    let current = [], currentBytes = 0;
+    for (const img of images) {
+      if (current.length && currentBytes + img.length > MAX_BATCH_BYTES) {
+        batches.push(current);
+        current = []; currentBytes = 0;
+      }
+      current.push(img); currentBytes += img.length;
+    }
+    if (current.length) batches.push(current);
+    return batches;
+  };
+
+  // Merge units across batches — a field's history can span a page boundary between
+  // two batches, so combine by field+crop instead of just concatenating.
+  const mergeUnits = (acc, newUnits) => {
+    const keyOf = (u) => `${(u.fieldName||"").toLowerCase().trim()}|${(u.crop||"").toLowerCase().trim()}`;
+    (newUnits||[]).forEach(nu => {
+      const existing = acc.find(u => keyOf(u) === keyOf(nu));
+      if (existing) {
+        const byYear = {};
+        [...(existing.years||[]), ...(nu.years||[])].forEach(y => { byYear[y.year] = y; });
+        existing.years = Object.values(byYear).sort((a,b)=>a.year-b.year);
+        existing.aphYield = existing.aphYield ?? nu.aphYield;
+        existing.aphYears = existing.aphYears ?? nu.aphYears;
+        existing.priceElection = existing.priceElection ?? nu.priceElection;
+      } else {
+        acc.push({ ...nu });
+      }
+    });
+    return acc;
   };
 
   const handleFile = async (e) => {
@@ -3175,18 +3202,32 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
     if (!file) return;
     setError(""); setStage("converting");
     try {
-      const { images, truncated, totalPages, pagesUsed } = await pdfToImages(file);
+      const { images, truncated, totalPages } = await pdfToImages(file);
       if (images.length === 0) throw new Error("Could not process any pages from this PDF");
-      if (truncated) setError(`Note: only used ${pagesUsed} of ${totalPages} pages (file too large/complex to send all of it) — results may be incomplete.`);
+      if (truncated) setError(`Note: PDF has ${totalPages} pages — only the first ${MAX_PAGES} were processed.`);
+
+      const batches = chunkIntoBatches(images);
+      setBatchProgress({ done: 0, total: batches.length });
       setStage("parsing");
-      const resp = await fetch("/.netlify/functions/aph-parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ images })
-      });
-      const data = await resp.json();
-      if (data.error) throw new Error(data.raw ? `${data.error} — Claude returned: "${data.raw.slice(0,300)}"` : data.error);
-      if (!data.units?.length) throw new Error("No APH units found in PDF — check the file and try again");
+
+      let mergedUnits = [];
+      let insured = "", county = "";
+      for (let b = 0; b < batches.length; b++) {
+        const resp = await fetch("/.netlify/functions/aph-parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ images: batches[b] })
+        });
+        const data = await resp.json();
+        if (data.error) throw new Error(data.raw ? `${data.error} — Claude returned: "${data.raw.slice(0,300)}"` : data.error);
+        mergedUnits = mergeUnits(mergedUnits, data.units);
+        insured = insured || data.insured || "";
+        county = county || data.county || "";
+        setBatchProgress({ done: b + 1, total: batches.length });
+      }
+
+      if (!mergedUnits.length) throw new Error("No APH units found in PDF — check the file and try again");
+      const data = { insured, county, units: mergedUnits };
       setParsed(data);
       // Auto-match units to AgriPlan fields by common name similarity
       const auto = {};
@@ -3305,7 +3346,11 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
           <div style={{ textAlign:"center", padding:"60px 20px" }}>
             <div style={{ fontSize:36, marginBottom:16, animation:"spin 1.5s linear infinite" }}>⏳</div>
             <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Reading APH data...</div>
-            <div style={{ fontSize:12, color:"#7a9260", marginTop:8 }}>Claude is extracting field units, crops, and yield history from your PDF</div>
+            <div style={{ fontSize:12, color:"#7a9260", marginTop:8 }}>
+              {batchProgress.total > 1
+                ? `Processing batch ${Math.min(batchProgress.done+1, batchProgress.total)} of ${batchProgress.total} — large document, splitting into multiple requests`
+                : "Claude is extracting field units, crops, and yield history from your PDF"}
+            </div>
           </div>
         )}
 
