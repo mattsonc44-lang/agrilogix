@@ -130,7 +130,14 @@ Rules:
 - priceElection = the crop insurance price election shown on the document ($/bu). If not shown use 0
 - If multiple crops on one unit (e.g. wheat and lentils on same ground), create separate unit entries
 - fieldName should be the most descriptive identifier available (common name, legal desc, or both)
-- crop names: use "Spring Wheat", "Winter Wheat", "CC WW", "Barley", "Durum", "Lentils", "Chickpeas", "Green Peas", "Yellow Peas", "Austrians", "Mustard", "Canola", "Flax" where possible`;
+- crop names: use "Spring Wheat", "Winter Wheat", "CC WW", "Barley", "Durum", "Lentils", "Chickpeas", "Green Peas", "Yellow Peas", "Austrians", "Mustard", "Canola", "Flax" where possible
+
+WHEAT TYPE CODES — read these literally from each unit's "Type" field (a short code shown near Practice/Legal Description on the MPCI Acreage and Production Reporting pages). Do NOT infer wheat class from context, farm name, or nearby units — every unit's Type code must be read independently, even if two units share the same Farm Description or legal description:
+- Type "W" = Winter Wheat
+- Type "S" = Spring Wheat
+- Type "DS" = Spring Wheat (Dark Northern Spring — still label as "Spring Wheat")
+- Type "DUR" = Durum
+If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (very common — same ground rotates between them across years), these are two DIFFERENT crop entries in your output, each with its own "crop" value and its own "years" array. Never combine their production history together, and never let one unit's label overwrite the other's — a farm can correctly show Winter Wheat acres in some years and Spring Wheat acres in other years, but not both from a single merged unit.`;
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
