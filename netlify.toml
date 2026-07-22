@@ -6,3 +6,5 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions."aph-parse-background"]
+  background = true
