@@ -33,7 +33,7 @@ async function writeResult(dbUrl, tenantId, jobId, batchIndex, idToken, payload)
 exports.handler = async (event) => {
   // Background functions always return 202 to the caller regardless of what we return here,
   // but we still validate the request shape up front before doing any real work.
-  if (event.httpMethod !== "POST") return;
+  if (event.httpMethod !== "POST") return { statusCode: 200, body: "" };
 
   const authHeader = event.headers["authorization"] || event.headers["Authorization"] || "";
   const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
@@ -45,7 +45,7 @@ exports.handler = async (event) => {
     console.warn(`[REJECTED ${new Date().toISOString()}] from ${ip}`);
     // Can't write a per-batch error without a tenantId/jobId we trust, and an
     // unauthenticated caller shouldn't get one anyway — just log and stop.
-    return;
+    return { statusCode: 200, body: "" };
   }
 
   const ip = event.headers["x-forwarded-for"] || event.headers["client-ip"] || "unknown";
@@ -54,17 +54,17 @@ exports.handler = async (event) => {
 
   let images, tenantId, jobId, batchIndex;
   try { ({ images, tenantId, jobId, batchIndex } = JSON.parse(event.body || "{}")); }
-  catch { console.error("[aph-parse-background] invalid request body"); return; }
+  catch { console.error("[aph-parse-background] invalid request body"); return { statusCode: 200, body: "" }; }
 
   if (!tenantId || !jobId || batchIndex === undefined || batchIndex === null) {
     console.error("[aph-parse-background] missing tenantId/jobId/batchIndex");
-    return;
+    return { statusCode: 200, body: "" };
   }
   if (!images || !Array.isArray(images) || images.length === 0) {
     await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
       status: "error", error: "images (array of base64 JPEGs) required",
     });
-    return;
+    return { statusCode: 200, body: "" };
   }
 
   const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
@@ -72,7 +72,7 @@ exports.handler = async (event) => {
     await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
       status: "error", error: "API key not configured",
     });
-    return;
+    return { statusCode: 200, body: "" };
   }
 
   const prompt = `Extract ALL Actual Production History (APH) data from this crop insurance document.
@@ -137,7 +137,7 @@ Rules:
       await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
         status: "error", error: `Anthropic API error (${resp.status}): ${errBody.slice(0,400)}`,
       });
-      return;
+      return { statusCode: 200, body: "" };
     }
 
     const data = await resp.json();
@@ -145,13 +145,13 @@ Rules:
       await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
         status: "error", error: `Anthropic API error: ${data.error.message || JSON.stringify(data.error)}`,
       });
-      return;
+      return { statusCode: 200, body: "" };
     }
     if (data.stop_reason === "max_tokens") {
       await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
         status: "error", error: "Response was cut off (hit the token limit) — try fewer pages per batch.",
       });
-      return;
+      return { statusCode: 200, body: "" };
     }
     const text = (data.content?.[0]?.text || "").replace(/```json|```/g, "").trim();
 
@@ -161,16 +161,18 @@ Rules:
       await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
         status: "error", error: "Could not parse response", raw: text.slice(0, 500) || "(empty response)",
       });
-      return;
+      return { statusCode: 200, body: "" };
     }
 
     await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
       status: "done", data: parsed,
     });
+    return { statusCode: 200, body: "" };
 
   } catch (err) {
     await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
       status: "error", error: "Parse failed: " + err.message,
     });
+    return { statusCode: 200, body: "" };
   }
 };
