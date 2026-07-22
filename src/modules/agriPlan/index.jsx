@@ -3258,13 +3258,17 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
 
       let mergedUnits = [];
       let insured = "", county = "";
+      const failedBatches = [];
       for (let b = 0; b < batches.length; b++) {
         const result = results[b]?.result;
         if (!result || result.status === "error") {
           const errMsg = result?.error || "No result returned — the batch may not have completed";
           console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, errMsg);
           if (result?.raw) console.error(`[APH import] raw Claude response for batch ${b+1}:`, result.raw);
-          throw new Error(result?.raw ? `${errMsg} — Claude returned: "${result.raw.slice(0,1500)}"` : errMsg);
+          // Don't let one bad/empty batch (often just a boilerplate or blank page) abort the
+          // whole import — keep going and merge whatever the other batches found.
+          failedBatches.push(b + 1);
+          continue;
         }
         const data = result.data || {};
         mergedUnits = mergeUnits(mergedUnits, data.units);
@@ -3275,7 +3279,14 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       // Clean up the job node now that we've read the results — no need to keep it around.
       fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}.json?auth=${token}`, { method: "DELETE" }).catch(()=>{});
 
-      if (!mergedUnits.length) throw new Error("No APH units found in PDF — check the file and try again");
+      if (!mergedUnits.length) {
+        throw new Error(failedBatches.length
+          ? `No APH units found — batch${failedBatches.length > 1 ? "es" : ""} ${failedBatches.join(", ")} of ${batches.length} failed to process. Check the file and try again.`
+          : "No APH units found in PDF — check the file and try again");
+      }
+      if (failedBatches.length) {
+        setError(`Note: batch${failedBatches.length > 1 ? "es" : ""} ${failedBatches.join(", ")} of ${batches.length} couldn't be read (often just boilerplate or blank pages) — proceeding with the data found in the rest.`);
+      }
       const data = { insured, county, units: mergedUnits };
       setParsed(data);
       // Auto-match units to AgriPlan fields by common name similarity
