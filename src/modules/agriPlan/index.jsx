@@ -3112,7 +3112,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
 
   const MAX_PAGES = 60;           // generous hard cap — batching means page count itself isn't the constraint
-  const MAX_BATCH_BYTES = 3.5e6;  // per-batch budget, well under Netlify's ~4.5MB effective limit
+  const MAX_BATCH_BYTES = 1.6e6;  // small enough that each batch also finishes well inside the function timeout, not just the payload size limit
 
   // Load PDF.js from CDN once, reused across uploads
   const loadPdfJs = () => new Promise((resolve, reject) => {
