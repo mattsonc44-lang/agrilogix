@@ -1,7 +1,10 @@
 [build]
-  command   = "npm install && echo \"window.__STRIPE_KEY__='${STRIPE_KEY}';window.__ANTHROPIC_KEY__='${ANTHROPIC_KEY}';window.__FIREBASE_API_KEY__='${FIREBASE_API_KEY}';window.__ADMIN_UID__='${ADMIN_UID}';\" > public/config.js && npm run build"
+  command   = "npm install && echo \"window.__STRIPE_KEY__='${STRIPE_KEY}';window.__FIREBASE_API_KEY__='${FIREBASE_API_KEY}';window.__ADMIN_UID__='${ADMIN_UID}';\" > public/config.js && npm run build"
   publish   = "public"
   functions = "netlify/functions"
 
 [functions]
   node_bundler = "esbuild"
+
+[functions."aph-parse"]
+  timeout = 26
