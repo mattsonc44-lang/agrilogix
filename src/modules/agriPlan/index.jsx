@@ -3219,7 +3219,11 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
           body: JSON.stringify({ images: batches[b] })
         });
         const data = await resp.json();
-        if (data.error) throw new Error(data.raw ? `${data.error} — Claude returned: "${data.raw.slice(0,300)}"` : data.error);
+        if (data.error) {
+          console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, data.error);
+          if (data.raw) console.error(`[APH import] raw Claude response for batch ${b+1}:`, data.raw);
+          throw new Error(data.raw ? `${data.error} — Claude returned: "${data.raw.slice(0,300)}"` : data.error);
+        }
         mergedUnits = mergeUnits(mergedUnits, data.units);
         insured = insured || data.insured || "";
         county = county || data.county || "";
