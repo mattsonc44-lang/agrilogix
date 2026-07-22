@@ -6,5 +6,3 @@
 [functions]
   node_bundler = "esbuild"
 
-[functions."aph-parse"]
-  timeout = 26
