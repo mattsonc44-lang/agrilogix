@@ -1,6 +1,6 @@
 // netlify/functions/aph-parse.js
-// Parses an APH (Actual Production History) PDF using Claude
-// Accepts: { pdf: "<base64 string>" }
+// Parses an APH (Actual Production History) document using Claude
+// Accepts: { images: ["<base64 JPEG>", ...] } — one image per page, rendered client-side
 // Returns: { insured, county, units: [{ fieldName, legal, crop, years: [{year, acres, yield, production}], aphYield, aphYears }] }
 
 const { checkAuth } = require("./auth-check");
@@ -20,11 +20,13 @@ exports.handler = async (event) => {
   console.log(`[${new Date().toISOString()}] ${event.httpMethod} from ${ip} | ${ua.slice(0,80)}`);
 
 
-  let pdf;
-  try { ({ pdf } = JSON.parse(event.body || "{}")); }
+  let images;
+  try { ({ images } = JSON.parse(event.body || "{}")); }
   catch { return { statusCode: 400, body: JSON.stringify({ error: "Invalid request body" }) }; }
 
-  if (!pdf) return { statusCode: 400, body: JSON.stringify({ error: "pdf (base64) required" }) };
+  if (!images || !Array.isArray(images) || images.length === 0) {
+    return { statusCode: 400, body: JSON.stringify({ error: "images (array of base64 JPEGs) required" }) };
+  }
 
   const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
   if (!ANTHROPIC_KEY) return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
@@ -72,7 +74,6 @@ Rules:
         "Content-Type": "application/json",
         "x-api-key": ANTHROPIC_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25",
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
@@ -80,7 +81,7 @@ Rules:
         messages: [{
           role: "user",
           content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdf } },
+            ...images.map(img => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } })),
             { type: "text", text: prompt }
           ]
         }]
