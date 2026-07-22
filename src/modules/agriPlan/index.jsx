@@ -3185,7 +3185,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
         body: JSON.stringify({ images })
       });
       const data = await resp.json();
-      if (data.error) throw new Error(data.error);
+      if (data.error) throw new Error(data.raw ? `${data.error} — Claude returned: "${data.raw.slice(0,300)}"` : data.error);
       if (!data.units?.length) throw new Error("No APH units found in PDF — check the file and try again");
       setParsed(data);
       // Auto-match units to AgriPlan fields by common name similarity
