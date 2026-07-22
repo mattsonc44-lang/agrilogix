@@ -137,7 +137,10 @@ WHEAT TYPE CODES — read these literally from each unit's "Type" field (a short
 - Type "S" = Spring Wheat
 - Type "DS" = Spring Wheat (Dark Northern Spring — still label as "Spring Wheat")
 - Type "DUR" = Durum
-If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (very common — same ground rotates between them across years), these are two DIFFERENT crop entries in your output, each with its own "crop" value and its own "years" array. Never combine their production history together, and never let one unit's label overwrite the other's — a farm can correctly show Winter Wheat acres in some years and Spring Wheat acres in other years, but not both from a single merged unit.`;
+If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (very common — same ground rotates between them across years), these are two DIFFERENT crop entries in your output, each with its own "crop" value and its own "years" array. Never combine their production history together, and never let one unit's label overwrite the other's — a farm can correctly show Winter Wheat acres in some years and Spring Wheat acres in other years, but not both from a single merged unit.
+
+IMPORTANT: Some pages in a multi-page document are boilerplate — legal definitions, terms and conditions, blank forms — with no APH data at all. If that's what you're looking at, you MUST still respond with ONLY the JSON object below and absolutely nothing else — no explanation of why the page has no data, no commentary, not even a single sentence before or after the JSON. Any text outside the JSON breaks the automated pipeline reading your response:
+{"insured":"","county":"","policyNumber":"","units":[]}`;
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -186,10 +189,21 @@ If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (ver
     let parsed;
     try { parsed = JSON.parse(text); }
     catch {
-      await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
-        status: "error", error: "Could not parse response", raw: text.slice(0, 4000) || "(empty response)",
-      });
-      return { statusCode: 200, body: "" };
+      // Fallback: Claude occasionally wraps the JSON in explanatory prose despite instructions
+      // not to (e.g. explaining that a boilerplate/no-data page has nothing to extract). Try to
+      // pull just the {...} object out of the response before giving up entirely.
+      const firstBrace = text.indexOf("{");
+      const lastBrace = text.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        try { parsed = JSON.parse(text.slice(firstBrace, lastBrace + 1)); }
+        catch { /* fall through to error below */ }
+      }
+      if (!parsed) {
+        await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
+          status: "error", error: "Could not parse response", raw: text.slice(0, 4000) || "(empty response)",
+        });
+        return { statusCode: 200, body: "" };
+      }
     }
 
     await writeResult(AGRILOGIX_DB_URL, tenantId, jobId, batchIndex, idToken, {
