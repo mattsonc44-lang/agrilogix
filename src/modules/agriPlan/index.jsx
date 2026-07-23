@@ -2562,26 +2562,27 @@ let _aphData            = null; // imported APH data from crop insurance PDF
 let _fieldHistory       = null; // manually entered crop history per field
 let _cropPrices         = null; // per-tenant price elections + projected sell prices
 let _tenantIdCache      = null; // set from AgriPlanModule — tenantId for cache keys below
+let _farmIdCache        = null; // set from AgriPlanModule — farmId for cache keys below
 
 // ── Tenant-mode offline cache (mirrors AgriScale's queue/retry pattern) ──────
-function tenantCacheKey(tid, year){ return `agriplan_tenant_${tid}_${year}`; }
-function tenantQueueKey(tid, year){ return `agriplan_tenant_queue_${tid}_${year}`; }
-function loadTenantFieldsCache(tid, year){
-  try{ const r=localStorage.getItem(tenantCacheKey(tid,year)); return r?JSON.parse(r):null; }
+function tenantCacheKey(tid, year, farmId){ const seg = (farmId && farmId !== "default") ? `_${farmId}` : ""; return `agriplan_tenant_${tid}${seg}_${year}`; }
+function tenantQueueKey(tid, year, farmId){ const seg = (farmId && farmId !== "default") ? `_${farmId}` : ""; return `agriplan_tenant_queue_${tid}${seg}_${year}`; }
+function loadTenantFieldsCache(tid, year, farmId){
+  try{ const r=localStorage.getItem(tenantCacheKey(tid,year,farmId)); return r?JSON.parse(r):null; }
   catch{ return null; }
 }
-function saveTenantFieldsCache(tid, year, fields){
-  try{ localStorage.setItem(tenantCacheKey(tid,year), JSON.stringify(fields)); }catch{}
+function saveTenantFieldsCache(tid, year, fields, farmId){
+  try{ localStorage.setItem(tenantCacheKey(tid,year,farmId), JSON.stringify(fields)); }catch{}
 }
-function loadTenantQueue(tid, year){
-  try{ const r=localStorage.getItem(tenantQueueKey(tid,year)); return r?JSON.parse(r):null; }
+function loadTenantQueue(tid, year, farmId){
+  try{ const r=localStorage.getItem(tenantQueueKey(tid,year,farmId)); return r?JSON.parse(r):null; }
   catch{ return null; }
 }
-function saveTenantQueue(tid, year, fields){
-  try{ localStorage.setItem(tenantQueueKey(tid,year), JSON.stringify({fields,savedAt:Date.now()})); }catch{}
+function saveTenantQueue(tid, year, fields, farmId){
+  try{ localStorage.setItem(tenantQueueKey(tid,year,farmId), JSON.stringify({fields,savedAt:Date.now()})); }catch{}
 }
-function clearTenantQueue(tid, year){
-  try{ localStorage.removeItem(tenantQueueKey(tid,year)); }catch{}
+function clearTenantQueue(tid, year, farmId){
+  try{ localStorage.removeItem(tenantQueueKey(tid,year,farmId)); }catch{}
 }
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
@@ -2594,7 +2595,7 @@ function saveYears(years){
   fbSaveYears(years).catch(()=>{});
 }
 function loadFields(year){
-  if(_isAgriLogixTenant) return _tenantIdCache ? (loadTenantFieldsCache(_tenantIdCache, year) || []) : [];
+  if(_isAgriLogixTenant) return _tenantIdCache ? (loadTenantFieldsCache(_tenantIdCache, year, _farmIdCache) || []) : [];
   // Try localStorage cache first (fast/offline)
   try{
     const raw=localStorage.getItem(lsKey(year));
@@ -2621,13 +2622,13 @@ function saveFields(year, fields, onStatus){
   } else if(_tenantIdCache){
     // Local-first, same as AgriScale: cache + queue BEFORE attempting the network write,
     // so a dropped connection never loses data — only delays the sync.
-    saveTenantFieldsCache(_tenantIdCache, year, fields);
-    saveTenantQueue(_tenantIdCache, year, fields);
+    saveTenantFieldsCache(_tenantIdCache, year, fields, _farmIdCache);
+    saveTenantQueue(_tenantIdCache, year, fields, _farmIdCache);
   }
   if(onStatus) onStatus('saving');
   fbSaveFields(year, fields)
     .then(()=>{
-      if(_isAgriLogixTenant && _tenantIdCache) clearTenantQueue(_tenantIdCache, year);
+      if(_isAgriLogixTenant && _tenantIdCache) clearTenantQueue(_tenantIdCache, year, _farmIdCache);
       if(onStatus) onStatus('saved');
     })
     .catch((e)=>{
@@ -3760,10 +3761,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   // Configure Firebase and localStorage mode for this tenant
  _isAgriLogixTenant = !!tenantId;
   _tenantIdCache = tenantId || null;
+  _farmIdCache = farmId || null;
   initAgriPlan(tenantId, token, farmId);
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
-  const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026")||[]):loadFields(loadYears().slice(-1)[0]));
+  const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026",farmId)||[]):loadFields(loadYears().slice(-1)[0]));
   const[selectedField,setSelectedField]=useState(null);
   const[entityFilter,setEntityFilter]=useState("all");
   const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set([]));
@@ -3913,7 +3915,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
               eligibleCrops: (()=>{ const raw=f.eligibleCrops; const arr=Array.isArray(raw)?raw:raw&&typeof raw==="object"?Object.values(raw):[]; return arr.length>0?arr:(_tenantCrops||ALL_CROPS); })()
             }));
             setFields(normalized);
-            if(tenantId) saveTenantFieldsCache(tenantId, activeYear, normalized);
+            if(tenantId) saveTenantFieldsCache(tenantId, activeYear, normalized, farmId);
           }
           firstLoad = false;
           if(!tenantId){ localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields)); localStorage.setItem('agriplan_data_version',DATA_VERSION); }
@@ -3931,7 +3933,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       if(tenantId){
         setFields(prev => {
           if(prev && prev.length>0) return prev; // already have something (live or cached)
-          const cached = loadTenantFieldsCache(tenantId, activeYear);
+          const cached = loadTenantFieldsCache(tenantId, activeYear, farmId);
           return (cached && cached.length>0) ? cached : prev;
         });
       }
@@ -3967,18 +3969,18 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
     }
   },[fields,activeYear]);
 
-  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?(loadTenantFieldsCache(tenantId,yr)||[]):loadFields(yr));setSelectedField(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId]);
+  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?(loadTenantFieldsCache(tenantId,yr,farmId)||[]):loadFields(yr));setSelectedField(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId,farmId]);
   
    // Retry any queued offline save the moment the browser comes back online —
   // same behavior AgriScale already has.
   useEffect(()=>{
     if(!tenantId) return;
     const retry = () => {
-      const q = loadTenantQueue(tenantId, activeYear);
+      const q = loadTenantQueue(tenantId, activeYear, farmId);
       if(!q) return;
       setSaveStatus('pushing');
       fbSaveFields(activeYear, q.fields)
-        .then(()=>{ clearTenantQueue(tenantId, activeYear); setSaveStatus('saved'); setTimeout(()=>setSaveStatus('idle'),2000); })
+        .then(()=>{ clearTenantQueue(tenantId, activeYear, farmId); setSaveStatus('saved'); setTimeout(()=>setSaveStatus('idle'),2000); })
         .catch(()=>setSaveStatus('queued'));
     };
     window.addEventListener('online', retry);
