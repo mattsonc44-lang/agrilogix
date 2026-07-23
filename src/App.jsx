@@ -255,7 +255,7 @@ export default function App() {
   const enabledModules = (userAllowlist != null && userAllowlist.length > 0)
     ? tenantModules.filter(m => userAllowlist.includes(m)) : tenantModules;
   const syncDot = { idle:"#D8CEBC", saving:T.gold, saved:T.green, error:T.danger }[syncStatus];
-  const showFarmPicker = ["fieldlog","agriScale"].includes(module);
+  const showFarmPicker = ["fieldlog","agriScale","agriPlan"].includes(module);
   const customDefaultFarm = farms.find(f => f.id === "default");
   const allFarms = [customDefaultFarm || DEFAULT_FARM, ...farms.filter(f => f.id !== "default")];
 
@@ -378,7 +378,7 @@ export default function App() {
         {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
         {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
         {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
-        {module === "agriPlan"   && <AgriPlanModule  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
+        {module === "agriPlan"   && <AgriPlanModule  key={`ap-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
