@@ -985,17 +985,19 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                   ))}
                 </div>
               </div>
-              {/* Field */}
+              {/* Field — dropdown so the list doesn't eat up screen space; stays on
+                  whatever field was last picked until you choose a different one. */}
               <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
                 <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>FIELD</div>
-                <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                  {sortedFields.map(f=>{
-                    const isActive=f.id===activeFieldId;
-                    return(<button key={f.id} onClick={()=>setAFId(f.id)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:isActive?"#e8e2d8":"transparent",border:isActive?"1px solid #6a8a60":"1px solid #ccc4b8",color:isActive?"#4a6a40":"#6a7280"}}>
-                      {f.name} <span style={{fontSize:"8px",color:"#8a9a80",marginLeft:"3px"}}>{(f.loads||[]).length}</span>
-                    </button>);
-                  })}
-                </div>
+                <select
+                  value={activeFieldId!=null?String(activeFieldId):""}
+                  onChange={e=>{ const picked=sortedFields.find(f=>String(f.id)===e.target.value); if(picked) setAFId(picked.id); }}
+                  style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",background:"#fff",border:"1px solid #ccc4b8",borderRadius:"4px",color:"#4a5568",outline:"none"}}
+                >
+                  {sortedFields.map(f=>(
+                    <option key={f.id} value={String(f.id)}>{f.name} ({(f.loads||[]).length})</option>
+                  ))}
+                </select>
               </div>
               {/* Truck */}
               <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
