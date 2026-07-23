@@ -178,6 +178,21 @@ export default function App() {
     if (effectiveTenantId) localStorage.setItem(`al_farm_${effectiveTenantId}`, activeFarm.id);
   }, [activeFarm.id, effectiveTenantId]);
 
+  // ── Keep the default farm's display name in sync with the org name ───────
+  // "Default Farm" is just a placeholder until the tenant's own profile name
+  // (set at signup, e.g. "Flat Acre Farms") loads — and until someone
+  // explicitly renames the default farm via the farm-edit modal (which saves
+  // a real farms/default/profile and takes over from here).
+  useEffect(() => {
+    const orgName = tenant?.profile?.name;
+    if (!orgName) return;
+    const hasCustomDefault = farms.some(f => f.id === "default");
+    if (hasCustomDefault) return;
+    if (activeFarm.id === "default" && activeFarm.name !== orgName) {
+      setActiveFarm(f => ({ ...f, name: orgName }));
+    }
+  }, [tenant?.profile?.name, farms, activeFarm.id, activeFarm.name]);
+
   const loadUserProfile = async (sess) => {
     setLoading(true);
     try {
@@ -266,7 +281,8 @@ export default function App() {
   const syncDot = { idle:"#D8CEBC", saving:T.gold, saved:T.green, error:T.danger }[syncStatus];
   const showFarmPicker = ["fieldlog","agriScale","agriPlan"].includes(module);
   const customDefaultFarm = farms.find(f => f.id === "default");
-  const allFarms = [customDefaultFarm || DEFAULT_FARM, ...farms.filter(f => f.id !== "default")];
+  const effectiveDefaultFarm = customDefaultFarm || { ...DEFAULT_FARM, name: tenantProfile.name || DEFAULT_FARM.name };
+  const allFarms = [effectiveDefaultFarm, ...farms.filter(f => f.id !== "default")];
 
   return (
     <div style={S.app}>
