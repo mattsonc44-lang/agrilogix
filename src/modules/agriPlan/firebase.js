@@ -8,10 +8,12 @@ const STANDALONE_URL = "https://agriplan-49d52-default-rtdb.firebaseio.com";
 
 let _tenantId = null;
 let _token    = null;
+let _farmId   = null;
 
-export function initAgriPlan(tenantId, token) {
+export function initAgriPlan(tenantId, token, farmId) {
   _tenantId = tenantId || null;
   _token    = token    || null;
+  _farmId   = farmId   || null;
 }
 
 function baseUrl() { return _tenantId ? AGRILOGIX_URL : STANDALONE_URL; }
@@ -19,7 +21,11 @@ function authSuffix() { return _token ? `?auth=${_token}` : ""; }
 
 function path(key, yr) {
   if (_tenantId) {
-    const base = `tenants/${_tenantId}/agriPlan`;
+    // "default" farm (or no farm at all) keeps the original unscoped path for
+    // backward compatibility; any other farm gets its own subtree so multiple
+    // farming entities under one tenant don't share AgriPlan data.
+    const seg = (_farmId && _farmId !== "default") ? `farms/${_farmId}/` : "";
+    const base = `tenants/${_tenantId}/${seg}agriPlan`;
     return key === "fields" ? `${base}/fields/${yr}` : `${base}/${key}`;
   }
   return key === "fields" ? `agriplan/fields/${yr}` : `agriplan/${key}`;
