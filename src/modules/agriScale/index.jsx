@@ -300,6 +300,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [flFields,      setFLFields]      = useState([]);
   const [flSelected,    setFLSelected]    = useState(new Set());
   const [flLoading,     setFLLoading]     = useState(false);
+  const [flApByName,    setFlApByName]    = useState({}); // field name (lowercase) -> matching AgriPlan record, for the import-name preview
   const [apImportModal, setAPImportModal] = useState(false);
   const [apFields,      setAPFields]      = useState([]);
   const [apSelected,    setAPSelected]    = useState(new Set());
@@ -653,12 +654,19 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const flBase = (!farmId || farmId === "default")
         ? `tenants/${tenantId}/fieldlog`
         : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
-      const [fieldData, actData] = await Promise.all([
+      const yr = new Date().getFullYear();
+      const [fieldData, actData, apData] = await Promise.all([
         dbRead(`${flBase}/fields`, token).catch(() => null),
         dbRead(`${flBase}/activities`, token).catch(() => null),
+        dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null),
       ]);
       const flFields = obj2arr(fieldData || {}).filter(Boolean);
       const activities = obj2arr(actData || {}).filter(Boolean);
+      // Farm/tract lookup by field name, for the Farm+Field naming preview below.
+      const norm = s => (s||"").trim().toLowerCase();
+      const apByName = {};
+      obj2arr(apData || {}).filter(Boolean).forEach(a => { if (a?.common) apByName[norm(a.common)] = a; });
+      setFlApByName(apByName);
       // Only fields that have at least one seeding activity
       const seededIds = new Set(
         activities.filter(a => a.type === "seeding").map(a => a.fieldId)
@@ -1308,7 +1316,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                     <label key={f.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
                       <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(flSelected);sel?n.delete(f.id):n.add(f.id);setFLSelected(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
                       <div>
-                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{f.name}</div>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{buildImportName(f.name, flApByName[(f.name||"").trim().toLowerCase()]?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "")}</div>
                         {f.acres&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#6a8060",marginTop:"2px"}}>{f.acres} ACRES</div>}
                       </div>
                     </label>
@@ -1363,7 +1371,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                     <label key={a.common} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(122,90,58,0.18)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#7a5a3a":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
                       <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(apSelected);sel?n.delete(a.common):n.add(a.common);setAPSelected(n);}} style={{accentColor:"#7a5a3a",width:"14px",height:"14px",flexShrink:0}}/>
                       <div>
-                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{a.common}</div>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{buildImportName(a.common, a.farm)}</div>
                         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860",marginTop:"2px"}}>{a.acres?`${a.acres} ACRES`:""}{a.acres&&a.crop?" · ":""}{a.crop||""}</div>
                       </div>
                     </label>
