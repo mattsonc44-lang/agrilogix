@@ -143,31 +143,40 @@ export default function App() {
   }, [loading, tenant, profile, session, module]);
 
   // ── Load farms ────────────────────────────────────────────────────
+  // Uses effectiveTenantId (not profile.tenantId) so this also works correctly
+  // while an admin is viewing another tenant through Admin View — otherwise it
+  // queries the admin's own (usually farm-less) tenant and the picker silently
+  // falls back to showing only the built-in default farm.
   useEffect(() => {
-    if (!profile?.tenantId || !session?.idToken) return;
-    dbRead(`tenants/${profile.tenantId}/farms`, session.idToken)
+    if (!effectiveTenantId || !session?.idToken) return;
+    dbRead(`tenants/${effectiveTenantId}/farms`, session.idToken)
       .then(data => {
         const list = obj2arr(data || {}).map(f => f?.profile).filter(Boolean);
         setFarms(list);
       })
       .catch(() => setFarms([]));
-  }, [profile?.tenantId, session?.idToken]);
+  }, [effectiveTenantId, session?.idToken]);
 
   // ── Restore active farm from localStorage ────────────────────────
   useEffect(() => {
-    if (!profile?.tenantId) return;
-    const saved = localStorage.getItem(`al_farm_${profile.tenantId}`);
+    if (!effectiveTenantId) return;
+    const saved = localStorage.getItem(`al_farm_${effectiveTenantId}`);
     if (saved === "default") { const d = farms.find(f=>f.id==="default"); setActiveFarm(d || DEFAULT_FARM); return; }
     if (saved) {
       const f = farms.find(f => f.id === saved);
       if (f) setActiveFarm(f);
+    } else {
+      // No saved farm for this tenant yet (e.g. just switched into Admin View
+      // for a different tenant) — don't keep showing whatever farm was active
+      // for the previous tenant.
+      setActiveFarm(DEFAULT_FARM);
     }
-  }, [profile?.tenantId, farms]);
+  }, [effectiveTenantId, farms]);
 
   // ── Persist active farm ───────────────────────────────────────────
   useEffect(() => {
-    if (profile?.tenantId) localStorage.setItem(`al_farm_${profile.tenantId}`, activeFarm.id);
-  }, [activeFarm.id, profile?.tenantId]);
+    if (effectiveTenantId) localStorage.setItem(`al_farm_${effectiveTenantId}`, activeFarm.id);
+  }, [activeFarm.id, effectiveTenantId]);
 
   const loadUserProfile = async (sess) => {
     setLoading(true);
