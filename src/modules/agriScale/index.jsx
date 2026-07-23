@@ -266,6 +266,13 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const FIELD_BASE = (!farmId || farmId === "default")
     ? `${BASE}/fields`
     : `tenants/${tenantId}/farms/${farmId}/agriScale/fields`;
+  // AgriPlan is a separate module with its own farm scoping — reads from it
+  // (planned crop, insurance/landlord data for imports) must follow the same
+  // farm as this AgriScale instance, or Via Terra would always see Flat Acre's
+  // AgriPlan data (and vice versa).
+  const AP_BASE = (!farmId || farmId === "default")
+    ? `tenants/${tenantId}/agriPlan`
+    : `tenants/${tenantId}/farms/${farmId}/agriPlan`;
   const role = userProfile?.role || "operator";
   const perms = PERMS[role] || PERMS.operator;
   const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
@@ -297,6 +304,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [apFields,      setAPFields]      = useState([]);
   const [apSelected,    setAPSelected]    = useState(new Set());
   const [apLoading,     setAPLoading]     = useState(false);
+  // Shared by both import modals: "field" = just the field/common name (old
+  // behavior, default so nothing changes unless you pick otherwise), "farmField"
+  // = prefix with the farm/tract name (e.g. "Home - North Tiber Grade").
+  const [importNameFormat, setImportNameFormat] = useState("field");
+  const buildImportName = (common, farmTract) =>
+    (importNameFormat === "farmField" && farmTract) ? `${farmTract} - ${common}` : common;
   const [apCrops,       setApCrops]       = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_apcrops_${tenantId}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> planned crop from AgriPlan
   const [flCrops,       setFlCrops]       = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_flcrops_${tenantId}_${farmId||"default"}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> actually-seeded crop from FieldLog
   const [flExportModal, setFLExportModal] = useState(false);
@@ -474,7 +487,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   useEffect(()=>{
     if(!tenantId) return;
     const yr = new Date().getFullYear();
-    dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).then(d=>{
+    dbRead(`${AP_BASE}/fields/${yr}`, token).then(d=>{
       const apArr = obj2arr(d||{}).filter(Boolean);
       const map = {};
       apArr.forEach(a=>{ if(a?.common && a?.crop && a.crop.trim().toLowerCase()!=="chem-fallow") map[a.common.trim().toLowerCase()] = normalizeCropName(a.crop); });
@@ -692,8 +705,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     try {
       const yr = new Date().getFullYear();
       const [apData, cpData] = await Promise.all([
-        dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).catch(()=>null),
-        dbRead(`tenants/${tenantId}/agriPlan/cropPrices`, token).catch(()=>null),
+        dbRead(`${AP_BASE}/fields/${yr}`, token).catch(()=>null),
+        dbRead(`${AP_BASE}/cropPrices`, token).catch(()=>null),
       ]);
       apFields = obj2arr(apData||{}).filter(Boolean);
       // cropPrices may be array or object
@@ -708,10 +721,13 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const ap = apFields.find(a => norm(a.common) === norm(f.name));
       // Get price election for the planned crop
       const cp = ap?.crop ? cropPrices[ap.crop] : null;
+      // Farm/tract for the naming choice: prefer the matched AgriPlan record's
+      // farm field, fall back to the "Farm: X" convention FieldLog notes use.
+      const farmTract = ap?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "";
 
       return {
         id: genId(),
-        name: f.name,
+        name: buildImportName(f.name, farmTract),
         acres: f.acres || ap?.acres || 0,
         farmId: farmId || "default",
         loads: [], costs: {},
@@ -740,7 +756,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     setAPLoading(true); setAPImportModal(true); setAPSelected(new Set());
     try {
       const yr = new Date().getFullYear();
-      const apData = await dbRead(`tenants/${tenantId}/agriPlan/fields/${yr}`, token).catch(() => null);
+      const apData = await dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null);
       const apAll = obj2arr(apData || {}).filter(Boolean);
       // Exclude fields already in AgriScale by name
       const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
@@ -757,7 +773,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
 
     let cropPrices = {};
     try {
-      const cpData = await dbRead(`tenants/${tenantId}/agriPlan/cropPrices`, token).catch(()=>null);
+      const cpData = await dbRead(`${AP_BASE}/cropPrices`, token).catch(()=>null);
       const cpArr = Array.isArray(cpData) ? cpData : obj2arr(cpData||{});
       cpArr.forEach(p=>{ if(p?.crop) cropPrices[p.crop]={priceGuar:p.priceGuar||0,projPrice:p.projPrice||0}; });
     } catch(e) {}
@@ -766,7 +782,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const cp = ap.crop ? cropPrices[ap.crop] : null;
       return {
         id: genId(),
-        name: ap.common,
+        name: buildImportName(ap.common, ap.farm),
         acres: ap.acres || 0,
         farmId: farmId || "default",
         loads: [], costs: {},
@@ -859,7 +875,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
         try {
           const hYr = new Date(r.date).getFullYear();
           await fetch(
-            `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory/${encodeURIComponent(r.name)}/${hYr}.json?auth=${token}`,
+            `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.name)}/${hYr}.json?auth=${token}`,
             { method: "PUT", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres) }) }
           );
@@ -1272,6 +1288,19 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
               <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em"}}>
                 SELECT FIELDS TO IMPORT ({flSelected.size} OF {flFields.length} SELECTED)
               </div>
+              <div style={{display:"flex",flexDirection:"column",gap:"6px",padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:"6px",border:"1px solid rgba(255,255,255,0.08)"}}>
+                <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a9880",letterSpacing:"0.08em"}}>NAME IMPORTED FIELDS AS</div>
+                <div style={{display:"flex",gap:"10px"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+                    <input type="radio" name="importNameFormat" checked={importNameFormat==="field"} onChange={()=>setImportNameFormat("field")} style={{accentColor:"#4a7535"}}/>
+                    FIELD ONLY
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+                    <input type="radio" name="importNameFormat" checked={importNameFormat==="farmField"} onChange={()=>setImportNameFormat("farmField")} style={{accentColor:"#4a7535"}}/>
+                    FARM + FIELD
+                  </label>
+                </div>
+              </div>
               <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
                 {flFields.map(f=>{
                   const sel = flSelected.has(f.id);
@@ -1313,6 +1342,19 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             {!apLoading&&apFields.length>0&&(<>
               <div style={{fontSize:"10px",color:"#8a7860",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em"}}>
                 SELECT FIELDS TO IMPORT ({apSelected.size} OF {apFields.length} SELECTED)
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:"6px",padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:"6px",border:"1px solid rgba(255,255,255,0.08)"}}>
+                <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a9880",letterSpacing:"0.08em"}}>NAME IMPORTED FIELDS AS</div>
+                <div style={{display:"flex",gap:"10px"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+                    <input type="radio" name="importNameFormat" checked={importNameFormat==="field"} onChange={()=>setImportNameFormat("field")} style={{accentColor:"#7a5a3a"}}/>
+                    FIELD ONLY
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+                    <input type="radio" name="importNameFormat" checked={importNameFormat==="farmField"} onChange={()=>setImportNameFormat("farmField")} style={{accentColor:"#7a5a3a"}}/>
+                    FARM + FIELD
+                  </label>
+                </div>
               </div>
               <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
                 {apFields.map(a=>{
