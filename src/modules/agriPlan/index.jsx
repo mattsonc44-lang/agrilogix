@@ -3722,8 +3722,13 @@ function ImportWorkbookModal({ tenantId, token, onClose }) {
       await importAgriPlanYears(agriPlanFields.viaTerra, `farms/${VIA_TERRA_FARM_ID}/agriPlan`, "Via Terra");
 
       addLog("Importing AgriScale field lists…");
-      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.flatAcre.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms AgriScale");
-      await importListPath(`tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/agriScale/fields`, currentFields.viaTerra.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Via Terra AgriScale");
+      // AgriScale (unlike FieldLog) keeps ALL farms in ONE shared fields list and
+      // tags each record with farmId, filtering client-side — it does NOT use a
+      // separate farms/{id}/agriScale subtree. So both entities write to the same
+      // shared path; Via Terra's records just need the farmId tag added.
+      const asKey = f => `${f.farmId || "default"}|${(f.name||"").trim().toLowerCase()}`;
+      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.flatAcre.agriScaleFields, asKey, "Flat Acre Farms AgriScale");
+      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.viaTerra.agriScaleFields.map(f=>({...f, farmId: VIA_TERRA_FARM_ID})), asKey, "Via Terra AgriScale");
 
       addLog("Importing FieldLog field lists…");
       await importListPath(`tenants/${tenantId}/fieldlog/fields`, currentFields.flatAcre.fieldLogFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms FieldLog");
