@@ -1,6 +1,20 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
 
+// ── Farm-scoped path helpers ────────────────────────────────────────────────
+// AgriPlan supports multiple farming entities per tenant (e.g. "Flat Acre Farms"
+// and "Via Terra") the same way FieldLog and AgriScale already do: the "default"
+// farm keeps the original unscoped path for backward compatibility, any other
+// farm gets its own tenants/{tenantId}/farms/{farmId}/ subtree.
+function apBase(tenantId, farmId) {
+  const seg = (farmId && farmId !== "default") ? `farms/${farmId}/` : "";
+  return `tenants/${tenantId}/${seg}agriPlan`;
+}
+function flBase(tenantId, farmId) {
+  const seg = (farmId && farmId !== "default") ? `farms/${farmId}/` : "";
+  return `tenants/${tenantId}/${seg}fieldlog`;
+}
+
 const HISTORY_DATA = {
   "Akey Yard|1,2":{"common":"Akey Yard","farm":"Nuxoll Land","fieldNum":"1,2","acres":11.83,"history":{"2025":"CC WW","2026":"Austrians"}},
   "Akey yard E|2":{"common":"Akey yard E","farm":"Nuxoll Land","fieldNum":"2","acres":136.29,"history":{"2025":"CC WW","2026":"Austrians"}},
@@ -2635,7 +2649,7 @@ function saveHistRevCache(data){
 
 
 // ── Manage Crops Modal ────────────────────────────────────────────────────────
-function ManageCropsModal({ tenantId, token, tenantCrops, onSave, onClose }) {
+function ManageCropsModal({ tenantId, token, farmId, tenantCrops, onSave, onClose }) {
   const [crops, setCrops] = useState(tenantCrops.length > 0 ? [...tenantCrops] : [...ALL_CROPS]);
   const [newCrop, setNewCrop] = useState("");
   const [saving, setSaving] = useState(false);
@@ -2655,7 +2669,7 @@ function ManageCropsModal({ tenantId, token, tenantCrops, onSave, onClose }) {
     setSaving(true);
     try {
       const res = await fetch(
-        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`,
+        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/crops.json?auth=${token}`,
         { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(crops) }
       );
       if (!res.ok) throw new Error(`Save failed: ${res.status}`);
@@ -2846,7 +2860,7 @@ function SeedLogSection({ fieldName, plannedCrop, logs, tenantId }) {
 const CROPS_LIST = ["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Durum",
   "Lentils","Chickpeas","Austrians","Green Peas","Yellow Peas","Mustard","Canola","Flax"];
 
-function ExpenseDefaultsModal({ tenantId, token, expenseDefaults, cropExpDefaults, onSave, onClose }) {
+function ExpenseDefaultsModal({ tenantId, token, farmId, expenseDefaults, cropExpDefaults, onSave, onClose }) {
   const [baseRates, setBaseRates] = useState({...expenseDefaults});
   const [cropRates, setCropRates] = useState(
     CROPS_LIST.reduce((acc,c)=>({...acc,[c]:{seed:0,fertilizerChemical:0,cropInsurance:0,...(cropExpDefaults[c]||{})}}),{})
@@ -2867,9 +2881,9 @@ function ExpenseDefaultsModal({ tenantId, token, expenseDefaults, cropExpDefault
     const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
     try {
       await Promise.all([
-        fetch(`${DB}/tenants/${tenantId}/agriPlan/expenseDefaults.json?auth=${token}`,
+        fetch(`${DB}/${apBase(tenantId,farmId)}/expenseDefaults.json?auth=${token}`,
           {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(baseRates)}),
-        fetch(`${DB}/tenants/${tenantId}/agriPlan/cropExpDefaults.json?auth=${token}`,
+        fetch(`${DB}/${apBase(tenantId,farmId)}/cropExpDefaults.json?auth=${token}`,
           {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(cropRates)}),
       ]);
       onSave(baseRates, cropRates);
@@ -2968,7 +2982,7 @@ function ExpenseDefaultsModal({ tenantId, token, expenseDefaults, cropExpDefault
 
 
 // ── Crop Prices Editor ────────────────────────────────────────────────────────
-function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onClose }) {
+function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onSave, onClose }) {
   const crops = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS.filter(c => CROP_TYPICAL[c]);
   const [prices, setPrices] = useState(() => {
     const init = {};
@@ -3006,7 +3020,7 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
         return { crop, priceGuar: isFinite(pg)?pg:0, projPrice: isFinite(pp)?pp:0 };
       });
       const res = await fetch(
-        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
+        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`,
         { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(asArray) }
       );
       if (!res.ok) {
@@ -3103,7 +3117,7 @@ function CropPricesModal({ tenantId, token, tenantCrops, cropPrices, onSave, onC
 }
 
 // ── APH Import Modal ──────────────────────────────────────────────────────────
-function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
+function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }) {
   const [stage, setStage] = useState("upload"); // upload | converting | parsing | review | saving | done
   const [error, setError] = useState("");
   const [parsed, setParsed] = useState(null);   // merged Claude output across all batches
@@ -3302,7 +3316,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       // (aphFieldMap) takes priority, so a farm you've already matched needs no re-matching
       // on future imports.
       const savedFieldMap = await fetch(
-        `${DB}/tenants/${tenantId}/agriPlan/aphFieldMap.json?auth=${token}`
+        `${DB}/${apBase(tenantId,farmId)}/aphFieldMap.json?auth=${token}`
       ).then(r => r.json()).catch(() => null) || {};
 
       const groupMatch = {}; // groupKey -> fieldId
@@ -3333,7 +3347,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       // second PDF covering different fields must not erase the first import's data, so we
       // fetch what's there now and only touch the field+crop combos this import matched.
       const existingAphData = await fetch(
-        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`
+        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData.json?auth=${token}`
       ).then(r => r.json()).catch(() => ({}));
 
       // Build aphData: { [fieldCommon]: { [crop]: { years: {[year]: {acres, yield, production}}, aphYield, aphYears } } }
@@ -3359,7 +3373,7 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
           aphData[key][crop].years[String(y.year)] = { acres: y.acres, yield: y.yield, production: y.production };
         });
       });
-      const url = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`;
+      const url = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData.json?auth=${token}`;
       const res = await fetch(url, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(aphData)
@@ -3380,14 +3394,14 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       if(Object.keys(priceUpdates).length > 0) {
         // Merge with existing cropPrices (don't overwrite projected sell prices)
         const existingPrices = await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`
         ).then(r=>r.json()).catch(()=>({}));
         const merged = {...(existingPrices||{})};
         Object.entries(priceUpdates).forEach(([crop, {priceGuar}]) => {
           merged[crop] = { ...(merged[crop]||{}), priceGuar };
         });
         await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`,
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`,
           { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(merged) }
         ).catch(()=>{});
       }
@@ -3402,11 +3416,11 @@ function ImportAPHModal({ tenantId, token, fields, onClose, onImported }) {
       });
       if (Object.keys(fieldMapUpdates).length > 0) {
         const existingFieldMap = await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphFieldMap.json?auth=${token}`
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphFieldMap.json?auth=${token}`
         ).then(r=>r.json()).catch(()=>({}));
         const mergedFieldMap = { ...(existingFieldMap||{}), ...fieldMapUpdates };
         await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphFieldMap.json?auth=${token}`,
+          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphFieldMap.json?auth=${token}`,
           { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(mergedFieldMap) }
         ).catch(()=>{});
       }
@@ -3630,11 +3644,123 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 // AgriPlan module — tenant-isolated, starts blank inside Agri Logix
-export default function AgriPlanModule({ tenantId, token, userProfile, persist } = {}){
+// ── One-time Flat Acre Farms / Via Terra workbook import ───────────────────
+// Uses the currently logged-in user's own Firebase session (tenantId/token from
+// props) — no separate credentials ever change hands. Reads the pre-built data
+// file at /flatAcreImportData.json and safely merges it in: anything already
+// saved at a given path is left untouched, only missing records get added.
+function ImportWorkbookModal({ tenantId, token, onClose }) {
+  const [status, setStatus] = useState("idle"); // idle | running | done | error
+  const [log, setLog] = useState([]);
+  const addLog = (msg) => setLog(l => [...l, msg]);
+  const VIA_TERRA_FARM_ID = "viaterra";
+  const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
+  const fieldKey = (f) => `${(f.common||"").trim().toLowerCase()}|${String(f.fieldNum||"").trim().toLowerCase()}`;
+
+  async function dbGet(path) {
+    const res = await fetch(`${DB}/${path}.json?auth=${token}`);
+    if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+    return res.json();
+  }
+  async function dbPut(path, value) {
+    const res = await fetch(`${DB}/${path}.json?auth=${token}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
+    });
+    if (!res.ok) throw new Error(`PUT ${path} -> ${res.status}: ${await res.text()}`);
+  }
+
+  async function importAgriPlanYears(entityFields, basePath, label) {
+    for (const [year, newFields] of Object.entries(entityFields || {})) {
+      if (!newFields.length) continue;
+      const path = `tenants/${tenantId}/${basePath}/fields/${year}`;
+      const existingObj = (await dbGet(path)) || {};
+      const existingByKey = new Map(Object.values(existingObj).map(f => [fieldKey(f), f]));
+      const merged = { ...existingObj };
+      let nextIdx = Object.keys(existingObj).length, added = 0, skipped = 0;
+      for (const f of newFields) {
+        if (existingByKey.has(fieldKey(f))) { skipped++; continue; }
+        merged[String(nextIdx++)] = f; added++;
+      }
+      await dbPut(path, merged);
+      addLog(`${label} ${year}: +${added} new field-years, ${skipped} already present`);
+    }
+  }
+
+  async function importListPath(path, list, keyFn, label) {
+    const existingObj = (await dbGet(path)) || {};
+    const existingKeys = new Set(Object.values(existingObj).map(keyFn));
+    const merged = { ...existingObj };
+    let nextIdx = Object.keys(existingObj).length, added = 0;
+    for (const f of (list || [])) {
+      if (existingKeys.has(keyFn(f))) continue;
+      merged[f.id != null ? String(f.id) : String(nextIdx++)] = f; added++;
+    }
+    await dbPut(path, merged);
+    addLog(`${label}: +${added} new`);
+  }
+
+  const run = async () => {
+    setStatus("running"); setLog([]);
+    try {
+      const resp = await fetch("/flatAcreImportData.json");
+      if (!resp.ok) throw new Error("Could not load /flatAcreImportData.json");
+      const { agriPlanFields, currentFields } = await resp.json();
+
+      const farmPath = `tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/profile`;
+      const existingFarm = await dbGet(farmPath);
+      if (!existingFarm) {
+        await dbPut(farmPath, { id: VIA_TERRA_FARM_ID, name: "Via Terra", color: "#1a4a80", createdAt: new Date().toISOString() });
+        addLog("Created Via Terra farm.");
+      } else {
+        addLog("Via Terra farm already exists — leaving it as-is.");
+      }
+
+      addLog("Importing AgriPlan — Flat Acre Farms…");
+      await importAgriPlanYears(agriPlanFields.flatAcre, "agriPlan", "Flat Acre Farms");
+      addLog("Importing AgriPlan — Via Terra…");
+      await importAgriPlanYears(agriPlanFields.viaTerra, `farms/${VIA_TERRA_FARM_ID}/agriPlan`, "Via Terra");
+
+      addLog("Importing AgriScale field lists…");
+      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.flatAcre.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms AgriScale");
+      await importListPath(`tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/agriScale/fields`, currentFields.viaTerra.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Via Terra AgriScale");
+
+      addLog("Importing FieldLog field lists…");
+      await importListPath(`tenants/${tenantId}/fieldlog/fields`, currentFields.flatAcre.fieldLogFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms FieldLog");
+      await importListPath(`tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/fieldlog/fields`, currentFields.viaTerra.fieldLogFields, f=>(f.name||"").trim().toLowerCase(), "Via Terra FieldLog");
+
+      addLog("Done — switch farms using the picker at the top to see Via Terra.");
+      setStatus("done");
+    } catch (e) {
+      addLog("ERROR: " + e.message);
+      setStatus("error");
+    }
+  };
+
+  return (<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{background:"#fff",borderRadius:10,padding:24,width:560,maxHeight:"80vh",overflowY:"auto"}}>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,marginBottom:12,color:"#1a4010"}}>Import Flat Acre / Via Terra Workbook Data</div>
+      <div style={{fontSize:13,color:"#527a38",marginBottom:16,lineHeight:1.5}}>
+        Imports 12 years of crop-plan data (2015-2026) and 9 years of expenses (2018-2026) for both Flat
+        Acre Farms and Via Terra. Creates the Via Terra farm if it doesn't exist yet. Safe to run more than
+        once — anything already saved is left alone, only missing records get added.
+      </div>
+      {status==="idle" && <button onClick={run} style={{padding:"10px 18px",background:"#2a7010",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:14}}>Start Import</button>}
+      {status!=="idle" && <div style={{background:"#f4f8ef",border:"1px solid #ccdda0",borderRadius:6,padding:12,fontFamily:"'IBM Plex Mono',monospace",fontSize:11,maxHeight:300,overflowY:"auto"}}>
+        {log.map((l,i)=><div key={i}>{l}</div>)}
+        {status==="running" && <div>Working…</div>}
+      </div>}
+      <div style={{marginTop:16,display:"flex",justifyContent:"flex-end",gap:8}}>
+        <button onClick={onClose} style={{padding:"8px 16px",background:"transparent",border:"1px solid #ccc",borderRadius:6,cursor:"pointer"}}>{status==="done"?"Close & Refresh":"Cancel"}</button>
+      </div>
+    </div>
+  </div>);
+}
+
+export default function AgriPlanModule({ tenantId, token, userProfile, persist, farmId } = {}){
   // Configure Firebase and localStorage mode for this tenant
  _isAgriLogixTenant = !!tenantId;
   _tenantIdCache = tenantId || null;
-  initAgriPlan(tenantId, token);
+  initAgriPlan(tenantId, token, farmId);
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
   const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026")||[]):loadFields(loadYears().slice(-1)[0]));
@@ -3649,6 +3775,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
   const [dbLoaded, setDbLoaded] = useState(false);
   const [showRulesEditor, setShowRulesEditor] = useState(false);
   const [showImportAPH,   setShowImportAPH]   = useState(false);
+  const [showImportWorkbook, setShowImportWorkbook] = useState(false);
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
   const [fieldHistory,    setFieldHistory]    = useState({}); // manual crop history per field
   const [tenantCrops,     setTenantCrops]     = useState([]);   // per-tenant crop list
@@ -3702,7 +3829,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
 
     // Load APH data if it exists
     if(tenantId && token) {
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/aphData.json?auth=${token}`)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setAphData(d); }).catch(()=>{});
       // Load chemical plantback restrictions written by FieldLog
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
@@ -3712,8 +3839,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         try {
           const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
           const [flFieldsData, flActsData] = await Promise.all([
-            fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`).then(r=>r.json()),
-            fetch(`${DB}/tenants/${tenantId}/fieldlog/activities.json?auth=${token}`).then(r=>r.json()),
+            fetch(`${DB}/${flBase(tenantId,farmId)}/fields.json?auth=${token}`).then(r=>r.json()),
+            fetch(`${DB}/${flBase(tenantId,farmId)}/activities.json?auth=${token}`).then(r=>r.json()),
           ]);
           // Build fieldId → name map
           const idToName = {};
@@ -3746,10 +3873,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         } catch(e) { console.warn("FieldLog seed log load failed:", e.message); }
       })();
       // Load manual field history from Firebase
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
       // Load tenant crop price elections from Firebase
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropPrices.json?auth=${token}`)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{
           if(!d) return;
           if(Array.isArray(d)){
@@ -3762,12 +3889,12 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
           }
         }).catch(()=>{});
       // Load tenant crop list from Firebase
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/crops.json?auth=${token}`)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/crops.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
       // Load tenant-specific expense defaults (replaces hardcoded FA/VT constants)
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/expenseDefaults.json?auth=${token}`)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/expenseDefaults.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setExpenseDefaults(d); }).catch(()=>{});
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/cropExpDefaults.json?auth=${token}`)
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropExpDefaults.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setCropExpDefaults(d); }).catch(()=>{});
     }
 
@@ -3916,11 +4043,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
       if(deleted&&tenantId&&token){(async()=>{
         try{
           const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-          const data=await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields.json?auth=${token}`).then(r=>r.json());
+          const data=await fetch(`${DB}/${flBase(tenantId,farmId)}/fields.json?auth=${token}`).then(r=>r.json());
           if(!data) return;
           const match=Object.entries(data).find(([,f])=>f.name===deleted.common);
           if(match){
-            await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields/${match[0]}.json?auth=${token}`,{method:"DELETE"});
+            await fetch(`${DB}/${flBase(tenantId,farmId)}/fields/${match[0]}.json?auth=${token}`,{method:"DELETE"});
             console.log(`[SYNC] Deleted "${deleted.common}" from AgriField`);
           }
         }catch(e){console.warn("Delete sync to AgriField failed:",e.message);}
@@ -3964,7 +4091,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         } else {
           // Not found anywhere — add to Default Farm
           const flId=`fl${Date.now()}${Math.floor(Math.random()*9999)}`;
-          await fetch(`${DB}/tenants/${tenantId}/fieldlog/fields/${flId}.json?auth=${token}`,{
+          await fetch(`${DB}/${flBase(tenantId,farmId)}/fields/${flId}.json?auth=${token}`,{
             method:"PUT",headers:{"Content-Type":"application/json"},
             body:JSON.stringify({id:flId,name:field.common,acres:String(field.acres||""),legalDesc:field.legal||"",notes:field.farm?`Farm: ${field.farm}`:"",boundary:[]})
           });
@@ -3984,20 +4111,21 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
     </div>}
     {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/> }
     {showPricesEditor&&<CropPricesModal
-      tenantId={tenantId} token={token}
+      tenantId={tenantId} token={token} farmId={farmId}
       tenantCrops={tenantCrops} cropPrices={cropPrices}
       onSave={p=>setCropPrices(p)}
       onClose={()=>setShowPricesEditor(false)}/>}
     {showCropsMgr&&<ManageCropsModal
-      tenantId={tenantId} token={token} tenantCrops={tenantCrops}
+      tenantId={tenantId} token={token} farmId={farmId} tenantCrops={tenantCrops}
       onSave={crops=>setTenantCrops(crops)}
       onClose={()=>setShowCropsMgr(false)}/>}
     {showRatesEditor&&<ExpenseDefaultsModal
-      tenantId={tenantId} token={token}
+      tenantId={tenantId} token={token} farmId={farmId}
       expenseDefaults={expenseDefaults} cropExpDefaults={cropExpDefaults}
       onSave={(base,crops)=>{ setExpenseDefaults(base); setCropExpDefaults(crops); }}
       onClose={()=>setShowRatesEditor(false)}/>}
-    {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} fields={fields} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
+    {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} farmId={farmId} fields={fields} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
+    {showImportWorkbook&&<ImportWorkbookModal tenantId={tenantId} token={token} onClose={()=>setShowImportWorkbook(false)}/>}
     {/* Header */}
     <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
       <span style={{fontFamily:"'Playfair Display',serif",fontSize:19,color:"#c8e8a0",letterSpacing:0.5}}>🌾 AgriPlan</span>
@@ -4044,6 +4172,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
         <button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
+        {tenantId&&<button onClick={()=>setShowImportWorkbook(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import Workbook</button>}
         {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
         {tenantId&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
@@ -4106,7 +4235,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist }
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
-            if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/agriPlan/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
+            if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
           }}/>)
           :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs}/>)}
       </div>
