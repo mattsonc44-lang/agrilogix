@@ -104,6 +104,7 @@ function BinGauge({ bin, grains, small }) {
         </div>
         <div style={{flex:1}}>
           <div style={{fontFamily:"'Orbitron',monospace",fontSize:small?"11px":"13px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"4px"}}>{bin.name}</div>
+          {bin.location&&<div style={{fontSize:small?"9px":"10px",color:"#8a9880",letterSpacing:"0.06em",marginBottom:"2px"}}>📍 {bin.location}</div>}
           <div style={{fontSize:small?"9px":"10px",color:"#6a7280",letterSpacing:"0.06em",lineHeight:1.7}}>
             <div><span style={{color:fillColor,fontWeight:"bold"}}>{pct.toFixed(1)}%</span> FULL</div>
             <div>{storedBu.toFixed(0)} / {bin.capacityBu.toLocaleString()} BU</div>
@@ -954,7 +955,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                 {sortedBins.map(b=>{
                   const g=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
                   const pct=b.capacityBu>0?Math.min(100,b.storedLbs/(g.bushel_lbs||60)/b.capacityBu*100):0;
-                  return(<option key={b.id} value={String(b.id)}>{b.name} ({pct.toFixed(0)}%)</option>);
+                  return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.location}`:""} ({pct.toFixed(0)}%)</option>);
                 })}
               </select>
             </div>
@@ -1101,7 +1102,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
           {tab==="BINS"&&(<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
               <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>BIN STORAGE</div>
-              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,farmId:farmId||"default",capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT"}];setBins(nb);save(fields,nb,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
+              {perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,farmId:farmId||"default",capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT",location:""}];setBins(nb);save(fields,nb,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
             </div>
             {safeBins.map(b=>(
               <div key={b.id} style={{marginBottom:"10px"}}>
@@ -1425,11 +1426,12 @@ const MoBtn = ({children,onClick,variant="ghost",disabled})=><button onClick={on
 const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
 
 function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
-  const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName,shared:bin.farmId==="shared"||!bin.farmId});
+  const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName,location:bin.location||"",shared:bin.farmId==="shared"||!bin.farmId});
   const safeGrains=(Array.isArray(grains)?grains:[]).filter(Boolean);
   return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
     <div style={hdrStyle}>EDIT {bin.name}</div>
     <div style={lblStyle}>BIN NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/>
+    <div style={lblStyle}>LOCATION</div><input style={inStyle} value={f.location} onChange={e=>setF(p=>({...p,location:e.target.value}))} placeholder="e.g. Home Yard, North Farm"/>
     <div style={lblStyle}>CAPACITY (BU)</div><input style={inStyle} type="number" value={f.capacityBu} onChange={e=>setF(p=>({...p,capacityBu:e.target.value}))}/>
     <div style={lblStyle}>STORED (LBS)</div><input style={inStyle} type="number" value={f.storedLbs} onChange={e=>setF(p=>({...p,storedLbs:e.target.value}))}/>
     <div style={lblStyle}>GRAIN TYPE</div><select style={seStyle} value={f.grainName} onChange={e=>setF(p=>({...p,grainName:e.target.value}))}>{safeGrains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</select>
