@@ -501,6 +501,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
             {tab==="fleet"&&!selVeh&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("vehicle");}}>+ Add Equipment</button>}
             {tab==="vendors"&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("vendor");}}>+ Add Vendor</button>}
             {tab==="parts"&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("invItem");}}>+ Add Item</button>}
+            <button className="btn btn-ghost btn-sm" onClick={()=>setModal("importMaintenance")}>📥 Import Maintenance History</button>
           </div>
         </div>
 
@@ -566,6 +567,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
       {/* Modals */}
       {modal==="vehicle"  &&<VehicleMo   initial={editTarget} customers={D.customers} onSave={saveVehicle}  onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="importMaintenance" && <ImportMaintenanceModal vehicles={D.vehicles} records={D.records} onImport={(newRecords)=>{save({records:[...D.records,...newRecords]});}} onClose={()=>setModal(null)}/>}
       {modal==="record"   &&<RecordMo    initial={editTarget} vehicleId={selVehId} partsToOrder={D.partsToOrder} onSave={saveRecord}   onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="customer" &&<CustomerMo  initial={editTarget} onSave={saveCustomer} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
@@ -1139,6 +1141,116 @@ function Fg({label,full,children}){return(<div className={`form-group ${full?"fo
 function Fi(props){return(<input className="form-input" {...props}/>);}
 function Fs({children,...props}){return(<select className="form-select" {...props}>{children}</select>);}
 function Fr({children}){return(<div className="form-row">{children}</div>);}
+
+// ── Import Maintenance History (from an equipment maintenance workbook) ────
+// Compares each sheet's parsed records against what's already logged for the
+// matching equipment (by name) and adds only what's missing — including rows
+// where the workbook's Date cell was blank and inherited (filled down) from
+// the most recent dated row above it, which a naive per-row import would skip.
+function ImportMaintenanceModal({ vehicles, records, onImport, onClose }) {
+  const [status, setStatus] = useState("idle"); // idle | loaded | done
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState("");
+
+  const norm = s => (s||"").trim().toLowerCase();
+
+  const inferType = (work) => {
+    const w = work.toLowerCase();
+    if (w.includes("oil")) return "Oil Change";
+    if (w.includes("filter")) return "Filter Replacement";
+    if (w.includes("tire")) return "Tire Service";
+    if (w.includes("brake")) return "Brake Service";
+    if (w.includes("belt") || w.includes("chain")) return "Belt/Chain Replacement";
+    if (w.includes("coolant")) return "Coolant Service";
+    if (w.includes("fuel")) return "Fuel System";
+    if (w.includes("batter") || w.includes("electric")) return "Battery/Electrical";
+    if (w.includes("grease") || w.includes("inspect")) return "Inspection";
+    return "Repair";
+  };
+
+  const load = async () => {
+    setError("");
+    try {
+      const resp = await fetch("/mattsonMaintenanceData.json");
+      if (!resp.ok) throw new Error("Could not load /mattsonMaintenanceData.json");
+      const data = await resp.json();
+
+      const matched = [];
+      const unmatched = [];
+      const toAddAll = [];
+
+      for (const [sheetName, sheet] of Object.entries(data)) {
+        const veh = vehicles.find(v => norm(v.name) === norm(sheetName));
+        if (!veh) { if ((sheet.records||[]).length) unmatched.push(sheetName); continue; }
+        const existingKeys = new Set(
+          records.filter(r => r.vehicleId === veh.id)
+            .map(r => `${r.date||""}|${norm(r.notes||"")}`)
+        );
+        const toAdd = [];
+        for (const rec of (sheet.records||[])) {
+          if (!rec.date) continue; // no date anywhere above it in the sheet either — nothing to anchor it to
+          // Match against the plain work description first (most forgiving), fall
+          // back to nothing found = treat as new.
+          const isDup = [...existingKeys].some(k => k.startsWith(`${rec.date}|`) && k.includes(norm(rec.work).slice(0,25)));
+          if (isDup) continue;
+          const notes = rec.parts ? `${rec.work} (Parts/Qty: ${rec.parts})` : rec.work;
+          toAdd.push({
+            id: genId(), vehicleId: veh.id, date: rec.date, type: inferType(rec.work),
+            notes, cost: "", hours: rec.mileage != null ? String(rec.mileage) : "",
+            tech: "", parts: [],
+          });
+        }
+        if (toAdd.length) matched.push({ sheetName, vehicleName: veh.name, toAdd, alreadyHave: (sheet.records||[]).length - toAdd.length });
+        toAddAll.push(...toAdd);
+      }
+
+      setPreview({ matched, unmatched, toAddAll });
+      setStatus("loaded");
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const confirmImport = () => {
+    if (!preview) return;
+    onImport(preview.toAddAll);
+    setStatus("done");
+  };
+
+  return (<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+    <div style={{background:"#fff",borderRadius:"10px",padding:"24px",width:"600px",maxWidth:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+      <div style={{fontSize:"18px",fontWeight:700,marginBottom:"10px"}}>Import Maintenance History</div>
+      {error && <div style={{color:"#dc2626",marginBottom:"10px"}}>Error: {error}</div>}
+      {status==="idle" && !error && <div style={{color:"#666"}}>Loading…</div>}
+      {status!=="idle" && preview && (<>
+        <div style={{fontSize:"13px",color:"#555",marginBottom:"10px",lineHeight:1.5}}>
+          Matched {preview.matched.length} piece{preview.matched.length!==1?"s":""} of equipment with new records to add
+          ({preview.toAddAll.length} total) — including ones previously skipped because the workbook's date cell
+          was blank (now filled in from the dated row above it).
+        </div>
+        <div style={{maxHeight:"280px",overflowY:"auto",border:"1px solid #eee",borderRadius:"6px",padding:"8px",marginBottom:"10px"}}>
+          {preview.matched.length===0 && <div style={{color:"#888",fontSize:"12px"}}>Nothing new to add — everything matched is already logged.</div>}
+          {preview.matched.map(m=>(
+            <div key={m.sheetName} style={{padding:"6px 0",borderBottom:"1px solid #f0f0f0",fontSize:"13px"}}>
+              <b>{m.vehicleName}</b>: +{m.toAdd.length} new record{m.toAdd.length!==1?"s":""} ({m.alreadyHave} already logged)
+            </div>
+          ))}
+        </div>
+        {preview.unmatched.length > 0 && (<div style={{fontSize:"12px",color:"#a06000",marginBottom:"10px",lineHeight:1.5}}>
+          No matching equipment found for: {preview.unmatched.join(", ")}. Skipped — add equipment with a matching
+          name first if you want that history imported too.
+        </div>)}
+        {status==="loaded" && <button onClick={confirmImport} disabled={preview.toAddAll.length===0} style={{padding:"10px 18px",background:preview.toAddAll.length?"#2563eb":"#ccc",color:"#fff",border:"none",borderRadius:"6px",cursor:preview.toAddAll.length?"pointer":"not-allowed"}}>Add {preview.toAddAll.length} Record{preview.toAddAll.length!==1?"s":""}</button>}
+        {status==="done" && <div style={{color:"#16a34a",fontWeight:600}}>✓ Done — added {preview.toAddAll.length} records.</div>}
+      </>)}
+      <div style={{marginTop:"16px",textAlign:"right"}}>
+        <button onClick={onClose} style={{padding:"8px 16px",background:"transparent",border:"1px solid #ccc",borderRadius:"6px",cursor:"pointer"}}>{status==="done"?"Close":"Cancel"}</button>
+      </div>
+    </div>
+  </div>);
+}
 
 function VehicleMo({initial,customers,onSave,onClose}){
   const[f,setF]=useState({name:initial?.name||"",type:initial?.type||"Tractor",customerId:initial?.customerId||"",year:initial?.year||"",make:initial?.make||"",model:initial?.model||"",vin:initial?.vin||"",engine:initial?.engine||"",hp:initial?.hp||"",hours:initial?.hours||"",notes:initial?.notes||""});
