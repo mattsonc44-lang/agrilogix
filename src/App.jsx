@@ -101,13 +101,18 @@ export default function App() {
   },[profile?.tenantId,profile?.role,session?.idToken]);
 
   // ── Live tenant profile listener ─────────────────────────────────
+  // Uses effectiveTenantId (not profile.tenantId) for the same reason the farm
+  // effects below do: while Admin View is impersonating another tenant, this
+  // must listen to THEIR profile (name, plan, modules), not the admin's own —
+  // otherwise tenantProfile.name comes back empty/wrong and things like the
+  // top-nav brand label silently fall back to a placeholder.
   useEffect(() => {
-    if (!profile?.tenantId || !session?.idToken) return;
-    return dbListen(`tenants/${profile.tenantId}/profile`, session.idToken, ({ data }) => {
+    if (!effectiveTenantId || !session?.idToken) return;
+    return dbListen(`tenants/${effectiveTenantId}/profile`, session.idToken, ({ data }) => {
       if (!data) return;
       setTenant(t => ({ ...t, profile: data }));
     });
-  }, [profile?.tenantId, session?.idToken]);
+  }, [effectiveTenantId, session?.idToken]);
 
   // ── Background prefetch: cache all module data while online ────────
   useEffect(() => {
