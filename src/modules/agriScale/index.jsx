@@ -473,8 +473,8 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const safeArr    = a => (Array.isArray(a)?a:[]).filter(Boolean);
   const safeFields = safeArr(fields);
   const sortedFields = [...safeFields].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
-  const sortedBins = [...safeBins].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
   const safeBins   = safeArr(bins);
+  const sortedBins = [...safeBins].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
   const safeGrains = safeArr(grains);
   const safeTrucks = safeArr(trucks);
   const grain       = safeGrains[grainIdx] || FALLBACK_GRAIN;
