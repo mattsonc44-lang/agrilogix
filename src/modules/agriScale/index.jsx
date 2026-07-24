@@ -309,8 +309,13 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   // behavior, default so nothing changes unless you pick otherwise), "farmField"
   // = prefix with the farm/tract name (e.g. "Home - North Tiber Grade").
   const [importNameFormat, setImportNameFormat] = useState("field");
-  const buildImportName = (common, farmTract) =>
-    (importNameFormat === "farmField" && farmTract) ? `${farmTract} - ${common}` : common;
+  // Whether to tack the AgriPlan field # onto the imported name (e.g. "Home - North Tiber Grade #1,2,3").
+  const [includeFieldNum, setIncludeFieldNum] = useState(false);
+  const buildImportName = (common, farmTract, fieldNum) => {
+    let base = (importNameFormat === "farmField" && farmTract) ? `${farmTract} - ${common}` : common;
+    if (includeFieldNum && fieldNum) base += ` #${fieldNum}`;
+    return base;
+  };
   const [apCrops,       setApCrops]       = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_apcrops_${tenantId}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> planned crop from AgriPlan
   const [flCrops,       setFlCrops]       = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_flcrops_${tenantId}_${farmId||"default"}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> actually-seeded crop from FieldLog
   const [flExportModal, setFLExportModal] = useState(false);
@@ -736,7 +741,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
 
       return {
         id: genId(),
-        name: buildImportName(f.name, farmTract),
+        name: buildImportName(f.name, farmTract, ap?.fieldNum),
         acres: f.acres || ap?.acres || 0,
         farmId: farmId || "default",
         loads: [], costs: {},
@@ -791,7 +796,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       const cp = ap.crop ? cropPrices[ap.crop] : null;
       return {
         id: genId(),
-        name: buildImportName(ap.common, ap.farm),
+        name: buildImportName(ap.common, ap.farm, ap.fieldNum),
         acres: ap.acres || 0,
         farmId: farmId || "default",
         loads: [], costs: {},
@@ -1312,6 +1317,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                     FARM + FIELD
                   </label>
                 </div>
+                <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+                  <input type="checkbox" checked={includeFieldNum} onChange={()=>setIncludeFieldNum(v=>!v)} style={{accentColor:"#4a7535"}}/>
+                  INCLUDE FIELD #
+                </label>
               </div>
               <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
                 {flFields.map(f=>{
@@ -1320,7 +1329,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                     <label key={f.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
                       <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(flSelected);sel?n.delete(f.id):n.add(f.id);setFLSelected(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
                       <div>
-                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{buildImportName(f.name, flApByName[(f.name||"").trim().toLowerCase()]?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "")}</div>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{buildImportName(f.name, flApByName[(f.name||"").trim().toLowerCase()]?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "", flApByName[(f.name||"").trim().toLowerCase()]?.fieldNum)}</div>
                         {f.acres&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#6a8060",marginTop:"2px"}}>{f.acres} ACRES</div>}
                       </div>
                     </label>
@@ -1367,6 +1376,10 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                     FARM + FIELD
                   </label>
                 </div>
+                <label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+                  <input type="checkbox" checked={includeFieldNum} onChange={()=>setIncludeFieldNum(v=>!v)} style={{accentColor:"#7a5a3a"}}/>
+                  INCLUDE FIELD #
+                </label>
               </div>
               <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
                 {apFields.map(a=>{
@@ -1375,7 +1388,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                     <label key={a.common} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(122,90,58,0.18)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#7a5a3a":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
                       <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(apSelected);sel?n.delete(a.common):n.add(a.common);setAPSelected(n);}} style={{accentColor:"#7a5a3a",width:"14px",height:"14px",flexShrink:0}}/>
                       <div>
-                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{buildImportName(a.common, a.farm)}</div>
+                        <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{buildImportName(a.common, a.farm, a.fieldNum)}</div>
                         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860",marginTop:"2px"}}>{a.acres?`${a.acres} ACRES`:""}{a.acres&&a.crop?" · ":""}{a.crop||""}</div>
                       </div>
                     </label>
