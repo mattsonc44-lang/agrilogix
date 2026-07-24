@@ -1,0 +1,5834 @@
+{
+ "79 Red Truck": {
+  "info": {
+   "make": "Ford",
+   "model": "F700 or LN700",
+   "year": 1979.0
+  },
+  "records": [
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": false,
+    "work": "Oil change",
+    "parts": 1515.0,
+    "mileage": 43690.0
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": 3271.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "Greased",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2017-05-05",
+    "dateWasBlank": false,
+    "work": "changed fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2017-05-05",
+    "dateWasBlank": true,
+    "work": "replaced fuel pump",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2017-05-05",
+    "dateWasBlank": true,
+    "work": "replaced last section of fuel line leading to fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-13",
+    "dateWasBlank": false,
+    "work": "Oil change",
+    "parts": null,
+    "mileage": 44108.0
+   },
+   {
+    "date": "2018-04-13",
+    "dateWasBlank": true,
+    "work": "Greased",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-08-21",
+    "dateWasBlank": false,
+    "work": "replaced accelerator diaphram, rectangle style",
+    "parts": "2-4039",
+    "mileage": null
+   },
+   {
+    "date": "2019-08-01",
+    "dateWasBlank": false,
+    "work": "replaced steering pump belt",
+    "parts": "Napa 9500",
+    "mileage": null
+   },
+   {
+    "date": "2019-08-01",
+    "dateWasBlank": true,
+    "work": "replaced both fan belts",
+    "parts": "Napa 7430",
+    "mileage": null
+   },
+   {
+    "date": "2019-08-01",
+    "dateWasBlank": true,
+    "work": "replaced master brake cylinder",
+    "parts": "Napa M36438",
+    "mileage": null
+   },
+   {
+    "date": "2019-08-01",
+    "dateWasBlank": true,
+    "work": "replaced starter, new",
+    "parts": "4N-9209",
+    "mileage": null
+   },
+   {
+    "date": "2023-05-12",
+    "dateWasBlank": false,
+    "work": "replaced rear brake cylinders",
+    "parts": "UP-26172",
+    "mileage": null
+   },
+   {
+    "date": "2023-05-12",
+    "dateWasBlank": true,
+    "work": "replaced rear seals and speedi sleeves",
+    "parts": "seal #370023A sleeve #99387(but didn't use it)",
+    "mileage": null
+   },
+   {
+    "date": "2023-05-12",
+    "dateWasBlank": true,
+    "work": "replaced rear axle flange gaskets",
+    "parts": "TWD-330-3115",
+    "mileage": null
+   }
+  ]
+ },
+ "74 Puke Truck": {
+  "info": {
+   "make": "Ford",
+   "model": "F700",
+   "year": 1974.0
+  },
+  "records": [
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": false,
+    "work": "Changed Oil / Filter",
+    "parts": 1515.0,
+    "mileage": 40550.0
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "Fuel Filter",
+    "parts": 3271.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "Greased",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "April 2017",
+    "dateWasBlank": false,
+    "work": "greased and checked fluids",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "April 2017",
+    "dateWasBlank": false,
+    "work": "replaced brake booster #2511170 from Napa",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "April 2017",
+    "dateWasBlank": false,
+    "work": "replaced master brake cylinder #P78314 from Napa",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "April 2018",
+    "dateWasBlank": false,
+    "work": "replaced rear brake cylinders both sides, spinning rear driver side top and bottom adjuster toward axle loosens brake pads",
+    "parts": 24489.0,
+    "mileage": null
+   },
+   {
+    "date": "April 2018",
+    "dateWasBlank": false,
+    "work": "replaced driver side rear wheel bearings",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-06-24",
+    "dateWasBlank": false,
+    "work": "replaced driver side rear wheel seal, hacksaw blade welded bearing race slot for a tight fit and reinstalled race.",
+    "parts": "#39420",
+    "mileage": null
+   },
+   {
+    "date": "2019-06-24",
+    "dateWasBlank": true,
+    "work": "fixed a broken self tightener spring",
+    "parts": "#39420",
+    "mileage": null
+   },
+   {
+    "date": "2019-06-24",
+    "dateWasBlank": true,
+    "work": "replaced all 4 front brake cylinders",
+    "parts": "#37227",
+    "mileage": null
+   },
+   {
+    "date": "2019-06-24",
+    "dateWasBlank": true,
+    "work": "replaced a broken spring from full set of self adjusting brake repair kit",
+    "parts": "#80883",
+    "mileage": null
+   },
+   {
+    "date": "2021-08-12",
+    "dateWasBlank": false,
+    "work": "replaced lower radiator hose",
+    "parts": "napa #7244                            Daco #70322",
+    "mileage": null
+   },
+   {
+    "date": "2021-08-12",
+    "dateWasBlank": true,
+    "work": "replaced striker bolt bushings on doors",
+    "parts": "38424 - O'Reilly",
+    "mileage": null
+   }
+  ]
+ },
+ "65 Green Truck": {
+  "info": {
+   "make": "Ford",
+   "model": "F600",
+   "year": 1965.0
+  },
+  "records": [
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": false,
+    "work": "Changed Oil/Filter",
+    "parts": 1515.0,
+    "mileage": 80490.0
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "Fuel Filter",
+    "parts": 3271.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "Greased",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-04-05",
+    "dateWasBlank": true,
+    "work": "Bled Brakes",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-21",
+    "dateWasBlank": false,
+    "work": "changed accelerator pump diaphragm",
+    "parts": "2-4295",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-08",
+    "dateWasBlank": false,
+    "work": "replaced accelerator pump diaphragm",
+    "parts": "4295-02-01",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-08",
+    "dateWasBlank": true,
+    "work": "Changed Oil/Filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-05-08",
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-05-08",
+    "dateWasBlank": true,
+    "work": "adjusted hood bumpers",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-05-08",
+    "dateWasBlank": true,
+    "work": "changed ignition switch",
+    "parts": "KS6457",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-08",
+    "dateWasBlank": true,
+    "work": "replaced positive battery cable",
+    "parts": "48\u201d",
+    "mileage": " "
+   },
+   {
+    "date": "2022-05-02",
+    "dateWasBlank": false,
+    "work": "changed fuel filter, tank behind seat leaks and line is plugged...no fuel out cant blow air back.  Only saddle tank works",
+    "parts": 3271.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-06-21",
+    "dateWasBlank": false,
+    "work": "fixed treater pressure relief valve",
+    "parts": "23120, 1/2\", 150psi  Teejet",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-16",
+    "dateWasBlank": false,
+    "work": "replaced power valve - accelerator pump diaphragm",
+    "parts": "4295-02-01",
+    "mileage": null
+   }
+  ]
+ },
+ "76 Brown Truck": {
+  "info": {
+   "make": "Ford",
+   "model": "F600",
+   "year": 1976.0
+  },
+  "records": [
+   {
+    "date": "2014-09-02",
+    "dateWasBlank": false,
+    "work": "Replaced Starter  - - NAPA Power Source",
+    "parts": " 44-9622",
+    "mileage": null
+   },
+   {
+    "date": "2014-09-02",
+    "dateWasBlank": true,
+    "work": "Alternator Belt - - NAPA",
+    "parts": 9440.0,
+    "mileage": null
+   },
+   {
+    "date": "2014-09-02",
+    "dateWasBlank": true,
+    "work": "Power Steering Belt - - NAPA",
+    "parts": 9400.0,
+    "mileage": null
+   },
+   {
+    "date": "2015-04-10",
+    "dateWasBlank": false,
+    "work": "New Battery - - Roosevelt",
+    "parts": "Excide 27FC",
+    "mileage": null
+   },
+   {
+    "date": "2016-03-30",
+    "dateWasBlank": false,
+    "work": "New Drive Shaft - - Central Machine -Havre",
+    "parts": "Custom Made",
+    "mileage": 61800.0
+   },
+   {
+    "date": "2016-04-01",
+    "dateWasBlank": false,
+    "work": "Fixed Broken Welds on Hydraulic Cylinder on Box Lift",
+    "parts": "New Pin & Sleeve from Pacific Steel",
+    "mileage": null
+   },
+   {
+    "date": "2017-04-17",
+    "dateWasBlank": false,
+    "work": "greased and checked fluids",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-04-05",
+    "dateWasBlank": false,
+    "work": "replaced clutch",
+    "parts": 1107125.0,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-05",
+    "dateWasBlank": false,
+    "work": "added leaf spring to front axle",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-05",
+    "dateWasBlank": false,
+    "work": "new front shocks - - NAPA",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-05",
+    "dateWasBlank": false,
+    "work": "Oil Change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-05",
+    "dateWasBlank": true,
+    "work": "greased and checked fluids",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2022-06-21",
+    "dateWasBlank": false,
+    "work": "installed new starter",
+    "parts": "4N-9622",
+    "mileage": null
+   },
+   {
+    "date": "2023-09-06",
+    "dateWasBlank": false,
+    "work": "fuel filter",
+    "parts": 3271.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-09-06",
+    "dateWasBlank": true,
+    "work": "fuel filter in line",
+    "parts": 3033.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-09-06",
+    "dateWasBlank": true,
+    "work": "new points",
+    "parts": "CS-755",
+    "mileage": null
+   },
+   {
+    "date": "2023-09-06",
+    "dateWasBlank": true,
+    "work": "new condenser",
+    "parts": "FA76",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-12",
+    "dateWasBlank": false,
+    "work": "replaced clutch",
+    "parts": null,
+    "mileage": "need to get done"
+   }
+  ]
+ },
+ "Kenworth": {
+  "info": {
+   "make": "Kenworth",
+   "model": "T800B",
+   "year": "2004                  Color:  White"
+  },
+  "records": [
+   {
+    "date": "2016-07-20",
+    "dateWasBlank": false,
+    "work": "Replaced Starter \u2013 Tiber Tractor",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-13",
+    "dateWasBlank": false,
+    "work": "change oil",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-13",
+    "dateWasBlank": true,
+    "work": "greased",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-09-14",
+    "dateWasBlank": false,
+    "work": "fuel filter",
+    "parts": "LFF5823B",
+    "mileage": null
+   },
+   {
+    "date": "2021-07-02",
+    "dateWasBlank": false,
+    "work": "new front tires",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2022-04-22",
+    "dateWasBlank": false,
+    "work": "new bearings in AC belt tensioner (2)",
+    "parts": "6203-2RSJJ",
+    "mileage": null
+   },
+   {
+    "date": "2022-04-27",
+    "dateWasBlank": false,
+    "work": "replaced air ride suspension bags on driver side rear 2, replaced air suspension bag on passenger side 2nd from very rear.",
+    "parts": "KW #C81-1004                Firestone # 1T15KW-1             Napa #W013589547",
+    "mileage": "2 More in barn, need o-rings for air fitting, in ziploc bag in o-ring drawer"
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": false,
+    "work": "replaced AC belt",
+    "parts": "D84-1000-3061450   6 rib belt,  motor power",
+    "mileage": null
+   },
+   {
+    "date": "2023-04-25",
+    "dateWasBlank": false,
+    "work": "replaced air dryer canister",
+    "parts": "109493X                  core 159ADIP",
+    "mileage": 538839.0
+   },
+   {
+    "date": "2023-04-25",
+    "dateWasBlank": true,
+    "work": "replaced air dryer purge valve",
+    "parts": "K022105K",
+    "mileage": 538839.0
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": false,
+    "work": "changed engine oil and filter",
+    "parts": "1792XE",
+    "mileage": 540150.0
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "washed radiator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "greased and serviced",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "cleaned air filters",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "replaced both turbos",
+    "parts": "upper 10R-2407 upper new 233-1592 lower 10R-1888      lower new 232-1811",
+    "mileage": "got from motor power, lots cheaper and same exact cat parts"
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "changed filter and oil again to make sure it was as clean as we could get after losing the turbos",
+    "parts": "1792XE",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "turbo drop pipe foil tapered seal",
+    "parts": 2338014.0,
+    "mileage": 50.0
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "exhaust seal on bolt on bell reducer on lower turbo, fits in narrow groove",
+    "parts": 2253102.0,
+    "mileage": 20.0
+   },
+   {
+    "date": "2024-08-10",
+    "dateWasBlank": true,
+    "work": "replaced 4 exhaust clamps, 5\"",
+    "parts": "EC50PLS  or maybe 21284AB",
+    "mileage": "get from motor power, better and cheaper"
+   },
+   {
+    "date": "2025-04-19",
+    "dateWasBlank": false,
+    "work": "replaced air suspension bag on the passenger side second from the front",
+    "parts": "KW #C81-1004                Firestone # 1T15KW-1             Napa #W013589547",
+    "mileage": "installed new o-ring also,  frame bolts are 18 metric while the lower bag lock nut is 3/4\" socket"
+   },
+   {
+    "date": "2025-04-25",
+    "dateWasBlank": false,
+    "work": "replaced air suspension bag on the passenger side second from the front",
+    "parts": " Napa #W013589547",
+    "mileage": null
+   },
+   {
+    "date": "2026-04-10",
+    "dateWasBlank": false,
+    "work": "replaced passenger side outside rear dual tire",
+    "parts": "295-75-R22.5 roadX",
+    "mileage": null
+   }
+  ]
+ },
+ "Peterbilt 384": {
+  "info": {
+   "make": "Peterbilt",
+   "model": 384.0,
+   "year": 2014.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "have hood bushings and sleeves and hood cable on hand in automotive drawer",
+    "parts": "HM75-64726",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-04",
+    "dateWasBlank": false,
+    "work": "replaced passenger side front dual air bag",
+    "parts": "Firestone W013589069  Goodyear 1R12-069          OEM 03-07-112",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-18",
+    "dateWasBlank": false,
+    "work": "replaced driver side rear air bag",
+    "parts": "Firestone W013589069  Goodyear 1R12-069          OEM 03-07-112",
+    "mileage": null
+   },
+   {
+    "date": "2023-09-12",
+    "dateWasBlank": false,
+    "work": "replaced passenger side rear dual air bag",
+    "parts": "Firestone W013589069  Goodyear 1R12-069          OEM 03-07-112",
+    "mileage": "extra in barn"
+   },
+   {
+    "date": "2024-03-15",
+    "dateWasBlank": false,
+    "work": "replaced rear pasenger side wheel seal",
+    "parts": 47691.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-03-15",
+    "dateWasBlank": true,
+    "work": "replaced rear passenger side brake pads",
+    "parts": "Midland MPBD1369XT",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-15",
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": "oil filter 3777, or 533777",
+    "mileage": 556733.0
+   },
+   {
+    "date": "2024-03-15",
+    "dateWasBlank": true,
+    "work": "washed radiator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-03-15",
+    "dateWasBlank": true,
+    "work": "greased and serviced",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Grey Ford Tandem": {
+  "info": {
+   "make": "Ford",
+   "model": "LNT8000",
+   "year": 1987.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "PRODUCTION SHEET AND ALL PARTS AND SPECS SHEET LOCATED IN TOOL BOX MANUAL DRAWER",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Brigadier Water Truck": {
+  "info": {
+   "make": "GMC Brigadier",
+   "ser #": 37203.0,
+   "model": "NTC-300",
+   "year": 1981.0
+  },
+  "records": [
+   {
+    "date": "2019-04-12",
+    "dateWasBlank": false,
+    "work": "Complete gasket kit for heads, jake brake blocks and covers.  Ran an overhead, set valve and injector lash.",
+    "parts": "Gasket #'s: 3017750, 3045533, 3067459",
+    "mileage": null
+   },
+   {
+    "date": "2019-04-13",
+    "dateWasBlank": false,
+    "work": "New Alternator",
+    "parts": "Wilson 90-01-3028 1914 007",
+    "mileage": null
+   },
+   {
+    "date": "2019-04-13",
+    "dateWasBlank": false,
+    "work": "New Alternator belts",
+    "parts": "Napa 9463",
+    "mileage": null
+   },
+   {
+    "date": "2019-04-20",
+    "dateWasBlank": false,
+    "work": "power steering pump shaft seals",
+    "parts": "Napa 7-367",
+    "mileage": null
+   },
+   {
+    "date": "2021-08-20",
+    "dateWasBlank": false,
+    "work": "repleaced striker bolt bushings",
+    "parts": "38424 - O'Reilly",
+    "mileage": null
+   },
+   {
+    "date": "2026-03-30",
+    "dateWasBlank": false,
+    "work": "yellow chemical hose 1\" bumblebee",
+    "parts": "titan: #12012795",
+    "mileage": null
+   },
+   {
+    "date": "2026-03-30",
+    "dateWasBlank": true,
+    "work": "new dura pump for #3 chemical",
+    "parts": "DP-6018V-110",
+    "mileage": 867.14
+   }
+  ]
+ },
+ "Red Rock Truck": {
+  "info": {
+   "make": "Ford",
+   "year": 1955.0
+  },
+  "records": []
+ },
+ "Fuel Wagon": {
+  "info": {
+   "make": "Ford",
+   "model": "F\u2013350",
+   "year": 1978.0
+  },
+  "records": [
+   {
+    "date": "2019-04-11",
+    "dateWasBlank": false,
+    "work": "cleaned spark plugs and points, made a huge difference",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-06-10",
+    "dateWasBlank": false,
+    "work": "installed new fuel sending unit (fuel gauge)",
+    "parts": "T3206",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-07",
+    "dateWasBlank": false,
+    "work": "cleaned spark plugs",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-09-07",
+    "dateWasBlank": false,
+    "work": "new fuel pump",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-09-07",
+    "dateWasBlank": false,
+    "work": "oil change and filter change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2000-07-21",
+    "dateWasBlank": false,
+    "work": "News spark plugs",
+    "parts": "#25",
+    "mileage": null
+   },
+   {
+    "date": "2023-04-12",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": "1515        10W-30",
+    "mileage": 89466.0
+   },
+   {
+    "date": "2023-04-12",
+    "dateWasBlank": true,
+    "work": "air filter",
+    "parts": "2073  or MGA42073",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-27",
+    "dateWasBlank": false,
+    "work": "new plugs",
+    "parts": "autolite 25",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-27",
+    "dateWasBlank": true,
+    "work": "new battery",
+    "parts": "napa 7524F",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-22",
+    "dateWasBlank": false,
+    "work": "replaced fuel filter on carberator",
+    "parts": "napa 3046",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-22",
+    "dateWasBlank": true,
+    "work": "new front driver side tire",
+    "parts": "cooper 235/85R16",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-22",
+    "dateWasBlank": true,
+    "work": "new power steering belt",
+    "parts": "Napa 9510",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-22",
+    "dateWasBlank": true,
+    "work": "new power steering pump",
+    "parts": "38-1003",
+    "mileage": 74.0
+   },
+   {
+    "date": "2025-03-20",
+    "dateWasBlank": false,
+    "work": "new battery",
+    "parts": "battery wharehouse",
+    "mileage": null
+   }
+  ]
+ },
+ "Green 4x4": {
+  "info": {
+   "make": "Ford F-250",
+   "model": "\u00be Ton",
+   "year": 1971.0
+  },
+  "records": [
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Installed Edelbrock Carburator (#7353556) with adapter plate.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Wheel bearing",
+    "parts": "Napa BR17",
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Wheel bearing",
+    "parts": "Napa BR 35",
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Wheel bearing",
+    "parts": "Napa BR 37",
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Brake Cylinder",
+    "parts": "Napa 37083",
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Brake Cylinder",
+    "parts": "Napa 37084",
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": true,
+    "work": "Driver front: spinning brake adjuster up will tighten(expand) pads",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": true,
+    "work": "Passenger front: spinning brake adjuster down will tighten (expand) pads",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Oil Seal Front Brake Drum",
+    "parts": "Napa 24917",
+    "mileage": null
+   },
+   {
+    "date": "March 2017",
+    "dateWasBlank": false,
+    "work": "Oil Seal Front Brake Drum",
+    "parts": "Napa 24917",
+    "mileage": null
+   }
+  ]
+ },
+ "Blue 4x4": {
+  "info": {
+   "make": "Ford F-250",
+   "year": 1971.0
+  },
+  "records": [
+   {
+    "date": "2016-04-21",
+    "dateWasBlank": false,
+    "work": "Add Brake Fluid",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-04-21",
+    "dateWasBlank": true,
+    "work": "New Air Filter \u2013 NAPA",
+    "parts": 2116.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-04-21",
+    "dateWasBlank": true,
+    "work": "Air filter Oil Breather",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": false,
+    "work": "Left Rear Brake Cylinder",
+    "parts": 670192.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": true,
+    "work": "Right Rear Brake Cylinder",
+    "parts": 670193.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": true,
+    "work": "Automatic Adjusting Cable",
+    "parts": 80808.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": true,
+    "work": "Self Adjusting Repair Kit",
+    "parts": 80849.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": true,
+    "work": "Spring Kit for Heavy Duty Brakes (Includes all springs needed for complete repair)",
+    "parts": 2228.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": true,
+    "work": "Rear Seal for hubs",
+    "parts": 24917.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": true,
+    "work": "Rear Brake Shoes",
+    "parts": "UP-316-R",
+    "mileage": null
+   },
+   {
+    "date": "2021-12-10",
+    "dateWasBlank": false,
+    "work": "Fuel pump",
+    "parts": "B-0081-P",
+    "mileage": null
+   }
+  ]
+ },
+ "Gray & White Pickup": {
+  "info": {
+   "make": "Ford",
+   "model": "F150    2WD",
+   "year": 1995.0
+  },
+  "records": [
+   {
+    "date": "2021-06-26",
+    "dateWasBlank": false,
+    "work": "New belt",
+    "parts": "Micro-v 060913   6pk2321",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": false,
+    "work": "differential axle housing gasket",
+    "parts": "RDS55341",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Rear Axle shaft seal",
+    "parts": "16404 or 99163",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "rear axle speedy sleeve, both",
+    "parts": 99163.0,
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Rear drum brake adjuster kit, right side",
+    "parts": 80696.0,
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Rear Brake Cylinder, both sides",
+    "parts": "370192, 370193",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Rear Axle shaft bearing",
+    "parts": "R1559TV",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Rear Brake shoes",
+    "parts": "FT-582",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Fuel Pump",
+    "parts": "A46086",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "Rear wheel drums",
+    "parts": "440-1481",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": 201509.0,
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "new solenoid",
+    "parts": "ECH ST404",
+    "mileage": null
+   },
+   {
+    "date": "2021-09-28",
+    "dateWasBlank": true,
+    "work": "new serpentine belt",
+    "parts": 60913.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-11-15",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": 1515.0,
+    "mileage": 207263.0
+   },
+   {
+    "date": "2023-08-22",
+    "dateWasBlank": false,
+    "work": "changed water pump",
+    "parts": 43057.0,
+    "mileage": 210478.0
+   },
+   {
+    "date": "2023-08-22",
+    "dateWasBlank": true,
+    "work": "changed thermostat and gasket",
+    "parts": "thermostat 192-442 gasket 1050-ST",
+    "mileage": null
+   },
+   {
+    "date": "2023-08-22",
+    "dateWasBlank": true,
+    "work": "changed serpentine belt",
+    "parts": "was too long 060913          but now 060882 tight",
+    "mileage": null
+   },
+   {
+    "date": "2024-05-18",
+    "dateWasBlank": false,
+    "work": "new battery",
+    "parts": "group 65-75",
+    "mileage": null
+   },
+   {
+    "date": "2024-07-01",
+    "dateWasBlank": false,
+    "work": "new wipers",
+    "parts": "6-018-1",
+    "mileage": null
+   },
+   {
+    "date": "2025-04-29",
+    "dateWasBlank": false,
+    "work": "new u-joints",
+    "parts": "UJ354",
+    "mileage": null
+   },
+   {
+    "date": "2025-04-29",
+    "dateWasBlank": true,
+    "work": "new carrier bushing",
+    "parts": "BRG HB88107A",
+    "mileage": null
+   },
+   {
+    "date": "2025-05-26",
+    "dateWasBlank": false,
+    "work": "new rear shocks",
+    "parts": "SH81082",
+    "mileage": null
+   },
+   {
+    "date": "2025-05-26",
+    "dateWasBlank": true,
+    "work": "new thermostat and gasket",
+    "parts": "192-442                         gasket 1050-5T",
+    "mileage": null
+   }
+  ]
+ },
+ "1995 Black Dodge 1500": {
+  "info": {
+   "make": "Dodge",
+   "model": 1500.0,
+   "year": 1995.0
+  },
+  "records": [
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": false,
+    "work": "Oil and Filter change",
+    "parts": 1085.0,
+    "mileage": 243771.0
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": true,
+    "work": "air filter",
+    "parts": 6077.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": true,
+    "work": "new battery",
+    "parts": "Napa 7524",
+    "mileage": null
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": true,
+    "work": "battery disconnect",
+    "parts": 785112.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": true,
+    "work": "used tires on rear wheels",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "F-150, 2002": {
+  "info": {
+   "make": "Ford",
+   "model": "F-150",
+   "year": 2002.0
+  },
+  "records": [
+   {
+    "date": "2021-07-24",
+    "dateWasBlank": false,
+    "work": "replaced serpentine belt",
+    "parts": "Micro-V 060990 or 6PK2517",
+    "mileage": null
+   },
+   {
+    "date": "2021-10-26",
+    "dateWasBlank": false,
+    "work": "replaced wipers",
+    "parts": "6-022",
+    "mileage": null
+   },
+   {
+    "date": "2021-10-26",
+    "dateWasBlank": true,
+    "work": "new air filter",
+    "parts": 6418.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-02-22",
+    "dateWasBlank": false,
+    "work": "air filter",
+    "parts": "MGA46418 O'Reilly",
+    "mileage": null
+   },
+   {
+    "date": "2022-07-08",
+    "dateWasBlank": false,
+    "work": "rear shocks",
+    "parts": "napa NS76658",
+    "mileage": 256256.0
+   },
+   {
+    "date": "2023-01-05",
+    "dateWasBlank": false,
+    "work": "new engine",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-04-29",
+    "dateWasBlank": false,
+    "work": "new fuel pump",
+    "parts": "C0067H",
+    "mileage": "drop tank....don't remove bed!"
+   },
+   {
+    "date": "2025-04-29",
+    "dateWasBlank": true,
+    "work": "bed mount bolts",
+    "parts": "924-313",
+    "mileage": ""
+   }
+  ]
+ },
+ "White Dually": {
+  "info": {
+   "make": "Ford",
+   "model": "F350",
+   "year": 2004.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "DR",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "DR",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "DR",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-03-29",
+    "dateWasBlank": false,
+    "work": "new fuel tank",
+    "parts": null,
+    "mileage": "Belgrade Salvage"
+   },
+   {
+    "date": "2018-04-02",
+    "dateWasBlank": false,
+    "work": "new rear Variable speed sensor",
+    "parts": null,
+    "mileage": "Dorman 970-012"
+   },
+   {
+    "date": "2018-04-02",
+    "dateWasBlank": false,
+    "work": "New fuel pump",
+    "parts": "motorcraft",
+    "mileage": "6C3Z-9G282-C"
+   },
+   {
+    "date": "2018-04-02",
+    "dateWasBlank": false,
+    "work": "New wire harness for fuel pump",
+    "parts": "Ford",
+    "mileage": "6C3Z-9F759-A"
+   },
+   {
+    "date": "2024-07-19",
+    "dateWasBlank": false,
+    "work": "new front driveshaft",
+    "parts": 921162.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-07-19",
+    "dateWasBlank": true,
+    "work": "new u-joint strap set for front u-joint",
+    "parts": "UJ331-10",
+    "mileage": null
+   }
+  ]
+ },
+ "2008 Ram fuel wagon": {
+  "info": {
+   "make": "Dodge Ram 4500",
+   "model": "4500 SLT crew cab",
+   "year": 2008.0
+  },
+  "records": [
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": false,
+    "work": "oil and filter",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "White Exp.": {
+  "info": {
+   "make": "Ford",
+   "model": "Expedition",
+   "year": 2013.0
+  },
+  "records": [
+   {
+    "date": "2018-11-28",
+    "dateWasBlank": false,
+    "work": "rear stabilizer bar links replaced",
+    "parts": "265-1875",
+    "mileage": null
+   },
+   {
+    "date": "2018-11-28",
+    "dateWasBlank": true,
+    "work": "oil change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-07-17",
+    "dateWasBlank": false,
+    "work": "changed front mud-flaps to Husky",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "2013 Ford edge": {
+  "info": {
+   "make": "Ford",
+   "model": "Edge SEL",
+   "year": 2013.0
+  },
+  "records": [
+   {
+    "date": "2022-08-18",
+    "dateWasBlank": false,
+    "work": "OIL AND FILTER CHANGE",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2022-08-18",
+    "dateWasBlank": true,
+    "work": "new drive line, carrier bearing and ujoints....all as one unit",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2022-08-18",
+    "dateWasBlank": true,
+    "work": "replaced passanger headlight bulb and connector",
+    "parts": "PIAA HIR2",
+    "mileage": "can also use 9012LL-N  but might be different color"
+   },
+   {
+    "date": "2022-08-18",
+    "dateWasBlank": true,
+    "work": "replaced cabin filter",
+    "parts": "XC25876H",
+    "mileage": null
+   },
+   {
+    "date": "2022-08-18",
+    "dateWasBlank": true,
+    "work": "replaced driver side headlight bulb",
+    "parts": "9012LL-N",
+    "mileage": "Have bulbs at napa or in drawer"
+   },
+   {
+    "date": "2023-08-01",
+    "dateWasBlank": false,
+    "work": "wipers",
+    "parts": "22\" #25-220                        Drivers #25-260          Passenger #25-200",
+    "mileage": null
+   },
+   {
+    "date": "2024-07-03",
+    "dateWasBlank": false,
+    "work": "brake pads rear",
+    "parts": "SG8488XS",
+    "mileage": 147745.0
+   }
+  ]
+ },
+ "2013 Ram 1500": {
+  "info": {
+   "make": "RAM",
+   "model": 1500.0,
+   "year": 2013.0
+  },
+  "records": [
+   {
+    "date": "2022-11-22",
+    "dateWasBlank": false,
+    "work": "New Alternator",
+    "parts": "90-27-3410",
+    "mileage": null
+   },
+   {
+    "date": "2023-02-06",
+    "dateWasBlank": false,
+    "work": "rear wheel well liners",
+    "parts": "driver - driver #68148510AB  passenger #68148511AB",
+    "mileage": null
+   },
+   {
+    "date": "2023-02-08",
+    "dateWasBlank": false,
+    "work": "rear shocks",
+    "parts": "NS 550060",
+    "mileage": null
+   },
+   {
+    "date": "2023-02-14",
+    "dateWasBlank": false,
+    "work": "replaced fused battery terminal",
+    "parts": "6816-4797-AA",
+    "mileage": null
+   },
+   {
+    "date": "2024-02-02",
+    "dateWasBlank": false,
+    "work": "alignment and repair work",
+    "parts": null,
+    "mileage": 130879.0
+   },
+   {
+    "date": "2024-05-11",
+    "dateWasBlank": false,
+    "work": "full brake pad replacement",
+    "parts": "rear AD-7867                           front PF-7991-M",
+    "mileage": 134641.0
+   }
+  ]
+ },
+ "2018 Ram 2500": {
+  "info": {
+   "make": "RAM",
+   "model": "2500 Limited",
+   "year": 2018.0
+  },
+  "records": [
+   {
+    "date": "2022-12-01",
+    "dateWasBlank": false,
+    "work": "new 20 ply tires",
+    "parts": "Armor Hog ATX, 275-65-R20",
+    "mileage": 69000.0
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": false,
+    "work": "New Batteries",
+    "parts": "94RPG, ACDelco",
+    "mileage": 72094.0
+   },
+   {
+    "date": "2023-01-17",
+    "dateWasBlank": false,
+    "work": "installed plug in heater core cabling",
+    "parts": "6822-3419-AA",
+    "mileage": 72094.0
+   },
+   {
+    "date": "2023-01-25",
+    "dateWasBlank": false,
+    "work": "installed wheel well liners on rear, wrapped with gorilla tape and coated with herculian bed liner",
+    "parts": "Left #68453299AA               Right #68453298AA",
+    "mileage": 72094.0
+   },
+   {
+    "date": "2023-01-25",
+    "dateWasBlank": true,
+    "work": "installed heavy rubber for protection from rocks",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-01-25",
+    "dateWasBlank": true,
+    "work": "installed new media hub in center console",
+    "parts": "6832-8704-AD",
+    "mileage": null
+   },
+   {
+    "date": "2024-09-20",
+    "dateWasBlank": false,
+    "work": "installed new air filter",
+    "parts": 6930.0,
+    "mileage": null
+   }
+  ]
+ },
+ "2021 Ford Exp. Max": {
+  "info": {
+   "make": "Ford",
+   "model": "Expedition Max Platinum",
+   "year": 2021.0
+  },
+  "records": [
+   {
+    "date": "2024-10-17",
+    "dateWasBlank": false,
+    "work": "replaced cabin air filter",
+    "parts": 230266.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-10-17",
+    "dateWasBlank": true,
+    "work": "tires",
+    "parts": "T275/55R20",
+    "mileage": null
+   }
+  ]
+ },
+ "Flexicoil 67XL": {
+  "info": {
+   "make": "Flexicoil",
+   "model": "67XL"
+  },
+  "records": [
+   {
+    "date": "2016-05-12",
+    "dateWasBlank": false,
+    "work": "Where section 1 & 2 meet, the plate welded to the Pin Lobes, cracked and broke off the rest of the frame.  Made new plate, welded lobes back on and welded back onto the frame.  Checked other side and re-welded to avoid same thing happening.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-12",
+    "dateWasBlank": false,
+    "work": "replaced plastic Half-moons",
+    "parts": 87558400.0,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-12",
+    "dateWasBlank": true,
+    "work": "replaced i-bolt on left side",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2014-06-13",
+    "dateWasBlank": false,
+    "work": "replace Flow Sensor",
+    "parts": "15577K",
+    "mileage": null
+   },
+   {
+    "date": "2017-05-08",
+    "dateWasBlank": false,
+    "work": "replace main tank seal",
+    "parts": 9162.0,
+    "mileage": null
+   },
+   {
+    "date": "2018-05-12",
+    "dateWasBlank": false,
+    "work": "replaced Flow sensor",
+    "parts": "NHL 15577K",
+    "mileage": null
+   },
+   {
+    "date": "2020-06-12",
+    "dateWasBlank": false,
+    "work": "replaced nozzle body top clamps",
+    "parts": 87577817.0,
+    "mileage": null
+   },
+   {
+    "date": "2020-06-12",
+    "dateWasBlank": true,
+    "work": "complete dual nozzle body",
+    "parts": 87558396.0,
+    "mileage": null
+   },
+   {
+    "date": "2020-07-06",
+    "dateWasBlank": false,
+    "work": "replaced far right end wheel bearings and seal",
+    "parts": "BR6 and BR2 and 14972",
+    "mileage": null
+   },
+   {
+    "date": "2020-07-06",
+    "dateWasBlank": true,
+    "work": "replaced broken spindle on far right end wheel",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Versatile SX280": {
+  "info": {
+   "make": "Versatile",
+   "engine": "Cummins QSB 6.7 300",
+   "model": "SX280",
+   "year": 2017.0
+  },
+  "records": [
+   {
+    "date": "2018-06-29",
+    "dateWasBlank": false,
+    "work": "installed new can/node cable in cab",
+    "parts": 126.0,
+    "mileage": null
+   },
+   {
+    "date": "2019-04-26",
+    "dateWasBlank": false,
+    "work": "replaced hydraulic filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-04-26",
+    "dateWasBlank": false,
+    "work": "replaced fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-07-10",
+    "dateWasBlank": false,
+    "work": "replaced pressure relief valve",
+    "parts": "pressure relief valve SX018594          cartridge RV10-22F-8T-N-35/30   Block 7024280",
+    "mileage": null
+   },
+   {
+    "date": "2019-05-30",
+    "dateWasBlank": false,
+    "work": "replaced boom bumpers",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-06-07",
+    "dateWasBlank": false,
+    "work": "replaced all 4 boom valve rubber seals/diaphragms",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-06-19",
+    "dateWasBlank": false,
+    "work": "replaced boom valve",
+    "parts": "Agwest, tag inside case says P/N 14160000024 and S5860F, and MP 20116",
+    "mileage": null
+   },
+   {
+    "date": "2019-07-01",
+    "dateWasBlank": false,
+    "work": "oil change & filter change, 4 gallon",
+    "parts": "400 hrs",
+    "mileage": null
+   },
+   {
+    "date": "2019-07-09",
+    "dateWasBlank": false,
+    "work": "replaced hydraulic filter",
+    "parts": 410.0,
+    "mileage": null
+   },
+   {
+    "date": "2019-07-20",
+    "dateWasBlank": false,
+    "work": "replaced flow sensor ? Did we ?",
+    "parts": 450.0,
+    "mileage": null
+   },
+   {
+    "date": "2020-05-07",
+    "dateWasBlank": false,
+    "work": "replaced recessed plunger for manifold valve",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-05-07",
+    "dateWasBlank": false,
+    "work": "ordered o-rings for through body to multi-tip turret",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-05-28",
+    "dateWasBlank": false,
+    "work": "changed hydraulic cooler",
+    "parts": "Big Equip. $1070",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-28",
+    "dateWasBlank": true,
+    "work": "changed hydraulic pressure relief valve to a 5 psi",
+    "parts": "570 hrs.",
+    "mileage": null
+   },
+   {
+    "date": "2020-06-12",
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "???",
+    "dateWasBlank": false,
+    "work": "purchased adapter nozzle body end caps w/ plugs",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-05-08",
+    "dateWasBlank": false,
+    "work": "oil change & filter change, 4 gallon",
+    "parts": 1258.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-05-08",
+    "dateWasBlank": true,
+    "work": "fuel filter change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-05-08",
+    "dateWasBlank": true,
+    "work": "changed charcoal cabin filter",
+    "parts": "charcoal over $600",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-28",
+    "dateWasBlank": false,
+    "work": "replaced sectional control valve motor #1 and #5",
+    "parts": "these part #'s for Case patriot and $319 each",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-17",
+    "dateWasBlank": false,
+    "work": "new seal kits in steering cylinders",
+    "parts": "give this to Big Sky Hydraulics and they will have the seal kit splits for what we need",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": false,
+    "work": "new hydraulic cartridge on Raven autosteer block",
+    "parts": "front wheels not staying aligned and we believe this 2 way pressure cartridge is allowing fluid to leak by",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-29",
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-04-29",
+    "dateWasBlank": true,
+    "work": "single drop body",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-04-29",
+    "dateWasBlank": true,
+    "work": "single drop body with saddle",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-04-29",
+    "dateWasBlank": true,
+    "work": "Turrett - 5 head pulse",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-06-06",
+    "dateWasBlank": false,
+    "work": "replaced recessed plunger seat kit on all 5 valves",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-30",
+    "dateWasBlank": false,
+    "work": "oil change & filter change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-07-14",
+    "dateWasBlank": false,
+    "work": "air suspension leveling valve",
+    "parts": "quick air line fittings 725000785 or G31100-0402 or 4AB-2MP, two for each valve",
+    "mileage": null
+   },
+   {
+    "date": "2024-07-14",
+    "dateWasBlank": true,
+    "work": "replaced rear, right side, lower rear torsion arm bolt",
+    "parts": "8 more in 7/8 bolt drawer",
+    "mileage": null
+   },
+   {
+    "date": "2024-07-14",
+    "dateWasBlank": true,
+    "work": "teejet spray tip seat gasket / rubber washer",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-03-20",
+    "dateWasBlank": false,
+    "work": "two new batteries",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-04-23",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": 1749.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-26",
+    "dateWasBlank": false,
+    "work": "replaced rear suapension valve levelers",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-06-04",
+    "dateWasBlank": false,
+    "work": "replaced rear pinion seal, drive shaft yoke seal",
+    "parts": "rear yoke is a M30 88666822",
+    "mileage": null
+   },
+   {
+    "date": "2025-06-04",
+    "dateWasBlank": true,
+    "work": "replaced rear drive shaft u-joint",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-06-04",
+    "dateWasBlank": true,
+    "work": "replaced all 4 front steering bushings, right and left",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-06-25",
+    "dateWasBlank": false,
+    "work": "replaced crankshaft position and speed sensor",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-06-25",
+    "dateWasBlank": true,
+    "work": "DEF and DPF software delete",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-06-25",
+    "dateWasBlank": true,
+    "work": "removed all filters and porcelain from exhaust stack",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-06-25",
+    "dateWasBlank": true,
+    "work": "replaced easyfit \"T\" on wet boom",
+    "parts": "wetboom not a true 1\" so need to use tighter fatter o-rings",
+    "mileage": null
+   },
+   {
+    "date": "2025-10-29",
+    "dateWasBlank": false,
+    "work": "new wheeel studs for rear final drive",
+    "parts": "JCB final drive, JCB parts",
+    "mileage": null
+   }
+  ]
+ },
+ "Cat 65C": {
+  "info": {
+   "make": "Caterpillar",
+   "model": "65C",
+   "year": 1990.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "Oil Changed",
+    "parts": 1791.0,
+    "mileage": 5750.0
+   },
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "Added Water 50/50",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-26",
+    "dateWasBlank": false,
+    "work": "replaced exhaust stack",
+    "parts": "6I-0137",
+    "mileage": null
+   },
+   {
+    "date": "2018-04-26",
+    "dateWasBlank": true,
+    "work": "replaced dust ejector (venturi hose)",
+    "parts": "5P-2817",
+    "mileage": null
+   },
+   {
+    "date": "2018-04-26",
+    "dateWasBlank": true,
+    "work": "replaced exhaust supply tube",
+    "parts": "6I-0696",
+    "mileage": null
+   },
+   {
+    "date": "2018-04-26",
+    "dateWasBlank": true,
+    "work": "replaced front right hub seal and sight glass assembly",
+    "parts": "104-5373",
+    "mileage": null
+   },
+   {
+    "date": "2018-04-26",
+    "dateWasBlank": true,
+    "work": "checked idler hub oil levels \u2013 all OK",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-05-03",
+    "dateWasBlank": false,
+    "work": "changed oil and filter (1791) 6gal.",
+    "parts": "#1791",
+    "mileage": 6082.0
+   },
+   {
+    "date": "2018-05-04",
+    "dateWasBlank": false,
+    "work": "changed fuel filter",
+    "parts": "1R-0750",
+    "mileage": 6082.0
+   },
+   {
+    "date": "2018-05-04",
+    "dateWasBlank": true,
+    "work": "cleaned air filters",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-05-07",
+    "dateWasBlank": false,
+    "work": "replaced Primary air filter (outer)",
+    "parts": "6I-0273",
+    "mileage": 6082.0
+   },
+   {
+    "date": "2018-05-16",
+    "dateWasBlank": false,
+    "work": "replaced secondary air filter (inner)",
+    "parts": "6I-0274",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-16",
+    "dateWasBlank": true,
+    "work": "replaced cabin air filter",
+    "parts": "105-4968",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-21",
+    "dateWasBlank": false,
+    "work": "replaced AC compressor",
+    "parts": "3E-1908",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-21",
+    "dateWasBlank": true,
+    "work": "compressor harness",
+    "parts": "142-2387",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-21",
+    "dateWasBlank": true,
+    "work": "V-belt, compressor",
+    "parts": "9N-1329",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-21",
+    "dateWasBlank": true,
+    "work": "Aaccumulator",
+    "parts": "186-6190",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-21",
+    "dateWasBlank": true,
+    "work": "Fan Belts",
+    "parts": "6L-1987",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-21",
+    "dateWasBlank": true,
+    "work": "AC seals",
+    "parts": "9X-7381, 82, 83",
+    "mileage": null
+   },
+   {
+    "date": "2020-06-12",
+    "dateWasBlank": false,
+    "work": "replaced air ride bogey wheel suspension bag",
+    "parts": "Was 105-8641 but now 141-6046",
+    "mileage": null
+   },
+   {
+    "date": "2020-06-26",
+    "dateWasBlank": false,
+    "work": "Replaced 2 headlights",
+    "parts": "Napa \u2013 H4656",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-09",
+    "dateWasBlank": false,
+    "work": "replaced cab seat",
+    "parts": "K&M Manufacturing",
+    "mileage": 6485.0
+   },
+   {
+    "date": "2023-03-09",
+    "dateWasBlank": true,
+    "work": "replaced slide plate roller needle bearings in seat",
+    "parts": "tritan BK0912",
+    "mileage": null
+   },
+   {
+    "date": "2023-04-05",
+    "dateWasBlank": false,
+    "work": "cleaned air filters",
+    "parts": null,
+    "mileage": 6485.0
+   },
+   {
+    "date": "2023-04-05",
+    "dateWasBlank": true,
+    "work": "changed engine oil and filters",
+    "parts": 1791.0,
+    "mileage": 6485.0
+   },
+   {
+    "date": "2023-04-05",
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": "1R-0750",
+    "mileage": 6485.0
+   },
+   {
+    "date": "2023-04-05",
+    "dateWasBlank": true,
+    "work": "welded leak in fuel tank",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-04-05",
+    "dateWasBlank": true,
+    "work": "changed primary fuel filter",
+    "parts": "Napa 3941",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-23",
+    "dateWasBlank": false,
+    "work": "changed primary fuel filter",
+    "parts": "Napa 3941",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-23",
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": "1R-0750",
+    "mileage": null
+   }
+  ]
+ },
+ "MT865": {
+  "info": {
+   "make": "Catepillar",
+   "model": "MT865 B",
+   "year": 2008.0
+  },
+  "records": [
+   {
+    "date": "2016-04-12",
+    "dateWasBlank": false,
+    "work": "Changed oil \u2013 Filter",
+    "parts": "1R-0716",
+    "mileage": 5010.0
+   },
+   {
+    "date": "2017-05-05",
+    "dateWasBlank": false,
+    "work": "changed fuel filter and fuel water separator/filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-04-18",
+    "dateWasBlank": false,
+    "work": "changed fuel filter and fuel water separator/filter",
+    "parts": "1R-0762",
+    "mileage": "5373 hrs"
+   },
+   {
+    "date": "2019-04-23",
+    "dateWasBlank": false,
+    "work": "Changed oil and Filter",
+    "parts": "1R-0716",
+    "mileage": 5680.0
+   },
+   {
+    "date": "2019-04-23",
+    "dateWasBlank": false,
+    "work": "changed fuel filter",
+    "parts": "1R-0762",
+    "mileage": 5680.0
+   },
+   {
+    "date": "2021-09-09",
+    "dateWasBlank": false,
+    "work": "Changed fuel filter",
+    "parts": "1R-0762",
+    "mileage": 6224.0
+   },
+   {
+    "date": "2021-09-09",
+    "dateWasBlank": false,
+    "work": "Changed oil and Filter",
+    "parts": "1R-0716",
+    "mileage": 6224.0
+   },
+   {
+    "date": "2021-09-20",
+    "dateWasBlank": false,
+    "work": "belt idler #173-1498, replaced bearings w/ napa #6303-2RSJ",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-10-27",
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": "1R-0716",
+    "mileage": 6562.0
+   },
+   {
+    "date": "2022-05-02",
+    "dateWasBlank": false,
+    "work": "changed fuel filter",
+    "parts": "1R-0762",
+    "mileage": 6838.0
+   },
+   {
+    "date": "2023-04-18",
+    "dateWasBlank": false,
+    "work": "changed fuel filter and fuel water separator/filter",
+    "parts": "fuel filter 539270D1  seperator 326-1643",
+    "mileage": 7054.0
+   },
+   {
+    "date": "2023-04-18",
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": "504594D1",
+    "mileage": null
+   },
+   {
+    "date": "2023-04-18",
+    "dateWasBlank": true,
+    "work": "replaced all 4 batteries",
+    "parts": "Napa industrial 7237",
+    "mileage": null
+   },
+   {
+    "date": "2023-04-18",
+    "dateWasBlank": true,
+    "work": "replaced fuel warmer hose",
+    "parts": null,
+    "mileage": 7054.0
+   },
+   {
+    "date": "2023-04-18",
+    "dateWasBlank": true,
+    "work": "replaced belt idler bearings on grooved idler and smooth idler",
+    "parts": "6203-2RSJ    and    6303-2RSJ",
+    "mileage": 7054.0
+   },
+   {
+    "date": "2023-04-18",
+    "dateWasBlank": true,
+    "work": "ordered gas springs for hood....tried to install them but too weak.  We believe the correct ones are #531232D1 but they will take some modifications to make fit",
+    "parts": "201-5090",
+    "mileage": "Have these on hand"
+   },
+   {
+    "date": "2023-06-16",
+    "dateWasBlank": false,
+    "work": "replaced fuel filter",
+    "parts": "539270D1",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-19",
+    "dateWasBlank": false,
+    "work": "ordered hood seal",
+    "parts": "501148D1",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": false,
+    "work": "replaced exhaust stack / muffler",
+    "parts": "209-0802",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": "napa 1792",
+    "mileage": "7457 hours"
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "built new 5\" flexible turbo exhaust tube",
+    "parts": "205-5367",
+    "mileage": "$886 new,    $20 home fix"
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "changed fuel filters",
+    "parts": "Napa 3640                         Cat 326-1643",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "replaced exhaust stack / muffler clamps",
+    "parts": "241-9265",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "changed hydraulic return oil filter",
+    "parts": "077-3492",
+    "mileage": 7457.0
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "got estimate on track replacement from Adam at Powerfarmer, Trackman tracks",
+    "parts": null,
+    "mileage": "$15,000 / track belt"
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "New alternator",
+    "parts": "306-2172                    gleaner ACX 3603410",
+    "mileage": "$1135                                 7500 hrs"
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "new outside cabin filter",
+    "parts": "570072D1",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "new interior cabin filter",
+    "parts": "501153D1",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "new hydraulic coupler and seals on bank #1, it was leaking like a sieve and we hope this fixes it.",
+    "parts": "coupler 186-0342                seal  CH146-4351                     seal    CH5D-6539",
+    "mileage": "coupler is $316"
+   },
+   {
+    "date": "2024-03-22",
+    "dateWasBlank": true,
+    "work": "new hydraulic couplers and seals on banks #2 and #3 and #5",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-06-04",
+    "dateWasBlank": false,
+    "work": "changed fuel filter",
+    "parts": "Cat: #1R-0762",
+    "mileage": 7723.0
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": false,
+    "work": "oil change and oil filter",
+    "parts": "filter 1792",
+    "mileage": 7729.0
+   },
+   {
+    "date": "2025-04-04",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": null,
+    "mileage": 7981.0
+   },
+   {
+    "date": "2025-04-04",
+    "dateWasBlank": true,
+    "work": "built new 5\" flexible turbo exhaust tube",
+    "parts": "205-5367",
+    "mileage": "$886 new Agco,    $80 from Kenworth trucks"
+   },
+   {
+    "date": "2025-04-04",
+    "dateWasBlank": true,
+    "work": "ordered alternator for spare",
+    "parts": "ALT8600307                 28SI 200amp alt.",
+    "mileage": "bought at glacier motors in cut bank"
+   },
+   {
+    "date": "2025-08-01",
+    "dateWasBlank": false,
+    "work": "hydraulic system filters changed",
+    "parts": "2 of Cat 465-8903 or Donaldson P179763,        return line 1 of AGCO 501771D1",
+    "mileage": null
+   },
+   {
+    "date": "2025-08-04",
+    "dateWasBlank": false,
+    "work": "replaced exhaust  manifold gasket",
+    "parts": null,
+    "mileage": "T&E repair by Trey"
+   }
+  ]
+ },
+ "6550 Cart": {
+  "info": {
+   "make": "Bourgault",
+   "model": "6550ST",
+   "year": 2013.0
+  },
+  "records": [
+   {
+    "date": "2019-04-25",
+    "dateWasBlank": false,
+    "work": "replaced outer 3 seals on hydraulic metering pump",
+    "parts": "used seal kit, MacDon # 123314",
+    "mileage": null
+   },
+   {
+    "date": "2019-04-25",
+    "dateWasBlank": false,
+    "work": "replaced bearing, seal, coupler and race",
+    "parts": "#2110-12, #2110-11, #2110-10, #6283-09, #6283-10",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-29",
+    "dateWasBlank": false,
+    "work": "ordered tank 3 lid seal kit",
+    "parts": "2 of 6306-62-10                             2 of 6306-62-66",
+    "mileage": null
+   },
+   {
+    "date": "2024-05-06",
+    "dateWasBlank": false,
+    "work": "replaced calibration shaft, bearing, bushings, etc, the whole show",
+    "parts": "2110-10 , 2110-11 , 2110-12 , 2130-62 , 1209-07 ,",
+    "mileage": null
+   }
+  ]
+ },
+ "Bourgault 3710": {
+  "info": {
+   "make": "Bourgault",
+   "model": 3710.0,
+   "year": 2013.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "Bourgault Drill Monitor  Topcon A2745 Serial # A2745111154  Windows product key DR3B4-29MD6XTGGY-3V3KG-JCWP6-X16-96096  #70045-463-362-870",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-04-23",
+    "dateWasBlank": false,
+    "work": "changed all opener discs and seed boots",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-04-23",
+    "dateWasBlank": true,
+    "work": "replaced broken MRB cylinders",
+    "parts": "3303-55                           $244",
+    "mileage": null
+   },
+   {
+    "date": "2019-04-23",
+    "dateWasBlank": true,
+    "work": "replaced broken tire valve stems",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": false,
+    "work": "replaced lots of hydraulic hoses",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "Main rear wheel hub and spindle replacement",
+    "parts": "spindle\\axle 9308-06                          seal 2200-05-05                                 wear sleeve 2200-05-06                bearing 25580  race 25520(2200-02-09)           bearing LM48548    race LM48510  washer 2200-02-06                          castle nut 1209-16                               dust cap 2200-06-04       ",
+    "mileage": "torque inner wheel bolts to 160lbs"
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "disc hub and innards",
+    "parts": "seal 2200-11-01                  cone\\bearing BR6 VP                           D washer 2200-36-04                washer tang 2200-36-03                   hub 2200-36                             spindle castle nut 1209-12                  disk dust cap 2200-36-02          spindle 2200-42-01     ",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": false,
+    "work": "replaced all discs",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "fixed all worn and broken scrapers/openers",
+    "parts": "LEFT 9313-47                              RIGHT 9313-46",
+    "mileage": "$180 EACH"
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "repaired disc hubs, packer hubs,",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "PIVOT PIN GREASABLE 6 1/2\"",
+    "parts": "9312-64-01",
+    "mileage": 38.44
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "PACKER WHEEL DOUBLE SHOULDER REPLACEMENT",
+    "parts": "2301-68",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "REPLACED RUINED WALKING AXLE",
+    "parts": "RIGHT 9313-38-01                               LEFT 9313-37-01",
+    "mileage": 334.0
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "replaced opener hydraulic ram",
+    "parts": "3303-44",
+    "mileage": 335.4
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "Large Hose",
+    "parts": "5506-15",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "opener hose",
+    "parts": "5506-01-01",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "MRB hydraulic ram",
+    "parts": "3303-55",
+    "mileage": 243.0
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "shims on pivot pins",
+    "parts": "2401-47",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "bearing spacers",
+    "parts": "2401-54",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "needle bearing for walking axle and pin pivots",
+    "parts": "2110-07-01",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "seals for walking axles and opener pivot points",
+    "parts": "2450-53",
+    "mileage": "install seal with thicker lip facing in against bearing shoulder, open face out"
+   },
+   {
+    "date": "2024-03-25",
+    "dateWasBlank": true,
+    "work": "Universal Tractor Oil - UTF",
+    "parts": "5 gallon = $100",
+    "mileage": null
+   }
+  ]
+ },
+ "R-75": {
+  "info": {
+   "make": "Gleaner",
+   "engine": "10.8L M11",
+   "model": "R-75  2004",
+   "serial #": "HM72158",
+   "year": 2004.0,
+   "color": "family - YCEXL0661AAA"
+  },
+  "records": [
+   {
+    "date": "July 2017",
+    "dateWasBlank": false,
+    "work": "New inner air filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "new outer air filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replaced both fuel filters",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replace small hydrolic filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "left side main clutch bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "left side main clutch bearing",
+    "parts": "***when replacing this,  you need to take off the right hand side shiv, loosen set screws on shaft for RH side, to be able to slide the shaft out",
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "right side main clutch bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "New Alternator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replace variable speed header drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replace seperator drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "belt idler on rear feeder chain",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "coolant filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "center draper",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "center draper connectors",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "center draper nuts and bolts (hardware kit)",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replaced fan idler bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": false,
+    "work": "oil and filter change.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "outer air filter change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "outer rotor bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "replaced chopper belt,  swapped out 7\u201d idler for a 5\u201d idler which allow us to use the same belt on R62 and R75,",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "changed main drive idler mounting plate",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "fixed melted blower switch",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "changed grain loss sensor for rotor",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "replaced jack shaft drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2019.0,
+    "dateWasBlank": false,
+    "work": "replaced grain elevator drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2019.0,
+    "dateWasBlank": true,
+    "work": "Replaced 8 rotor bars on bank 2 and 3",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2019.0,
+    "dateWasBlank": true,
+    "work": "replaced chopper knives",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2019.0,
+    "dateWasBlank": true,
+    "work": "serviced engine oil and filters",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2019.0,
+    "dateWasBlank": true,
+    "work": "replaced unload auger u-joint and yokes",
+    "parts": "just unbolt auger flange and slide auger off of square shaft....there are no retaining bolts on outer yoke shaft",
+    "mileage": null
+   },
+   {
+    "date": "2019-09-09",
+    "dateWasBlank": false,
+    "work": "replaced rear feed chain with a poly Harvest Services Ltd. 86 link",
+    "parts": "have another 1576 in the barn.  the 1575 would be the front feed chain for R62 & R75",
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": false,
+    "work": "oil and filter change.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed water separator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed accelerator rolls",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed cross auger flighting and bearings",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed coolant filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": "with hot shot stiction 64oz",
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "changed water separator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "changed hydraulic oil filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "changed alternator to larger pulley with proper belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "changed fan hub bearings",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced Main clutch shaft \u2013 remove RH first...LH bearing has 2 set screws behind bearing housing",
+    "parts": "!!!!  LH bearing has set screws.  refer to previous instructions",
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced LH Pivot Drive Sheave",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced Heavy jam nylon lock nut on RH variable speed",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced both clean grain elevator sprockets",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced inside chopper bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced Header lift valve assembly",
+    "parts": "grabbed a used one from Chub Woods. Header still doesn't move overly fast. should check hydraulic pressure, maybe pump",
+    "mileage": null
+   },
+   {
+    "date": 2022.0,
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2022.0,
+    "dateWasBlank": true,
+    "work": "replaced hydro pump sheave",
+    "parts": "installed with steel epoxy....need to replace both sheave and hydro pump shaft for 2023",
+    "mileage": null
+   },
+   {
+    "date": 2022.0,
+    "dateWasBlank": true,
+    "work": "replaced extension spring for hydro belt tensioner",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2022.0,
+    "dateWasBlank": true,
+    "work": "new continuous duty solenoid for seperator clutch",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2022.0,
+    "dateWasBlank": true,
+    "work": "seperator clutch relay",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": false,
+    "work": "new hydro pump",
+    "parts": "$7986 Big Sky Hydraulics, $210 shipping",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new hydro pump sheave",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed fuel seperator filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed oil filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed coolant filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed hydraulic filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed fan housing bearings and shaft seal including a speedy sleave",
+    "parts": "the whole unit is found under Cummins #3065358",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed fan belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed alternator belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "installed new grain elevator chain",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new outer rotor bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "changed AC belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new AC compressor",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new expansion valve",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new AC dryer reciever",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new shoe hanger bushings",
+    "parts": "all 4 (both sides)",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "shoe pitman bearing flange",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": false,
+    "work": "oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "fuel filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "coolant",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced RH Main Clutch Shaft Sheave, triple groove",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced shoe drive belt on LH",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced spreader pump drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced double sided belt for return elevator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced RH tailings drive, for return elevator and spreader hyd. pump",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced all 4 beaings on the bin loader drive shaft and bin loader auger",
+    "parts": "remove bin auger from yoke, thread out the yoke then remove outside plate holding bearing,  air hammer works great for breaking yoke free",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced inner chopper bearing",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced hydro belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced hydro tensioner arm bolt",
+    "parts": "5/8\" x 4.5\"",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced hydro tensioner arm bushing sleeve",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced hydro tensioner spring",
+    "parts": "just the spring portion is 71349270",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced left hand side accelerator roll gears",
+    "parts": "2 as a set",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced u joint between accerlerator rolls and chopper drive",
+    "parts": "much heavier u-joint",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "purchased clean grain lower cover lid and pin",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced upper rear feed chain outside bearing",
+    "parts": "replace LH or inside bearing - 71308995 for 2026",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "replaced Pivot jackshaft drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "replaced hydro tensioner arm bushings, pivot sleeve, and bolt.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "new bushing and spacer pin on chopper belt tensioner",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "adjusted tension on clean grain and return elevators",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "installed clean grain lower cover lid and pin",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "replaced grain loss monitor pad back middle",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "replaced accelerator roll drive shaft bearing on RH side",
+    "parts": "porta pack for pressure and extra nut to hit on end of shaft with air hammer for vibration.  worked great",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "fan idler and drive belt, RH side triple belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "Union for variable speed rotor sheave",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "R-62": {
+  "info": {
+   "make": "Gleaner",
+   "model": "R-62  R62-64430L",
+   "year": "1994?"
+  },
+  "records": [
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replaced inner air cleaner",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replaced outer air cleaner",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replace fuel filters (both)",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replace coolant filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replaced constant speed header drive bearing (LH side)",
+    "parts": 71331651.0,
+    "mileage": null
+   },
+   {
+    "date": 2017.0,
+    "dateWasBlank": false,
+    "work": "replaced fan hub bearing",
+    "parts": 3910739.0,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": false,
+    "work": "replaced chopper belt,  swapped out 7\u201d idler for a 5\u201d idler which allow us to use the same belt on R62 and R75,",
+    "parts": 71448482.0,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "oil and filter change.",
+    "parts": "Napa 1748",
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "outer air filter change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "outer rotor bearing",
+    "parts": "71335184 now 70539158",
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "changed fuel filter",
+    "parts": "Donaldson P558000",
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "changed grain loss sensor for rotor",
+    "parts": 71192868.0,
+    "mileage": 325.0
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "changed hydraulic line for steering supply",
+    "parts": 71367583.0,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "installed new Tailings elevator head",
+    "parts": 71367413.0,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "installed new tailings elevator chain w/ scrapers",
+    "parts": "71149843 is now 71472586",
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "installed all new bearings on tailings elevator",
+    "parts": 71308962.0,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "installed new Tailings elevator sprockets",
+    "parts": 71373688.0,
+    "mileage": null
+   },
+   {
+    "date": 2018.0,
+    "dateWasBlank": true,
+    "work": "Installed 3 new latches",
+    "parts": "71127991 is now 762975",
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": false,
+    "work": "oil and filter change.",
+    "parts": "Napa 1748",
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "water separator",
+    "parts": "Napa 3405",
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "water separator",
+    "parts": "Napa 3357",
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "fuel filter primary",
+    "parts": 3405.0,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed coolant filter",
+    "parts": 4070.0,
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed all 3 batteries",
+    "parts": "Napa commercial #7237 31P",
+    "mileage": null
+   },
+   {
+    "date": 2020.0,
+    "dateWasBlank": true,
+    "work": "changed accelerator rolls",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": false,
+    "work": "changed bearings on LH Main Drive Sheave",
+    "parts": "inner - 17522               outer - 71335182",
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "adjusted both elevators",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "tightened loose bolts on return elevator paddles",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "replaced adapter spring, big outer spring on LH side rear",
+    "parts": "#113450M1",
+    "mileage": null
+   },
+   {
+    "date": 2021.0,
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": null,
+    "mileage": "no stiction"
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": true,
+    "work": "changed hydro pump input shaft seal kit",
+    "parts": "71355279 $450",
+    "mileage": "just do the whole kit, drain oil from system easier"
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": true,
+    "work": "replaced hydr conrol spring, tensioner",
+    "parts": 71179404.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": true,
+    "work": "replaced bearings in left rear wheel hub",
+    "parts": "71334989 or timkin 3980 outer 850182M1 or timken 24780",
+    "mileage": null
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": true,
+    "work": "replaced small shoe hanger bushings",
+    "parts": 71370448.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": true,
+    "work": "replaced rear feed chain with metal stock item",
+    "parts": 71149960.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-09-08",
+    "dateWasBlank": false,
+    "work": "new bearings, seals, etc for left hand final drive",
+    "parts": "plug 71304271, cup 70210012, cone 70210011, cup 71162782, cone 71162781, o-ring 70923816",
+    "mileage": null
+   },
+   {
+    "date": "2022-09-08",
+    "dateWasBlank": true,
+    "work": "ladder rubber stops",
+    "parts": 70547934.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-09-08",
+    "dateWasBlank": true,
+    "work": "new bearings in outer jackshaft drive sheave",
+    "parts": "73011952 (2)               Napa #6208-2RSJ",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": false,
+    "work": "replaced shoe hanger bushings",
+    "parts": "#71118097",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new outer rotor bearing",
+    "parts": "71335184         70539158",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "replaced both header drive shaft bearings",
+    "parts": "71309218 (2)",
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new sheave hub",
+    "parts": 71343262.0,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new RH counterhaft double sheave",
+    "parts": 71364661.0,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "replaced feeder countershaft",
+    "parts": 71413348.0,
+    "mileage": 670.0
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "replaced pto driveline",
+    "parts": 187553.0,
+    "mileage": 995.0
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "new rear feed chain shaft",
+    "parts": 71335184.0,
+    "mileage": "updated size"
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "feed chain spocket (3)",
+    "parts": 71368861.0,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "outer bearing for rear feed chain shaft",
+    "parts": "71335184 equal to napa RA112-RRB",
+    "mileage": "updated for larger size"
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "rear feed chain outer bearing flange",
+    "parts": 71130258.0,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "lock nut for shaft",
+    "parts": 70921138.0,
+    "mileage": null
+   },
+   {
+    "date": 2023.0,
+    "dateWasBlank": true,
+    "work": "header sheave set screw",
+    "parts": 70923326.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": 1748.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "fuel filter",
+    "parts": "3405 and 3357",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "coolant filter",
+    "parts": 4070.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced RH Main Clutch Shaft Sheave, triple groove",
+    "parts": 71363431.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced double sided belt for return elevator",
+    "parts": 71367460.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced RH tailings drive, for return elevator and spreader hyd. pump",
+    "parts": 71367469.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "changed spreader paddles",
+    "parts": 71341450.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced alternator",
+    "parts": "8LHA2070VF",
+    "mileage": "didn't seem to make a difference"
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced tailings elevator head/drive shaft",
+    "parts": 71363350.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced tapered hub and tailings drive sprocket",
+    "parts": "hub - 71362598           sprocket - 71373688",
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced both bearings on tailings head shaft",
+    "parts": 71308962.0,
+    "mileage": null
+   },
+   {
+    "date": 2024.0,
+    "dateWasBlank": true,
+    "work": "replaced broken woodruff key",
+    "parts": "70905126 or a 1/4\" x 1\"   #15",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": false,
+    "work": "replaced all 4 bearings on spreaders",
+    "parts": "71308962                             Napa 1100-KRRB",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "replaced front top shoe hanger bushings",
+    "parts": 71118097.0,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "oil and filters",
+    "parts": 1748.0,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "silsicon on leaky hydro motor",
+    "parts": null,
+    "mileage": "2026 needs new o-ring on hydro"
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "new bushings and pin on chopper tensioner arm",
+    "parts": "bushing 71171117 pin/spacer 71172846  spacer 71344936 ",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "new bushings and pin on return elevator tensioner",
+    "parts": "bushing 71356060        spacer pin 71356061  spacer 71197117",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "new bushings and pin on fan idler tensioner, main triple belt on right hand side",
+    "parts": "bushing 71356060        spacer pin 71356061  spacer 71197117",
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "adjusted tension on clean grain and return",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": 2025.0,
+    "dateWasBlank": true,
+    "work": "replaced RH accelerator roll rear drive shaft bearing behind the triple sheave",
+    "parts": "K4037",
+    "mileage": null
+   }
+  ]
+ },
+ "40 FT D60 Macdon": {
+  "info": {
+   "make": "MacDon",
+   "model": "D60 40ft",
+   "year": 2012.0
+  },
+  "records": [
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": false,
+    "work": "new L-pin for tongue and left wheel tension",
+    "parts": 144415.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "New hydraulic hoses for reel drive pump, center reel fore and aft and RH reel fore and aft",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new shocks on stabilizers",
+    "parts": 144934.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new spacers on stabilizers",
+    "parts": 87498987.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "2 new adapter to header pins",
+    "parts": 124399.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "installed crop lifters, pick up guards",
+    "parts": "JDAXE23480                                 or AH159210",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new bearings and seal in adapter gearbox inpout shaft",
+    "parts": "MacDon 3071,30702,187477,187485",
+    "mileage": "napa #'s LM48548, LM48510, seal 19762"
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new bearing in adapter gearbox upper clutch double bearing",
+    "parts": "MacDon 187485",
+    "mileage": "gerbers # 5205-2NS"
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "crop lifters",
+    "parts": "John deere AH159210",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new knife bar (sickle bar)",
+    "parts": "LH 129024                            center 129026      RH 172254",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "knife head",
+    "parts": 132896.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "macdon splice kit",
+    "parts": 129043.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new adapter driveline",
+    "parts": 187553.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-11",
+    "dateWasBlank": false,
+    "work": "changed bushings in right hand gauge wheels rear support arm, lower set",
+    "parts": "bushing 156501, and pin 144376 with roll pins 16266",
+    "mileage": "welded and tightened all holes"
+   },
+   {
+    "date": "2024-08-11",
+    "dateWasBlank": true,
+    "work": "welded support onto edge of channel weldment",
+    "parts": "worn from rubbing hard and wear and tear",
+    "mileage": "replacement costs $650"
+   },
+   {
+    "date": "2025-08-13",
+    "dateWasBlank": false,
+    "work": "changed right hand drive roller for draper",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-08-13",
+    "dateWasBlank": true,
+    "work": "changed right hand draper",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "AGCO 5100": {
+  "info": {},
+  "records": []
+ },
+ "45 FT MacDon D60": {
+  "info": {
+   "make": "Macdon",
+   "model": "D60",
+   "year": "header and adapter 2008"
+  },
+  "records": [
+   {
+    "date": "2022-09-15",
+    "dateWasBlank": false,
+    "work": "fixed bad roller bearings on center canvas front roller",
+    "parts": "2 retaining ring - 118011, 2 seals - 100862 facing opposite directions, dust cap 133372, 2 bearing - 118185",
+    "mileage": null
+   },
+   {
+    "date": "2022-09-01",
+    "dateWasBlank": false,
+    "work": "new support weldt for transport swing arm",
+    "parts": 220796.0,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": false,
+    "work": "Maintenance / Work Done",
+    "parts": "sickles #279641,                   guards #118344,                   short sickle bolt #135628,            long sickle bolt and nuts #52417, cone nuts #135626,                splice kit #129043",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "new seal kit for RH reel lift cylinder",
+    "parts": "#132474",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-26",
+    "dateWasBlank": true,
+    "work": "have new spacers for swing arm in macdon drawer",
+    "parts": 144091.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-15",
+    "dateWasBlank": false,
+    "work": "changed right side center draper bearing, non drive side",
+    "parts": "21859, napa AG1103KRRB, JD# AFH209882",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-15",
+    "dateWasBlank": true,
+    "work": "replaced left hand, knife drive bearing",
+    "parts": 100500.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-15",
+    "dateWasBlank": true,
+    "work": "replaced left hand, knife drive seal",
+    "parts": 113222.0,
+    "mileage": null
+   }
+  ]
+ },
+ "Bobcat T300": {
+  "info": {
+   "make": "Bobcat ",
+   "model": "T300"
+  },
+  "records": [
+   {
+    "date": "2019-01-29",
+    "dateWasBlank": false,
+    "work": "cleaned battery posts and all electrical connections on battery, starter motor, and alternator",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2019-01-29",
+    "dateWasBlank": false,
+    "work": "Changed oil and oil filter,   drained fuel filter",
+    "parts": "Napa Oil filter  7730",
+    "mileage": "3039 hours"
+   },
+   {
+    "date": "2019-03-19",
+    "dateWasBlank": false,
+    "work": "replaced seals in LH lift cylinder",
+    "parts": 7137939.0,
+    "mileage": 3044.0
+   },
+   {
+    "date": "2020-02-26",
+    "dateWasBlank": false,
+    "work": "replaced lift actuator(top on hydraulic block) and actuator adapter   Note:  make sure the adapter matches the actuator, there is a new and old style!",
+    "parts": "Acuator #7101672,             Adapter #7101705",
+    "mileage": 3098.0
+   },
+   {
+    "date": "2020-02-27",
+    "dateWasBlank": false,
+    "work": "software update to V63+,  lift and tilt actuators computer calibrated by Tilleman's",
+    "parts": ".",
+    "mileage": 3098.0
+   },
+   {
+    "date": "2020-02-27",
+    "dateWasBlank": false,
+    "work": "noticed the left reverse switch is broken.  Did not replace...nobody had one on hand.",
+    "parts": "# BZ-2RW8225551-A2  15Amp",
+    "mileage": null
+   },
+   {
+    "date": "2020-10-21",
+    "dateWasBlank": false,
+    "work": "Changed oil and oil filter,   drained fuel filter",
+    "parts": "Napa 7730",
+    "mileage": null
+   },
+   {
+    "date": "2020-10-21",
+    "dateWasBlank": false,
+    "work": "Changed fuel filter",
+    "parts": "Napa 3192",
+    "mileage": null
+   },
+   {
+    "date": "2020-10-21",
+    "dateWasBlank": false,
+    "work": "Changed hydraulic filter and hydraulic oil",
+    "parts": "Napa 1955",
+    "mileage": null
+   },
+   {
+    "date": "2020-10-21",
+    "dateWasBlank": false,
+    "work": "Changed fan belt and kit belt tensioner",
+    "parts": "napa belt 7453,                         kit tensioner # 7302291",
+    "mileage": null
+   },
+   {
+    "date": "2023-04-22",
+    "dateWasBlank": false,
+    "work": "replaced left tilt arm hydraulic cylinder",
+    "parts": "7-208-419",
+    "mileage": null
+   },
+   {
+    "date": "2026-04-03",
+    "dateWasBlank": false,
+    "work": "replaced right hand hydraulic drive motor",
+    "parts": "6690156REM",
+    "mileage": null
+   }
+  ]
+ },
+ "Versatile Bi-Drectional": {
+  "info": {
+   "make": "Versatile",
+   "model": 256.0,
+   "year": 1985.0
+  },
+  "records": [
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": false,
+    "work": "oil and filter",
+    "parts": 1602.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "fuel filter",
+    "parts": "3357 and 3777",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "2 hydraulic filters",
+    "parts": 1127.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "2 new batteries",
+    "parts": 7234.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "air filter inner",
+    "parts": 6560.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "air filter outer",
+    "parts": 2522.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "drained and changed hydraulic oil (ATF red)",
+    "parts": "Dextron ATF",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "changed the oil in all planetaries (drop boxes) and diffs",
+    "parts": "80W-90",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "changed left hand rear drop box axle seal",
+    "parts": "Seal: 9673078                    ",
+    "mileage": "Have an extra wheel seal in the drawer"
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "tried to install speedy sleave...failed",
+    "parts": "Speedy sleave: 99325",
+    "mileage": "it is in the barn"
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "beefed up lift arm and supports, added new turnbuckles",
+    "parts": "turnbuckle ATL12",
+    "mileage": "$100 ?"
+   },
+   {
+    "date": "2026-03-04",
+    "dateWasBlank": false,
+    "work": "new diesel lift pump",
+    "parts": "DFP HFP274",
+    "mileage": null
+   },
+   {
+    "date": "2026-03-04",
+    "dateWasBlank": true,
+    "work": "new diesel supply line",
+    "parts": "3/8\"",
+    "mileage": null
+   },
+   {
+    "date": "2026-03-04",
+    "dateWasBlank": true,
+    "work": "new starter",
+    "parts": "ultra-power STR7051",
+    "mileage": null
+   }
+  ]
+ },
+ "JD 1830": {
+  "info": {
+   "make": "John Deere",
+   "model": 1830.0
+  },
+  "records": [
+   {
+    "date": "2019-01-29",
+    "dateWasBlank": false,
+    "work": "changed oil and oil filter",
+    "parts": "oil filter 1243",
+    "mileage": "1673 hours"
+   },
+   {
+    "date": "2020-04-27",
+    "dateWasBlank": false,
+    "work": "new air filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-10-21",
+    "dateWasBlank": false,
+    "work": "Murray Radiator cap",
+    "parts": "Napa # 7006    703-1411",
+    "mileage": null
+   },
+   {
+    "date": "2021-10-21",
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-10-21",
+    "dateWasBlank": true,
+    "work": "new hydraulic hoses on bucket lift etc.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-10-21",
+    "dateWasBlank": true,
+    "work": "fixed hydrauic return line",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-10-21",
+    "dateWasBlank": true,
+    "work": "changed thermostat and thermostat gasket, fixed leak",
+    "parts": "thermostat - RE33705 (4035) Gasket DG01",
+    "mileage": null
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": 1243.0,
+    "mileage": "408,  new tach installed however long ago"
+   },
+   {
+    "date": "2023-01-16",
+    "dateWasBlank": true,
+    "work": "changed hydraulic fluid",
+    "parts": null,
+    "mileage": 408.0
+   },
+   {
+    "date": "2023-02-01",
+    "dateWasBlank": false,
+    "work": "changed gear shift lever and ball assembly bushing",
+    "parts": "shift lever L34349                bushing L4027T ",
+    "mileage": "extra bushing and snap ring in JD drawer"
+   },
+   {
+    "date": "2024-07-20",
+    "dateWasBlank": false,
+    "work": "changed circuit breaker on ignition switch",
+    "parts": "AR28403",
+    "mileage": "caused zero juice, no cranking, dead in the water"
+   },
+   {
+    "date": "2024-07-20",
+    "dateWasBlank": true,
+    "work": "changed oil and filter",
+    "parts": 1243.0,
+    "mileage": 543.0
+   },
+   {
+    "date": "2024-07-26",
+    "dateWasBlank": false,
+    "work": "changed air filter",
+    "parts": 2631.0,
+    "mileage": null
+   }
+  ]
+ },
+ "JD 2030 Fred": {
+  "info": {
+   "make": "John Deere",
+   "model": 2030.0
+  },
+  "records": [
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": false,
+    "work": "engine oil",
+    "parts": "oil filter 1243",
+    "mileage": 1994.0
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "transmission / hydraulic oil",
+    "parts": null,
+    "mileage": 1994.0
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new radiator and hoses",
+    "parts": "Radiator, Northern 219589,                       upper hose T23533                  lower hose T22500",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "changed all gauges:  Tachometer, temperature",
+    "parts": "Tach AR50954 or 115571,         Tach cable AL23838 (Get JD origional),                                   Temp AL24293 or 121628",
+    "mileage": 1994.0
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new fan belt",
+    "parts": "T25130 or 22485 takes work but is good fit                                 22474 is way too short",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new air filter",
+    "parts": 2222.0,
+    "mileage": 1994.0
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "fuel gauge",
+    "parts": "AL24294 or 58886",
+    "mileage": 1994.0
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new rubbers for left shifter",
+    "parts": "lower R78249                               upper R75451",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new shims and lock ring for left shifter",
+    "parts": "shims R80840, R80841,                       weird snap ring R80839",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "wouldn't start.  no noise or juice at starter",
+    "parts": "park sensor contacts were corroded.  located under shifter shield",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "replaced fuel filter",
+    "parts": "AR50041",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new shift lever knob",
+    "parts": "AL114059",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "purchased fuel sending unit and gasket",
+    "parts": "AT31619",
+    "mileage": null
+   },
+   {
+    "date": "2023-03-27",
+    "dateWasBlank": true,
+    "work": "new ignition",
+    "parts": "AR58126",
+    "mileage": null
+   },
+   {
+    "date": "2024-07-24",
+    "dateWasBlank": false,
+    "work": "installed circuit breaker",
+    "parts": "AR28403",
+    "mileage": null
+   }
+  ]
+ },
+ "Fordson": {
+  "info": {
+   "make": "Fordson",
+   "model": 850.0,
+   "year": 1954.0
+  },
+  "records": [
+   {
+    "date": "2018-05-03",
+    "dateWasBlank": false,
+    "work": "new fuel shut off",
+    "parts": "S.60365",
+    "mileage": null
+   },
+   {
+    "date": "2019-06-06",
+    "dateWasBlank": false,
+    "work": "new clutch plates for ford mower",
+    "parts": "CNH 202227, H34-J",
+    "mileage": null
+   },
+   {
+    "date": "2022-08-30",
+    "dateWasBlank": false,
+    "work": "oil change and filter change",
+    "parts": "1515 oil filter",
+    "mileage": null
+   },
+   {
+    "date": "2022-08-30",
+    "dateWasBlank": true,
+    "work": "new starter",
+    "parts": "was 1998215 converted to 91-02-5787 from O'Reillys",
+    "mileage": null
+   },
+   {
+    "date": "2022-08-30",
+    "dateWasBlank": true,
+    "work": "new starter solenoid",
+    "parts": "S.61056",
+    "mileage": null
+   },
+   {
+    "date": "2022-09-12",
+    "dateWasBlank": false,
+    "work": "new arm for sickle mower",
+    "parts": "N149197",
+    "mileage": "wood pitman arm, 37\""
+   }
+  ]
+ },
+ "Polaris 900": {
+  "info": {
+   "make": "Polaris",
+   "model": "Ranger XP EPS 900 4x4",
+   "year": 2014.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "new steering rack and arms",
+    "parts": 1823902.0,
+    "mileage": null
+   },
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "new engine air filter",
+    "parts": 200386.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-03-01",
+    "dateWasBlank": false,
+    "work": "new rear shocks",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-03-01",
+    "dateWasBlank": true,
+    "work": "new rear A-arm bushings, complete set of bushings and pins",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-03-01",
+    "dateWasBlank": true,
+    "work": "replaced both cv axles",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-03-20",
+    "dateWasBlank": false,
+    "work": "new battery",
+    "parts": "Interstate MT-26-L4",
+    "mileage": null
+   },
+   {
+    "date": "2025-04-10",
+    "dateWasBlank": false,
+    "work": "patched both rear tires",
+    "parts": "driver side rear is still a ?",
+    "mileage": null
+   }
+  ]
+ },
+ "Green Mule ": {
+  "info": {
+   "make": "Kawasaki",
+   "model": "3010  KAF620-E2",
+   "year": 2002.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "serviced air filters, spark plugs, oil change, filter change, greased",
+    "parts": "oil filter FE290, 49065-2071,    Napa 1394",
+    "mileage": null
+   },
+   {
+    "date": "2020-02-23",
+    "dateWasBlank": false,
+    "work": "Replaced 1/2\u201d electric valve on sprayer including the reducer bushings",
+    "parts": "Valve: BJLEV050, Bushing 1/2x3/8",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-27",
+    "dateWasBlank": false,
+    "work": "changed oil and filter",
+    "parts": "Napa 1394",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-27",
+    "dateWasBlank": true,
+    "work": "changed spark plugs",
+    "parts": "BPR2ES     or     RN14YC",
+    "mileage": 6572.0
+   },
+   {
+    "date": "2024-04-27",
+    "dateWasBlank": true,
+    "work": "Replaced 1/2\u201d electric valve on sprayer",
+    "parts": "LEV050",
+    "mileage": null
+   }
+  ]
+ },
+ "4 wheeler": {
+  "info": {
+   "make": "Arctic Cat",
+   "model": "500AT",
+   "year": 2014.0
+  },
+  "records": [
+   {
+    "date": "2018-07-15",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": "HF-138",
+    "mileage": 850.0
+   },
+   {
+    "date": "2021-08-19",
+    "dateWasBlank": false,
+    "work": "Drive belt",
+    "parts": "0823-228",
+    "mileage": 1706.0
+   },
+   {
+    "date": "2024-06-17",
+    "dateWasBlank": false,
+    "work": "replaced starter solenoid",
+    "parts": "0445-058",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": false,
+    "work": "replaced battery",
+    "parts": "YTX20H-BS",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "replaced solenoid",
+    "parts": "0445-058",
+    "mileage": null
+   }
+  ]
+ },
+ "Red Mule": {
+  "info": {
+   "make": "Kawasaki",
+   "model": "Mule 1000"
+  },
+  "records": [
+   {
+    "date": "2017-04-18",
+    "dateWasBlank": false,
+    "work": "replaced starter motor",
+    "parts": "SMU0056",
+    "mileage": null
+   },
+   {
+    "date": "2017-04-18",
+    "dateWasBlank": true,
+    "work": "didn't replace starter motor gear sprocket for \u201cchain starter\u201d chain.",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Miller - Onan Generator": {
+  "info": {
+   "make": "Miller \u2013 Onan Generator"
+  },
+  "records": [
+   {
+    "date": "2016-04-21",
+    "dateWasBlank": false,
+    "work": "New Plugs",
+    "parts": "Autolite    216",
+    "mileage": null
+   },
+   {
+    "date": "2016-04-21",
+    "dateWasBlank": true,
+    "work": "New Air Filter",
+    "parts": "NAPA 6094",
+    "mileage": null
+   },
+   {
+    "date": "2019-04-21",
+    "dateWasBlank": false,
+    "work": "fuel bowl gasket, didn't use screen",
+    "parts": "Napa 730-2373",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-27",
+    "dateWasBlank": false,
+    "work": "changed points and condensor",
+    "parts": "160-1183+312-0246",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-27",
+    "dateWasBlank": true,
+    "work": "changed spark plug wires",
+    "parts": "32-0650",
+    "mileage": null
+   },
+   {
+    "date": "2020-05-27",
+    "dateWasBlank": true,
+    "work": "changed ignition coil",
+    "parts": "166-0772",
+    "mileage": null
+   }
+  ]
+ },
+ "Honda GX240": {
+  "info": {
+   "make": "Honda",
+   "model": "GC04-1204027 QH**"
+  },
+  "records": [
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": false,
+    "work": "new seals",
+    "parts": "91201-890-003",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "new head gasket",
+    "parts": "12251-ZE2-801",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "new piston ring set",
+    "parts": "13010-ZE2-921",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "case gasket",
+    "parts": "11381-ZE2-801",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "exhaust gasket",
+    "parts": "18333-ZK6-Y00",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "new spark plug",
+    "parts": "NGK 7222",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "new arm \u2013 valve rocker",
+    "parts": "14431-ZE2-010",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "new throttle return spring",
+    "parts": "16562-ZE2-000",
+    "mileage": null
+   },
+   {
+    "date": "2016-06-20",
+    "dateWasBlank": false,
+    "work": "Governor Spring",
+    "parts": "16561-ZE2-000",
+    "mileage": null
+   },
+   {
+    "date": "2016-06-20",
+    "dateWasBlank": true,
+    "work": "Choke Set",
+    "parts": "16044-ZE-005",
+    "mileage": null
+   }
+  ]
+ },
+ "Valmar Spreader": {
+  "info": {
+   "make": "Valmar Spreader"
+  },
+  "records": []
+ },
+ "Brandt 20110": {
+  "info": {
+   "make": "Brandt",
+   "model": 20110.0,
+   "year": 2020.0
+  },
+  "records": [
+   {
+    "date": ".",
+    "dateWasBlank": false,
+    "work": "replaced winch",
+    "parts": "B030400",
+    "mileage": 495.0
+   },
+   {
+    "date": ".",
+    "dateWasBlank": true,
+    "work": "winch coupler to hydraulic motor",
+    "parts": "C2110165",
+    "mileage": null
+   },
+   {
+    "date": ".",
+    "dateWasBlank": true,
+    "work": "replaced the cogged belt from  pto gearbox to conveyor drive shaft",
+    "parts": "B018700 this is the drive sprocket #",
+    "mileage": null
+   },
+   {
+    "date": ".",
+    "dateWasBlank": true,
+    "work": "replaced cogged drive belt",
+    "parts": "Brandt B018730                       Continental 1120-8M-50 (523743829)",
+    "mileage": null
+   }
+  ]
+ },
+ "Brandt 2095": {
+  "info": {
+   "make": "Brandt 2095",
+   "model": 2095.0,
+   "year": 2006.0
+  },
+  "records": [
+   {
+    "date": "2025-08-09",
+    "dateWasBlank": false,
+    "work": "have axle extension",
+    "parts": 302877.0,
+    "mileage": "torgesons"
+   },
+   {
+    "date": "2025-08-09",
+    "dateWasBlank": true,
+    "work": "have chain tensioner roller idler",
+    "parts": "B009161",
+    "mileage": "torgesons"
+   },
+   {
+    "date": "2025-08-09",
+    "dateWasBlank": true,
+    "work": "changed 2 draper rollers",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2025-08-09",
+    "dateWasBlank": true,
+    "work": "have 4 draper rollers",
+    "parts": "B021253",
+    "mileage": "torgesons"
+   },
+   {
+    "date": "2026-04-18",
+    "dateWasBlank": false,
+    "work": "replaced bent wheel bar and axle",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2026-04-18",
+    "dateWasBlank": true,
+    "work": "replaced wheel bearings",
+    "parts": "Napa: outer BR6VP                  Inner cup LM29710VP            cone LM29749VP",
+    "mileage": null
+   }
+  ]
+ },
+ "Brandt 13110": {
+  "info": {},
+  "records": []
+ },
+ "Brandt 1340": {
+  "info": {
+   "make": "Brandt",
+   "model": 1340.0,
+   "year": 2013.0
+  },
+  "records": [
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "replaced mover wheel bearings",
+    "parts": "napa 704232",
+    "mileage": "replaced all 4 bearings"
+   },
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "replaced missing parts",
+    "parts": "motor arm: D311049R, linkage: D311048,spring lock pin B0020961",
+    "mileage": null
+   },
+   {
+    "date": null,
+    "dateWasBlank": true,
+    "work": "replaced missing mover drive sprocket",
+    "parts": "C810274",
+    "mileage": null
+   }
+  ]
+ },
+ "Brandt 840": {
+  "info": {
+   "make": "Brandt 840",
+   "model": 840.0
+  },
+  "records": [
+   {
+    "date": "2015-10-01",
+    "dateWasBlank": false,
+    "work": "Motor Repair \u2013 Mosch Electric",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-05",
+    "dateWasBlank": false,
+    "work": "New Belts \u2013 Gerbers",
+    "parts": "B228",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-03",
+    "dateWasBlank": false,
+    "work": "new seals on gear box",
+    "parts": "B781355",
+    "mileage": null
+   }
+  ]
+ },
+ "Brandt 852 super": {
+  "info": {
+   "make": "Brandt",
+   "model": "852 Supercharged"
+  },
+  "records": []
+ },
+ "Brandt 1060": {
+  "info": {
+   "make": "Brandt",
+   "model": "1060 MD",
+   "year": 1994.0
+  },
+  "records": [
+   {
+    "date": "2023-06-15",
+    "dateWasBlank": false,
+    "work": "replaced bearings on main input shaft",
+    "parts": "RA106-RRB",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-15",
+    "dateWasBlank": true,
+    "work": "replaced bearings on secondary input shaft",
+    "parts": "RA103-RRB2",
+    "mileage": null
+   },
+   {
+    "date": "2024-03-27",
+    "dateWasBlank": false,
+    "work": "replaced lower gear box",
+    "parts": "B003015",
+    "mileage": "frontline ag in conrad"
+   },
+   {
+    "date": "2024-03-27",
+    "dateWasBlank": true,
+    "work": "replaced upper gear box",
+    "parts": "B003014",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-04",
+    "dateWasBlank": false,
+    "work": "replaced main input bearing",
+    "parts": "NAPA  RA106-RRB    DODGE  389939  R0123-3445               TIMKEN    RA106RRB  ",
+    "mileage": "went with greasable bearings...we'll see if that helps them last longer, add a G to part numbers for greasable"
+   },
+   {
+    "date": "2024-04-04",
+    "dateWasBlank": true,
+    "work": "replaced secondary input shaft bearing",
+    "parts": "NAPA RA103-RRB2        TIMKEN RA103RRB2",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-04",
+    "dateWasBlank": true,
+    "work": "replaced hopper end bearing, greasable",
+    "parts": "GRA100-RRB",
+    "mileage": "for 1\" shaft w/collar"
+   },
+   {
+    "date": "2024-04-04",
+    "dateWasBlank": true,
+    "work": "replaced bearing and housing/pillow block at hopper transfer",
+    "parts": "bearing RA100-RRB         Housing 52MPB-ST-ZP",
+    "mileage": "or pillow part # PP205"
+   },
+   {
+    "date": "2024-04-04",
+    "dateWasBlank": true,
+    "work": "new u-joint cross at hopper transfer",
+    "parts": "UJ861",
+    "mileage": null
+   },
+   {
+    "date": "2024-04-04",
+    "dateWasBlank": true,
+    "work": "new u-joint cross between gear boxes",
+    "parts": "200-1200",
+    "mileage": "1 1/16 x 2 9/16"
+   }
+  ]
+ },
+ "Sukundiak - unload": {
+  "info": {
+   "make": "Sukundiak",
+   "model": "Unload ?  7\" x 33' "
+  },
+  "records": [
+   {
+    "date": "2018-05-04",
+    "dateWasBlank": false,
+    "work": "installed slow down pulleys, drive pulley 3 15/16\u201d",
+    "parts": "2MBL39 2BK40H",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-04",
+    "dateWasBlank": false,
+    "work": "installed slow down pulleys, secondary pulley 15 3/4\u201d",
+    "parts": "2MBL157 2BK160H",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-04",
+    "dateWasBlank": false,
+    "work": "Used 1 1/8\u201d sheave bushing for secondary pulley",
+    "parts": "122054DU",
+    "mileage": null
+   },
+   {
+    "date": "2018-05-04",
+    "dateWasBlank": false,
+    "work": "used belts B276 (might be a touch loose)",
+    "parts": "9003-2276",
+    "mileage": null
+   },
+   {
+    "date": "2026-03-24",
+    "dateWasBlank": false,
+    "work": "replaced auger flighting head bearing",
+    "parts": "GRA102-RRB",
+    "mileage": null
+   },
+   {
+    "date": "2026-03-24",
+    "dateWasBlank": true,
+    "work": "replaced drive shaft head bearing",
+    "parts": "GRA102-RRB",
+    "mileage": null
+   }
+  ]
+ },
+ "Gooseneck": {
+  "info": {},
+  "records": []
+ },
+ "Carhaul  Fuel trailer": {
+  "info": {},
+  "records": [
+   {
+    "date": "2025-04-10",
+    "dateWasBlank": false,
+    "work": "fixed right rear tire",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Schulte mower": {
+  "info": {
+   "make": "Schulte",
+   "model": "5026 bat-wing"
+  },
+  "records": [
+   {
+    "date": "2017-07-25",
+    "dateWasBlank": false,
+    "work": "replaced transfer case oil seal",
+    "parts": "331-824",
+    "mileage": null
+   },
+   {
+    "date": "2018-07-17",
+    "dateWasBlank": false,
+    "work": "replaced pto shaft whole unit",
+    "parts": 14558648.0,
+    "mileage": null
+   },
+   {
+    "date": "2018-07-17",
+    "dateWasBlank": true,
+    "work": "cross bearing",
+    "parts": "200-3500",
+    "mileage": null
+   },
+   {
+    "date": "2018-07-17",
+    "dateWasBlank": true,
+    "work": "implement yoke, 35 series",
+    "parts": "807-3520",
+    "mileage": null
+   },
+   {
+    "date": "2018-07-17",
+    "dateWasBlank": true,
+    "work": "pto shear bolt yoke device",
+    "parts": "104-5520",
+    "mileage": null
+   }
+  ]
+ },
+ "Big Air Compressor, portable": {
+  "info": {
+   "make": "FORD COMPRESSOR",
+   "model": "300GF-6005-E   SO-2940D"
+  },
+  "records": [
+   {
+    "date": "2018-11-07",
+    "dateWasBlank": false,
+    "work": "replaced starter",
+    "parts": "Napa \u2013 244-9628",
+    "mileage": null
+   },
+   {
+    "date": "2018-11-07",
+    "dateWasBlank": true,
+    "work": "installed ground disconnect",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2018-11-07",
+    "dateWasBlank": true,
+    "work": "fixed loose wireing underneath and fixed choke cable from sliding out of bracket",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Gravely ZT XL": {
+  "info": {
+   "make": "Gravely",
+   "model": "# 915262 ",
+   "year": "2021     ZT XL"
+  },
+  "records": [
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": false,
+    "work": "changed oil filter, oil, and air filter",
+    "parts": "oil filter 49065-7007                      air filter 11013-0752                 spark plug NGK  BPR-4ES",
+    "mileage": "air filter 21548000      oil filter 21548100"
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "bagger drive belt",
+    "parts": 7210200.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "mower blade serpentine belt",
+    "parts": 7200523.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "spindle",
+    "parts": 51537000.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "blades",
+    "parts": 4769800.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "fixed bagger brace, fixed pulley covers, fixed bagger hanger pin",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "installed sharp blades",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "colleciton bags",
+    "parts": 3862900.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": true,
+    "work": "new bagger latch",
+    "parts": 9079500.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": false,
+    "work": "oill and filter change",
+    "parts": "oil filter 49065-7007  napa 7035",
+    "mileage": null
+   }
+  ]
+ },
+ "Toro Zero Turn": {
+  "info": {
+   "make": "Toro Z480",
+   "model": 74353.0,
+   "year": 2006.0
+  },
+  "records": [
+   {
+    "date": "2016-05-24",
+    "dateWasBlank": false,
+    "work": "oil change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-24",
+    "dateWasBlank": true,
+    "work": "Oil filter change",
+    "parts": "Napa 7035",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-24",
+    "dateWasBlank": true,
+    "work": "spark plug change",
+    "parts": "FR4-5155",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-24",
+    "dateWasBlank": true,
+    "work": "adjusted valves",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-24",
+    "dateWasBlank": true,
+    "work": "air filter",
+    "parts": "B&S 698973",
+    "mileage": null
+   },
+   {
+    "date": "2019-06-04",
+    "dateWasBlank": false,
+    "work": "changed main belt #108-7192, 1/2\u201dx138\u201d",
+    "parts": "#108-7192",
+    "mileage": null
+   },
+   {
+    "date": "2020-07-01",
+    "dateWasBlank": false,
+    "work": "changed all idlers on mowing deck",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2021-08-16",
+    "dateWasBlank": false,
+    "work": "pto switch, replace",
+    "parts": "95-7489",
+    "mileage": "jacks small engines"
+   },
+   {
+    "date": "2021-08-16",
+    "dateWasBlank": true,
+    "work": "muffler, replaced",
+    "parts": "106-7007",
+    "mileage": null
+   },
+   {
+    "date": "2022-06-13",
+    "dateWasBlank": false,
+    "work": "purchased 2 grass bags",
+    "parts": "93-1623",
+    "mileage": "too deep"
+   },
+   {
+    "date": "2022-06-13",
+    "dateWasBlank": true,
+    "work": "purchased set of blades",
+    "parts": 106637.0,
+    "mileage": null
+   },
+   {
+    "date": "2022-06-13",
+    "dateWasBlank": true,
+    "work": "installed new seat and arm rest kit",
+    "parts": "armrests 105-6978   seat ",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": false,
+    "work": "new motor",
+    "parts": "#'s updated above",
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "oil and filter",
+    "parts": 7035.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-08-01",
+    "dateWasBlank": true,
+    "work": "new battery",
+    "parts": 8227.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": 7035.0,
+    "mileage": null
+   }
+  ]
+ },
+ "Grasshopper": {
+  "info": {
+   "make": "Grasshopper",
+   "model": "718KC"
+  },
+  "records": [
+   {
+    "date": "2016-05-24",
+    "dateWasBlank": false,
+    "work": "installed new Kohler motor",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": false,
+    "work": "installed new pto clutch belts (2)",
+    "parts": "AX34",
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "oil filter",
+    "parts": "12-050-01",
+    "mileage": "napa filter 1056"
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "oil change",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-05-25",
+    "dateWasBlank": true,
+    "work": "purchased pto switch, in dark pink closet",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2016-06-21",
+    "dateWasBlank": false,
+    "work": "New mower blades (Rotary Copperhead 18\u201d)",
+    "parts": "15-13463  ",
+    "mileage": "replaces Grasshopper         R 320239"
+   },
+   {
+    "date": "2018-07-16",
+    "dateWasBlank": false,
+    "work": "Installed 2 new tensioner springs",
+    "parts": 283820.0,
+    "mileage": null
+   },
+   {
+    "date": "2020-03-18",
+    "dateWasBlank": false,
+    "work": "Installed 2 new belt idler tensioners on hydros",
+    "parts": "6203 or 310393312",
+    "mileage": null
+   },
+   {
+    "date": "2020-07-12",
+    "dateWasBlank": false,
+    "work": "oil and filter change, cleaned air filter etc",
+    "parts": "Napa 1056",
+    "mileage": null
+   },
+   {
+    "date": "2020-07-12",
+    "dateWasBlank": false,
+    "work": "loosened up and greased clutch belt tensioner pulley arm bushings",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-07-12",
+    "dateWasBlank": false,
+    "work": "cleaned and lubed choke cable",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-07-12",
+    "dateWasBlank": true,
+    "work": "Pulled and leaned carb.  Placed extra nut directly on air filter top pan, don't think it was completely sealing before.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2020-07-12",
+    "dateWasBlank": true,
+    "work": "installed bagger blower and cart. Bagger fan using Gates belt 8228",
+    "parts": "should be 382753, 5/8\u201d x 41\u201d",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-22",
+    "dateWasBlank": false,
+    "work": "installed new valve cover",
+    "parts": "24-755-141-S",
+    "mileage": null
+   },
+   {
+    "date": "2024-05-14",
+    "dateWasBlank": false,
+    "work": "new clutch belts",
+    "parts": "381914 or AX 34",
+    "mileage": "36\" x 1/2\" wide belt"
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": false,
+    "work": "replaced power shaft bearings",
+    "parts": "GY1100KRRB",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "replaced power shaft pillow blocks / carriers",
+    "parts": "AK05 or UCP 205 housing",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "oil change and filter change",
+    "parts": 1056.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "replaced full deck hub assembly",
+    "parts": 623785.0,
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "replaced spindle and bearings",
+    "parts": "603775            bearing RA100-RR",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "replaced left hand deck sheave",
+    "parts": "414686 or 215601 ?",
+    "mileage": null
+   },
+   {
+    "date": "2024-06-21",
+    "dateWasBlank": true,
+    "work": "replaced elecric starter",
+    "parts": "25-098-24-S",
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": false,
+    "work": "oil and filter change",
+    "parts": "napa 1056",
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": true,
+    "work": "replaced deck belt",
+    "parts": 382037.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": true,
+    "work": "replaced mower deck tensioner idler",
+    "parts": 393225.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": true,
+    "work": "replaced hydro idler",
+    "parts": 393312.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": true,
+    "work": "changed PTO switch",
+    "parts": 604796.0,
+    "mileage": null
+   }
+  ]
+ },
+ "Toro Timemaster": {
+  "info": {
+   "make": "Toro",
+   "model": 21200.0,
+   "year": 2023.0
+  },
+  "records": [
+   {
+    "date": "2023-06-12",
+    "dateWasBlank": false,
+    "work": "purchased from Hoven",
+    "parts": 1700.0,
+    "mileage": null
+   },
+   {
+    "date": "2025-05-12",
+    "dateWasBlank": false,
+    "work": "oil change",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "Jacobsen mower": {
+  "info": {
+   "make": "Jacobsen"
+  },
+  "records": [
+   {
+    "date": "2022-08-18",
+    "dateWasBlank": false,
+    "work": "replaced front center rotary drive belt",
+    "parts": "B51",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-13",
+    "dateWasBlank": false,
+    "work": "replaced front center rotary drive belt",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-06-19",
+    "dateWasBlank": false,
+    "work": "replaced right rotary belt and left rotary belt",
+    "parts": "B51",
+    "mileage": null
+   },
+   {
+    "date": "2023-06-25",
+    "dateWasBlank": false,
+    "work": "fixed lots of bends and broken welds on left rotary",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "2023-07-11",
+    "dateWasBlank": false,
+    "work": "replaced right rotary bearing and hub on inside",
+    "parts": "bearing and hub together # 125528-F4B-VSC-102   Gerbers   just the bearing is #389938  INS-VSC-102",
+    "mileage": null
+   },
+   {
+    "date": "2023-07-11",
+    "dateWasBlank": true,
+    "work": "rotary bearing, outside, greasable",
+    "parts": "GRA102RRB",
+    "mileage": null
+   }
+  ]
+ },
+ "Weed Trimmers": {
+  "info": {
+   "model": 143005512.0
+  },
+  "records": [
+   {
+    "date": "2016-05-16",
+    "dateWasBlank": false,
+    "work": "Took apart Carb and cleaned.",
+    "parts": null,
+    "mileage": null
+   },
+   {
+    "date": "wheeled push trimmer",
+    "dateWasBlank": false,
+    "work": "cut string in 22\" lengths",
+    "parts": null,
+    "mileage": null
+   }
+  ]
+ },
+ "CFX-750s": {
+  "info": {
+   "make": "Trimble",
+   "model": "CFX-750"
+  },
+  "records": [
+   {
+    "date": "#5418502469",
+    "dateWasBlank": false,
+    "work": "10-14-21 replace touch screen with             196mm x 124mm",
+    "parts": "TPI #1405-001 Rev C Trimble #83651-XX-SP Rev A \"VersaTouch\" RoHS Serial No.: 22825-1409-0450",
+    "mileage": null
+   }
+  ]
+ },
+ "Mastercraft X30": {
+  "info": {
+   "make": "Mastercraft",
+   "model": "X30",
+   "year": 2003.0
+  },
+  "records": [
+   {
+    "date": "2022-07-25",
+    "dateWasBlank": false,
+    "work": "NEW BALLAST PUMPS FOR REAR BAGS",
+    "parts": "22610-9007 Jabsco",
+    "mileage": null
+   }
+  ]
+ },
+ "Generac GP15000E": {
+  "info": {
+   "make": "Generac",
+   "model": "15000E",
+   "year": "serial 3001700459"
+  },
+  "records": [
+   {
+    "date": "2022-11-18",
+    "dateWasBlank": false,
+    "work": "changed oil, changed filter, changed plugs",
+    "parts": "filter:  070185E,                  plugs: champion RC14YC4",
+    "mileage": null
+   },
+   {
+    "date": "2025-03-20",
+    "dateWasBlank": false,
+    "work": "changed battery",
+    "parts": "6FM33UI",
+    "mileage": null
+   }
+  ]
+ }
+}
