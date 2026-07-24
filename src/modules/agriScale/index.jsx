@@ -473,6 +473,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const safeArr    = a => (Array.isArray(a)?a:[]).filter(Boolean);
   const safeFields = safeArr(fields);
   const sortedFields = [...safeFields].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
+  const sortedBins = [...safeBins].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
   const safeBins   = safeArr(bins);
   const safeGrains = safeArr(grains);
   const safeTrucks = safeArr(trucks);
@@ -936,20 +937,21 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             {/* Active bin gauge */}
             {activeBin&&<div style={{marginBottom:"8px"}}><BinGauge bin={activeBin} grains={grains}/></div>}
 
-            {/* Bin selector */}
+            {/* Bin selector — dropdown so the list doesn't eat up screen space; stays on
+                whatever bin was last picked until you choose a different one. */}
             <div style={{marginTop:"8px",background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px",marginBottom:"8px"}}>
               <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>DESTINATION BIN</div>
-              <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                {safeBins.map(b=>{
+              <select
+                value={activeBinId!=null?String(activeBinId):""}
+                onChange={e=>{ const picked=sortedBins.find(b=>String(b.id)===e.target.value); if(picked) setABId(picked.id); }}
+                style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",background:"#fff",border:"1px solid #ccc4b8",borderRadius:"4px",color:"#4a5568",outline:"none"}}
+              >
+                {sortedBins.map(b=>{
                   const g=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
                   const pct=b.capacityBu>0?Math.min(100,b.storedLbs/(g.bushel_lbs||60)/b.capacityBu*100):0;
-                  const fc=pct>=95?"#e74c3c":pct>=80?"#c47d0a":"#4a5568";
-                  const isActive=b.id===activeBinId;
-                  return(<button key={b.id} onClick={()=>setABId(b.id)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:isActive?"#e8e2d8":"transparent",border:isActive?`1px solid ${fc}`:"1px solid #ccc4b8",color:isActive?fc:"#6a7280",boxShadow:isActive?`0 0 8px ${fc}40`:"none"}}>
-                    {b.name} <span style={{fontSize:"8px",marginLeft:"3px"}}>{pct.toFixed(0)}%</span>
-                  </button>);
+                  return(<option key={b.id} value={String(b.id)}>{b.name} ({pct.toFixed(0)}%)</option>);
                 })}
-              </div>
+              </select>
             </div>
 
             {/* Status bar */}
