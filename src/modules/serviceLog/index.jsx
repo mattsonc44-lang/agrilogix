@@ -417,7 +417,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
   const printServiceHistory=(vid)=>{
     const v=D.vehicles.find(vv=>vv.id===vid); if(!v) return;
-    const recs=D.records.filter(r=>r.vehicleId===vid).sort((a,b)=>b.date.localeCompare(a.date));
+    const recs=D.records.filter(r=>r.vehicleId===vid).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
     const cust=D.customers.find(c=>c.id===v.customerId);
     const biz=D.settings?.businessName||"";
     const total=recs.reduce((s,r)=>s+(parseFloat(r.cost)||0),0);
@@ -444,7 +444,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   // ── Derived ────────────────────────────────────────────────────
   const selVeh  = D.vehicles.find(v=>v.id===selVehId)||null;
   const selCust = D.customers.find(c=>c.id===selCustId)||null;
-  const vRecords= selVeh?D.records.filter(r=>r.vehicleId===selVeh.id).sort((a,b)=>b.date.localeCompare(a.date)):[];
+  const vRecords= selVeh?D.records.filter(r=>r.vehicleId===selVeh.id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))):[];
   const fVehicles=[...D.vehicles].filter(v=>!sbSearch||(v.name+v.make+v.model).toLowerCase().includes(sbSearch.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name));
   const neededCnt= D.partsToOrder.filter(p=>!p.ordered&&!p.received).length;
   const orderedCnt=D.partsToOrder.filter(p=>p.ordered&&!p.received).length;
@@ -567,7 +567,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
       {/* Modals */}
       {modal==="vehicle"  &&<VehicleMo   initial={editTarget} customers={D.customers} onSave={saveVehicle}  onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="importMaintenance" && <ImportMaintenanceModal vehicles={D.vehicles} records={D.records} onImport={(newRecords)=>{save({records:[...D.records,...newRecords]});}} onClose={()=>setModal(null)}/>}
+      {modal==="importMaintenance" && <ImportMaintenanceModal vehicles={D.vehicles} records={D.records} onImport={(newRecords)=>{save({records:[...D.records,...newRecords]});}} onRepair={(fixedRecords)=>{const byId=new Map(fixedRecords.map(r=>[r.id,r]));save({records:D.records.map(r=>byId.get(r.id)||r)});}} onClose={()=>setModal(null)}/>}
       {modal==="record"   &&<RecordMo    initial={editTarget} vehicleId={selVehId} partsToOrder={D.partsToOrder} onSave={saveRecord}   onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="customer" &&<CustomerMo  initial={editTarget} onSave={saveCustomer} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
@@ -812,7 +812,7 @@ function ReportView({D,reportFil,setRepFil,custName,vehName}){
     <div style={{background:"var(--panel)",border:"1px solid var(--border)",borderRadius:"6px",overflow:"hidden"}}>
       <table className="report-table">
         <thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th>Notes</th><th style={{textAlign:"right"}}>Cost</th></tr></thead>
-        <tbody>{filtered.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{const v=vehs.find(vv=>vv.id===r.vehicleId);return(<tr key={r.id}><td className="td-date">{r.date}</td><td className="td-vehicle">{v?.name||"?"}</td><td className="td-type">{r.type}</td><td className="td-notes">{r.notes?.slice(0,80)}</td><td className="td-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</td></tr>);})}
+        <tbody>{filtered.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).map(r=>{const v=vehs.find(vv=>vv.id===r.vehicleId);return(<tr key={r.id}><td className="td-date">{r.date}</td><td className="td-vehicle">{v?.name||"?"}</td><td className="td-type">{r.type}</td><td className="td-notes">{r.notes?.slice(0,80)}</td><td className="td-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</td></tr>);})}
         {filtered.length===0&&<tr><td colSpan={5} style={{textAlign:"center",padding:"30px",color:"var(--text-dim)"}}>No records match the filters</td></tr>}</tbody>
       </table>
     </div>
@@ -858,7 +858,7 @@ function CostView({D,custName}){
 
 // ── Invoices View ──────────────────────────────────────────────────
 function InvoicesView({D,updateInvStatus,deleteInvoice,custName}){
-  const invs=[...D.invoices].sort((a,b)=>b.date.localeCompare(a.date));
+  const invs=[...D.invoices].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
   return(<div>
     <div className="overview-title">Invoices</div><div className="overview-sub">{invs.length} invoice{invs.length!==1?"s":""}</div>
     {invs.length===0&&<div className="empty"><div className="empty-icon">🧾</div><div className="empty-title">No Invoices Yet</div><div style={{fontSize:"13px"}}>Select service records in the Fleet tab and click Create Invoice.</div></div>}
@@ -1147,10 +1147,20 @@ function Fr({children}){return(<div className="form-row">{children}</div>);}
 // matching equipment (by name) and adds only what's missing — including rows
 // where the workbook's Date cell was blank and inherited (filled down) from
 // the most recent dated row above it, which a naive per-row import would skip.
-function ImportMaintenanceModal({ vehicles, records, onImport, onClose }) {
+function ImportMaintenanceModal({ vehicles, records, onImport, onRepair, onClose }) {
   const [status, setStatus] = useState("idle"); // idle | loaded | done
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
+  const [repairStatus, setRepairStatus] = useState("idle"); // idle | done
+  const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
+  const badDateRecords = records.filter(r => typeof r.date !== "string" || !isoDateRe.test(r.date));
+  const fixedRecords = badDateRecords.map(r => {
+    const n = Number(r.date);
+    const fixedDate = (Number.isFinite(n) && n > 1900 && n < 2100) ? `${Math.trunc(n)}-01-01` : "";
+    const note = fixedDate ? " (year only in source — exact date unknown, using Jan 1)" : " (date was missing/unreadable in source — please set manually)";
+    return { ...r, date: fixedDate, notes: (r.notes||"") + (fixedDate||!r.notes ? note : "") };
+  });
+  const confirmRepair = () => { onRepair(fixedRecords); setRepairStatus("done"); };
 
   const norm = s => (s||"").trim().toLowerCase();
 
@@ -1188,12 +1198,16 @@ function ImportMaintenanceModal({ vehicles, records, onImport, onClose }) {
         );
         const toAdd = [];
         for (const rec of (sheet.records||[])) {
-          if (!rec.date) continue; // no date anywhere above it in the sheet either — nothing to anchor it to
+          // Defense in depth: only accept a real "YYYY-MM-DD" string. Anything else
+          // (missing entirely, or some unparsable stray value) gets skipped rather
+          // than risk saving a record whose date can crash the sort elsewhere.
+          if (typeof rec.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(rec.date)) continue;
           // Match against the plain work description first (most forgiving), fall
           // back to nothing found = treat as new.
           const isDup = [...existingKeys].some(k => k.startsWith(`${rec.date}|`) && k.includes(norm(rec.work).slice(0,25)));
           if (isDup) continue;
-          const notes = rec.parts ? `${rec.work} (Parts/Qty: ${rec.parts})` : rec.work;
+          let notes = rec.parts ? `${rec.work} (Parts/Qty: ${rec.parts})` : rec.work;
+          if (rec.dateYearOnly) notes += " (year only in source — exact date unknown, using Jan 1)";
           toAdd.push({
             id: genId(), vehicleId: veh.id, date: rec.date, type: inferType(rec.work),
             notes, cost: "", hours: rec.mileage != null ? String(rec.mileage) : "",
@@ -1223,6 +1237,18 @@ function ImportMaintenanceModal({ vehicles, records, onImport, onClose }) {
     <div style={{background:"#fff",borderRadius:"10px",padding:"24px",width:"600px",maxWidth:"100%",maxHeight:"85vh",overflowY:"auto"}}>
       <div style={{fontSize:"18px",fontWeight:700,marginBottom:"10px"}}>Import Maintenance History</div>
       {error && <div style={{color:"#dc2626",marginBottom:"10px"}}>Error: {error}</div>}
+      {badDateRecords.length>0 && (
+        <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:"6px",padding:"10px",marginBottom:"14px"}}>
+          <div style={{fontSize:"13px",color:"#9a3412",marginBottom:"6px"}}>
+            {badDateRecords.length} already-logged record{badDateRecords.length!==1?"s":""} {badDateRecords.length!==1?"have":"has"} a date that
+            isn't readable (e.g. a bare year was typed into the date field) — this is what was crashing the page
+            when opened. Fix {badDateRecords.length===1?"it":"them"} now?
+          </div>
+          {repairStatus==="idle"
+            ? <button onClick={confirmRepair} style={{padding:"7px 14px",background:"#c2410c",color:"#fff",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"13px"}}>Fix {badDateRecords.length} Record{badDateRecords.length!==1?"s":""}</button>
+            : <div style={{color:"#16a34a",fontWeight:600,fontSize:"13px"}}>✓ Fixed.</div>}
+        </div>
+      )}
       {status==="idle" && !error && <div style={{color:"#666"}}>Loading…</div>}
       {status!=="idle" && preview && (<>
         <div style={{fontSize:"13px",color:"#555",marginBottom:"10px",lineHeight:1.5}}>
