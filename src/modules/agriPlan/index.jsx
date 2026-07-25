@@ -2280,6 +2280,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[editing,setEditing]=useState(false);
   const[editDraft,setEditDraft]=useState({});
   const[newUnitText,setNewUnitText]=useState("");
+  const[newUnitAcres,setNewUnitAcres]=useState("");
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
@@ -2318,19 +2319,26 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Insurance Unit(s)</span>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6,marginBottom:8}}>
             {(editDraft.insuranceUnits||[]).length===0 && <span style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>None</span>}
-            {(editDraft.insuranceUnits||[]).map((u,i)=>(
+            {(editDraft.insuranceUnits||[]).map((u,i)=>{
+              const uName=typeof u==="string"?u:(u?.name||"");
+              const uAcres=typeof u==="string"?"":(u?.acres||"");
+              return(
               <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:12,padding:"3px 5px 3px 10px",fontSize:11,color:"#2a5010"}}>
-                {u}
+                {uName}{uAcres&&` — ${uAcres} ac`}
                 <button onClick={()=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).filter((_,ix)=>ix!==i)}))}
                   style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 3px"}}>×</button>
               </span>
-            ))}
+              );
+            })}
           </div>
           <div style={{display:"flex",gap:6}}>
             <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
-              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),v]}));setNewUnitText("");}}}}
-              placeholder="e.g. Unit 0102" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            <button onClick={()=>{const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),v]}));setNewUnitText("");}}}
+              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}}
+              placeholder="e.g. Unit 0102" style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+            <input type="number" value={newUnitAcres} onChange={e=>setNewUnitAcres(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}}
+              placeholder="Acres" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+            <button onClick={()=>{const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}
               style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 12px",color:"#2a6010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add</button>
           </div>
         </div>
@@ -2354,7 +2362,11 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         </div>
         {(field.insuranceUnits||[]).length>0 && (
           <div style={{marginTop:5,display:"flex",flexWrap:"wrap",gap:5}}>
-            {field.insuranceUnits.map((u,i)=>(<span key={i} style={{background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:10,padding:"1px 8px",fontSize:10,color:"#2a5010"}}>🛡 {u}</span>))}
+            {field.insuranceUnits.map((u,i)=>{
+              const uName=typeof u==="string"?u:(u?.name||"");
+              const uAcres=typeof u==="string"?"":(u?.acres||"");
+              return(<span key={i} style={{background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:10,padding:"1px 8px",fontSize:10,color:"#2a5010"}}>🛡 {uName}{uAcres?` — ${uAcres} ac`:""}</span>);
+            })}
           </div>
         )}
       </div>
@@ -2501,6 +2513,7 @@ function AddFieldForm({onSave,onCancel}){
   const[d,setD]=useState({farmNumber:"",entity:"",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25,insuranceUnits:[]});
   const[eligibleCrops,setEligibleCrops]=useState(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:[...FA_ELIG]);
   const[newUnitText,setNewUnitText]=useState("");
+  const[newUnitAcres,setNewUnitAcres]=useState("");
   const upd=(k,v)=>setD(p=>({...p,[k]:v}));
   const inp=(label,key,type="text")=>(<label style={{display:"flex",flexDirection:"column",gap:4}}>
     <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{label}</span>
@@ -2523,19 +2536,26 @@ function AddFieldForm({onSave,onCancel}){
     <div style={{marginBottom:16}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
         {(d.insuranceUnits||[]).length===0 && <span style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>None</span>}
-        {(d.insuranceUnits||[]).map((u,i)=>(
+        {(d.insuranceUnits||[]).map((u,i)=>{
+          const uName=typeof u==="string"?u:(u?.name||"");
+          const uAcres=typeof u==="string"?"":(u?.acres||"");
+          return(
           <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:12,padding:"3px 5px 3px 10px",fontSize:11,color:"#2a5010"}}>
-            {u}
+            {uName}{uAcres&&` — ${uAcres} ac`}
             <button onClick={()=>upd("insuranceUnits",(d.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
               style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 3px"}}>×</button>
           </span>
-        ))}
+          );
+        })}
       </div>
-      <div style={{display:"flex",gap:6,maxWidth:360}}>
+      <div style={{display:"flex",gap:6,maxWidth:420}}>
         <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
-          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),v]);setNewUnitText("");}}}}
-          placeholder="e.g. Unit 0102" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-        <button onClick={()=>{const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),v]);setNewUnitText("");}}}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}}
+          placeholder="e.g. Unit 0102" style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+        <input type="number" value={newUnitAcres} onChange={e=>setNewUnitAcres(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}}
+          placeholder="Acres" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+        <button onClick={()=>{const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}
           style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 12px",color:"#2a6010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add</button>
       </div>
     </div>
