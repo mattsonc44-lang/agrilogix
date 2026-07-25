@@ -1155,6 +1155,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       {f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
                       {f.landlord&&perms.canViewCropShare&&<div>LANDLORD: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
                       {perms.canViewInsurance&&f.insType&&<div style={{color:"#5a6a90"}}>INS: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} BU/AC GUAR.`:""}</div>}
+                      {perms.canViewInsurance&&(f.insuranceUnits||[]).length>0&&<div style={{color:"#5a6a90"}}>UNITS: {f.insuranceUnits.join(", ")}</div>}
                     </div>
                   </div>
                   {perms.canEditFields&&(
@@ -1470,8 +1471,10 @@ function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
 }
 
 function FieldMo({field,perms,onSave,onClose}){
-  const[f,setF]=useState({name:field.name,acres:field.acres||"",grainPrice:field.grainPrice||"",landlord:field.landlord||"",cropShare:field.cropShare||"",insCoverageLevel:field.insCoverageLevel||"",insGuaranteedYield:field.insGuaranteedYield||"",insPriceElection:field.insPriceElection||"",insType:field.insType||"",insInsuredAcres:field.insInsuredAcres||""});
+  const[f,setF]=useState({name:field.name,acres:field.acres||"",grainPrice:field.grainPrice||"",landlord:field.landlord||"",cropShare:field.cropShare||"",insCoverageLevel:field.insCoverageLevel||"",insGuaranteedYield:field.insGuaranteedYield||"",insPriceElection:field.insPriceElection||"",insType:field.insType||"",insInsuredAcres:field.insInsuredAcres||"",insuranceUnits:field.insuranceUnits||[]});
+  const[newUnitText,setNewUnitText]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const addUnit=()=>{const v=newUnitText.trim();if(v){s("insuranceUnits",[...(f.insuranceUnits||[]),v]);setNewUnitText("");}};
   return(<div style={moStyle} onClick={onClose}><div style={{...cardStyle,maxWidth:"380px",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
     <div style={hdrStyle}>EDIT FIELD</div>
     <div style={lblStyle}>FIELD NAME</div><input style={inStyle} value={f.name} onChange={e=>s("name",e.target.value)}/>
@@ -1479,6 +1482,25 @@ function FieldMo({field,perms,onSave,onClose}){
     {perms.canViewCosts&&<><div style={lblStyle}>GRAIN PRICE ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.grainPrice} onChange={e=>s("grainPrice",e.target.value)} placeholder="e.g. 7.25"/></>}
     {perms.canViewCropShare&&<><div style={lblStyle}>LANDLORD</div><input style={inStyle} value={f.landlord} onChange={e=>s("landlord",e.target.value)}/><div style={lblStyle}>CROP SHARE %</div><input style={inStyle} type="number" value={f.cropShare} onChange={e=>s("cropShare",e.target.value)}/></>}
     {perms.canViewInsurance&&<><div style={lblStyle}>INSURANCE TYPE</div><input style={inStyle} value={f.insType} onChange={e=>s("insType",e.target.value)} placeholder="RP, YP, APH..."/><div style={lblStyle}>COVERAGE LEVEL %</div><input style={inStyle} type="number" value={f.insCoverageLevel} onChange={e=>s("insCoverageLevel",e.target.value)}/><div style={lblStyle}>GUARANTEED YIELD (BU/AC)</div><input style={inStyle} type="number" value={f.insGuaranteedYield} onChange={e=>s("insGuaranteedYield",e.target.value)}/><div style={lblStyle}>PRICE ELECTION ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.insPriceElection} onChange={e=>s("insPriceElection",e.target.value)}/><div style={lblStyle}>INSURED ACRES</div><input style={inStyle} type="number" value={f.insInsuredAcres} onChange={e=>s("insInsuredAcres",e.target.value)}/></>}
+    {perms.canViewInsurance&&<>
+      <div style={lblStyle}>INSURANCE UNIT(S)</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}}>
+        {(f.insuranceUnits||[]).length===0 && <span style={{fontSize:"11px",color:"#8a9880",fontStyle:"italic"}}>None</span>}
+        {(f.insuranceUnits||[]).map((u,i)=>(
+          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:"5px",background:"rgba(74,117,53,0.15)",border:"1px solid #4a7535",borderRadius:"12px",padding:"3px 5px 3px 10px",fontSize:"11px",color:"#d0e4c0"}}>
+            {u}
+            <button onClick={()=>s("insuranceUnits",(f.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
+              style={{background:"none",border:"none",color:"#c07070",cursor:"pointer",fontSize:"13px",lineHeight:1,padding:"0 3px"}}>×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+        <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
+          placeholder="e.g. Unit 0102" style={{...inStyle,marginBottom:0,flex:1}}/>
+        <button onClick={addUnit} style={{...btnBase_static,padding:"7px 14px",fontSize:"10px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0"}}>+ ADD</button>
+      </div>
+    </>}
     <div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn></div>
   </div></div>);
 }
