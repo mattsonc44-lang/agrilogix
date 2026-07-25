@@ -294,6 +294,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const [activeFieldId, setAFId] = useState(null);
   const [activeBinId,   setABId] = useState(null);
   const [truckColor, setTruckColor] = useState(DEFAULT_TRUCKS[0].id);
+  const [activeUnit, setActiveUnit] = useState("");
 
   // UI
   const [tab, setTab]           = useState("SCALE");
@@ -489,6 +490,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const canRecord   = netLbs >= 100;
   const activeField = safeFields.find(f=>f.id===activeFieldId) || safeFields[0];
   const activeBin   = safeBins.find(b=>b.id===activeBinId)     || safeBins[0];
+  const fieldInsUnits = (activeField?.insuranceUnits||[]);
   const activeTruck = safeTrucks.find(t=>t.id===truckColor)    || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
   // ── Pull this year's PLANNED crop per field from AgriPlan, keyed by field name ──
@@ -572,6 +574,11 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
     if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
   },[activeFieldId, apCrops, flCrops]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Reset the selected insurance unit when the active field changes (it's field-specific) ──
+  useEffect(()=>{
+    if(activeUnit && !fieldInsUnits.includes(activeUnit)) setActiveUnit("");
+  },[activeFieldId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Numpad ────────────────────────────────────────────────────
   const onKey = k => {
     if(k==="CLR"||k==="C") { setRawInput("0"); return; }
@@ -590,6 +597,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       time:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
       grainName:grain.name, grainBushelLbs:grain.bushel_lbs,
       binId:activeBinId, truckId:truckColor, truckColor:activeTruck.hex, truckName:activeTruck.name, operator:operatorName,
+      insuranceUnit:activeUnit||"none",
     };
     const nf = safeFields.map(f=>f.id===activeFieldId?{...f,loads:[...(f.loads||[]),load]}:f);
     const nb = safeBins.map(b=>b.id===activeBinId?{...b,storedLbs:b.storedLbs+netLbs}:b);
@@ -755,6 +763,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
         insGuaranteedYield:ap?.aphYield!=null    ? String(ap.aphYield)        : "",
         insPriceElection:  cp?.priceGuar         ? String(cp.priceGuar)       : "",
         insInsuredAcres:   ap?.insuredAcres!=null ? String(ap.insuredAcres)   : "",
+        insuranceUnits:    ap?.insuranceUnits     || [],
       };
     });
 
@@ -810,6 +819,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
         insGuaranteedYield:ap.aphYield!=null    ? String(ap.aphYield)        : "",
         insPriceElection:  cp?.priceGuar         ? String(cp.priceGuar)       : "",
         insInsuredAcres:   ap.insuredAcres!=null ? String(ap.insuredAcres)   : "",
+        insuranceUnits:    ap.insuranceUnits      || [],
       };
     });
 
@@ -1005,6 +1015,18 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                   {sortedFields.map(f=>(
                     <option key={f.id} value={String(f.id)}>{f.name} ({(f.loads||[]).length})</option>
                   ))}
+                </select>
+              </div>
+              {/* Insurance Unit — pulled from the active field's Insurance Unit(s) set in AgriPlan; defaults to None. */}
+              <div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
+                <div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>INSURANCE UNIT</div>
+                <select
+                  value={activeUnit||""}
+                  onChange={e=>setActiveUnit(e.target.value)}
+                  style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",background:"#fff",border:"1px solid #ccc4b8",borderRadius:"4px",color:"#4a5568",outline:"none"}}
+                >
+                  <option value="">None</option>
+                  {fieldInsUnits.map(u=>(<option key={u} value={u}>{u}</option>))}
                 </select>
               </div>
               {/* Truck */}
