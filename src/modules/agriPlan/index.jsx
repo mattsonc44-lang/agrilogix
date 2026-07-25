@@ -2317,17 +2317,21 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         </div>
         <div style={{marginBottom:16}}>
           <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Insurance Unit(s)</span>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6,marginBottom:8}}>
-            {(editDraft.insuranceUnits||[]).length===0 && <span style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>None</span>}
+          <div style={{marginTop:6,marginBottom:8}}>
+            {(editDraft.insuranceUnits||[]).length===0 && <div style={{fontSize:12,color:"#8a9a7a",fontStyle:"italic",marginBottom:6}}>None</div>}
             {(editDraft.insuranceUnits||[]).map((u,i)=>{
               const uName=typeof u==="string"?u:(u?.name||"");
-              const uAcres=typeof u==="string"?"":(u?.acres||"");
+              const uAcres=typeof u==="string"?"":(u?.acres??"");
+              const updUnit=(k,v)=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).map((uu,ix)=>ix!==i?uu:{name:k==="name"?v:uName,acres:k==="acres"?v:uAcres})}));
               return(
-              <span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:12,padding:"5px 6px 5px 12px",fontSize:14,fontWeight:600,color:"#1a4010"}}>
-                {uName}{uAcres&&` — ${uAcres} ac`}
+              <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:6,padding:"6px 8px"}}>
+                <input value={uName} onChange={e=>updUnit("name",e.target.value)}
+                  style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+                <input type="number" value={uAcres} onChange={e=>updUnit("acres",e.target.value)} placeholder="Acres"
+                  style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
                 <button onClick={()=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).filter((_,ix)=>ix!==i)}))}
-                  style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 3px",fontWeight:700}}>×</button>
-              </span>
+                  style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
+              </div>
               );
             })}
           </div>
@@ -2534,17 +2538,21 @@ function AddFieldForm({onSave,onCancel}){
     </div>
     <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Insurance Unit(s) ──────────────────────────────</div>
     <div style={{marginBottom:16}}>
-      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-        {(d.insuranceUnits||[]).length===0 && <span style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>None</span>}
+      <div style={{marginBottom:8}}>
+        {(d.insuranceUnits||[]).length===0 && <div style={{fontSize:12,color:"#8a9a7a",fontStyle:"italic",marginBottom:6}}>None</div>}
         {(d.insuranceUnits||[]).map((u,i)=>{
           const uName=typeof u==="string"?u:(u?.name||"");
-          const uAcres=typeof u==="string"?"":(u?.acres||"");
+          const uAcres=typeof u==="string"?"":(u?.acres??"");
+          const updUnit=(k,v)=>upd("insuranceUnits",(d.insuranceUnits||[]).map((uu,ix)=>ix!==i?uu:{name:k==="name"?v:uName,acres:k==="acres"?v:uAcres}));
           return(
-          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:12,padding:"5px 6px 5px 12px",fontSize:14,fontWeight:600,color:"#1a4010"}}>
-            {uName}{uAcres&&` — ${uAcres} ac`}
+          <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:6,padding:"6px 8px",maxWidth:420}}>
+            <input value={uName} onChange={e=>updUnit("name",e.target.value)}
+              style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+            <input type="number" value={uAcres} onChange={e=>updUnit("acres",e.target.value)} placeholder="Acres"
+              style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
             <button onClick={()=>upd("insuranceUnits",(d.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
-              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 3px",fontWeight:700}}>×</button>
-          </span>
+              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
+          </div>
           );
         })}
       </div>
