@@ -2279,6 +2279,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[priorYear,setPriorYear]=useState("2023 Actuals");
   const[editing,setEditing]=useState(false);
   const[editDraft,setEditDraft]=useState({});
+  const[newUnitText,setNewUnitText]=useState("");
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
@@ -2313,12 +2314,32 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           </label>
           <div/>
         </div>
+        <div style={{marginBottom:16}}>
+          <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Insurance Unit(s)</span>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6,marginBottom:8}}>
+            {(editDraft.insuranceUnits||[]).length===0 && <span style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>None</span>}
+            {(editDraft.insuranceUnits||[]).map((u,i)=>(
+              <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:12,padding:"3px 5px 3px 10px",fontSize:11,color:"#2a5010"}}>
+                {u}
+                <button onClick={()=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).filter((_,ix)=>ix!==i)}))}
+                  style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 3px"}}>×</button>
+              </span>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),v]}));setNewUnitText("");}}}}
+              placeholder="e.g. Unit 0102" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+            <button onClick={()=>{const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),v]}));setNewUnitText("");}}}
+              style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 12px",color:"#2a6010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add</button>
+          </div>
+        </div>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>setEditing(false)}
             style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 16px",color:"#c02020",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
           <button onClick={()=>{
             if(!editDraft.common?.trim()||!editDraft.acres) return alert("Name and acres are required.");
-            onUpdate(field.id,{...editDraft,acres:+editDraft.acres});
+            onUpdate(field.id,{...editDraft,acres:+editDraft.acres,insuranceUnits:editDraft.insuranceUnits||[]});
             setEditing(false);
           }} style={{background:"#2a7a18",border:"none",borderRadius:4,padding:"6px 18px",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif",fontWeight:700}}>Save Changes</button>
         </div>
@@ -2331,10 +2352,15 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           <span style={{background:"#d4ecc0",padding:"1px 7px",borderRadius:3,fontSize:10,color:"#2a7010",marginRight:6}}>{field.entity}</span>
           {field.farm} · {field.legal||"—"} · {field.acres.toLocaleString()} ac
         </div>
+        {(field.insuranceUnits||[]).length>0 && (
+          <div style={{marginTop:5,display:"flex",flexWrap:"wrap",gap:5}}>
+            {field.insuranceUnits.map((u,i)=>(<span key={i} style={{background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:10,padding:"1px 8px",fontSize:10,color:"#2a5010"}}>🛡 {u}</span>))}
+          </div>
+        )}
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={field.eligibleCrops}/>
-        <button onClick={()=>{setEditDraft({entity:field.entity||"",farm:field.farm||"",farmNumber:field.farmNumber||"",legal:field.legal||"",common:field.common||"",fieldNum:field.fieldNum||"",acres:field.acres||""});setEditing(true);}}
+        <button onClick={()=>{setEditDraft({entity:field.entity||"",farm:field.farm||"",farmNumber:field.farmNumber||"",legal:field.legal||"",common:field.common||"",fieldNum:field.fieldNum||"",acres:field.acres||"",insuranceUnits:field.insuranceUnits||[]});setEditing(true);}}
           style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 10px",color:"#2a6010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✏️ Edit</button>
         <button onClick={()=>{if(window.confirm("Delete this field?"))onDelete(field.id);}} style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 10px",color:"#c02020",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Delete</button>
       </div>
@@ -2472,8 +2498,9 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
 
 // ── Add Field Form ────────────────────────────────────────────────────────────
 function AddFieldForm({onSave,onCancel}){
-  const[d,setD]=useState({farmNumber:"",entity:"",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25});
+  const[d,setD]=useState({farmNumber:"",entity:"",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25,insuranceUnits:[]});
   const[eligibleCrops,setEligibleCrops]=useState(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:[...FA_ELIG]);
+  const[newUnitText,setNewUnitText]=useState("");
   const upd=(k,v)=>setD(p=>({...p,[k]:v}));
   const inp=(label,key,type="text")=>(<label style={{display:"flex",flexDirection:"column",gap:4}}>
     <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{label}</span>
@@ -2491,6 +2518,26 @@ function AddFieldForm({onSave,onCancel}){
     <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:12,marginBottom:12,alignItems:"end"}}>
       {inp("Acres *","acres","number")}
       <label style={{display:"flex",flexDirection:"column",gap:4}}><span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Crop *</span><CropSelect value={d.crop} onChange={v=>upd("crop",v)} eligibleCrops={eligibleCrops}/></label>
+    </div>
+    <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Insurance Unit(s) ──────────────────────────────</div>
+    <div style={{marginBottom:16}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+        {(d.insuranceUnits||[]).length===0 && <span style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>None</span>}
+        {(d.insuranceUnits||[]).map((u,i)=>(
+          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:12,padding:"3px 5px 3px 10px",fontSize:11,color:"#2a5010"}}>
+            {u}
+            <button onClick={()=>upd("insuranceUnits",(d.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
+              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 3px"}}>×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6,maxWidth:360}}>
+        <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),v]);setNewUnitText("");}}}}
+          placeholder="e.g. Unit 0102" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
+        <button onClick={()=>{const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),v]);setNewUnitText("");}}}
+          style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 12px",color:"#2a6010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add</button>
+      </div>
     </div>
     <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Income Projections ──────────────────────────────</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>{inp("Bu Guarantee/Ac","bushelGuarantee","number")}{inp("Guarantee Price","priceGuarantee","number")}{inp("Bu Projection/Ac","bushelProjection","number")}{inp("Projected Price","currentPrice","number")}</div>
