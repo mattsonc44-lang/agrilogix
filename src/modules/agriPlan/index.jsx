@@ -2323,10 +2323,10 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
               const uName=typeof u==="string"?u:(u?.name||"");
               const uAcres=typeof u==="string"?"":(u?.acres||"");
               return(
-              <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:12,padding:"3px 5px 3px 10px",fontSize:11,color:"#2a5010"}}>
+              <span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:12,padding:"5px 6px 5px 12px",fontSize:14,fontWeight:600,color:"#1a4010"}}>
                 {uName}{uAcres&&` — ${uAcres} ac`}
                 <button onClick={()=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).filter((_,ix)=>ix!==i)}))}
-                  style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 3px"}}>×</button>
+                  style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 3px",fontWeight:700}}>×</button>
               </span>
               );
             })}
@@ -2540,10 +2540,10 @@ function AddFieldForm({onSave,onCancel}){
           const uName=typeof u==="string"?u:(u?.name||"");
           const uAcres=typeof u==="string"?"":(u?.acres||"");
           return(
-          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:12,padding:"3px 5px 3px 10px",fontSize:11,color:"#2a5010"}}>
+          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:12,padding:"5px 6px 5px 12px",fontSize:14,fontWeight:600,color:"#1a4010"}}>
             {uName}{uAcres&&` — ${uAcres} ac`}
             <button onClick={()=>upd("insuranceUnits",(d.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
-              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:13,lineHeight:1,padding:"0 3px"}}>×</button>
+              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 3px",fontWeight:700}}>×</button>
           </span>
           );
         })}
