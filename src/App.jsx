@@ -289,6 +289,36 @@ export default function App() {
   const effectiveDefaultFarm = customDefaultFarm || { ...DEFAULT_FARM, name: tenantProfile.name || DEFAULT_FARM.name };
   const allFarms = [effectiveDefaultFarm, ...farms.filter(f => f.id !== "default")];
 
+  // ── Trial expiration enforcement ──────────────────────────────────
+  // Only "trial" plans ever expire — "paid" and "comp" tenants are never gated
+  // here regardless of what trialEnds happens to still say from before they
+  // were switched. The platform admin (isAdmin) always bypasses this, whether
+  // viewing their own account or impersonating another tenant via Admin View —
+  // they need to be able to get in to fix or upgrade an expired account.
+  const trialExpired = tenantProfile.plan === "trial" && tenantProfile.trialEnds && new Date(tenantProfile.trialEnds) < new Date();
+  if (trialExpired && !isAdmin) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, padding:"20px" }}>
+        <div style={{ textAlign:"center", maxWidth:"440px", background:"#FFFFFF", borderRadius:"12px", padding:"40px 36px", boxShadow:"0 20px 60px rgba(0,0,0,0.15)" }}>
+          <div style={{ fontSize:"42px", marginBottom:"14px" }}>⏳</div>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:"22px", color:T.brand, marginBottom:"10px" }}>Your free trial has ended</div>
+          <p style={{ fontSize:"14px", color:T.muted, lineHeight:1.6, marginBottom:"24px" }}>
+            {tenantProfile.name || "Your organization"}'s 14-day trial ended on{" "}
+            {new Date(tenantProfile.trialEnds).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.
+            Contact us to keep using Agri Logix Solutions.
+          </p>
+          <a href="mailto:cmattson@agrilogixsolutions.com?subject=Upgrade%20my%20Agri%20Logix%20trial"
+            style={{ display:"inline-block", background:T.brand, color:"#FFFFFF", textDecoration:"none", padding:"11px 28px", borderRadius:"6px", fontSize:"14px", fontWeight:700 }}>
+            Contact Us to Upgrade
+          </a>
+          <div style={{ marginTop:"18px" }}>
+            <button onClick={signOut} style={{ background:"none", border:"none", color:T.muted, fontSize:"12px", cursor:"pointer", textDecoration:"underline" }}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={S.app}>
       {/* ── Top Nav ── */}
