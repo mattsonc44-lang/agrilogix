@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 
@@ -122,13 +122,22 @@ function BinGauge({ bin, grains, small }) {
 // insuranceUnit, fieldId (via the field it's stored on) and grainName/grainBushelLbs
 // at the time it was recorded, so this is a straight group-and-sum with no lookups.
 function buildUnitFieldCropBreakdown(fields) {
+  // Field-level totals first — this is the whole field's bushels/acres regardless
+  // of how its loads split across insurance units or crops, so "field bu/ac" means
+  // the same thing on every row for that field rather than a per-unit fraction.
+  const fieldTotals = {};
+  (fields||[]).forEach(field=>{
+    const totBu = (field.loads||[]).filter(Boolean).reduce((s,l)=>s+l.net/(l.grainBushelLbs||60),0);
+    const acres = parseFloat(field.acres)||0;
+    fieldTotals[field.name] = { totBu, acres, yieldPerAc: acres>0 ? totBu/acres : null };
+  });
   const rows = {};
   (fields||[]).forEach(field=>{
     (field.loads||[]).filter(Boolean).forEach(load=>{
       const unit = (load.insuranceUnit && load.insuranceUnit!=="none") ? load.insuranceUnit : "None";
       const crop = load.grainName || "—";
       const key = `${field.name}||${unit}||${crop}`;
-      if(!rows[key]) rows[key] = { fieldName:field.name, unit, crop, loads:0, totLbs:0, totBu:0, grainPrice:field.grainPrice, acres:parseFloat(field.acres)||0 };
+      if(!rows[key]) rows[key] = { fieldName:field.name, unit, crop, loads:0, totLbs:0, totBu:0, grainPrice:field.grainPrice, acres:parseFloat(field.acres)||0, fieldYieldPerAc: fieldTotals[field.name]?.yieldPerAc ?? null };
       rows[key].loads += 1;
       rows[key].totLbs += load.net;
       rows[key].totBu += load.net/(load.grainBushelLbs||60);
@@ -284,7 +293,7 @@ function PrintReport({ fields, bins, grains, onClose }) {
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY INSURANCE UNIT / FIELD / CROP</div>
           <table>
             <thead><tr>
-              {["INSURANCE UNIT","FIELD","CROP","LOADS","TOTAL WEIGHT","TOTAL BU"].map((h,i)=>(
+              {["INSURANCE UNIT","FIELD","CROP","LOADS","TOTAL WEIGHT","TOTAL BU","FIELD BU/AC"].map((h,i)=>(
                 <th key={h} style={{...th,textAlign:i>=3?"right":"left"}}>{h}</th>
               ))}
             </tr></thead>
@@ -297,9 +306,10 @@ function PrintReport({ fields, bins, grains, onClose }) {
                   <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
                   <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.totLbs.toLocaleString()} lbs</td>
                   <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)} bu</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.fieldYieldPerAc!=null?r.fieldYieldPerAc.toFixed(1)+" bu/ac":"—"}</td>
                 </tr>
               ))}
-              {unitFieldCropRows.length===0 && <tr><td colSpan={6} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
+              {unitFieldCropRows.length===0 && <tr><td colSpan={7} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1301,7 +1311,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             <div style={{overflowX:"auto",marginBottom:"16px"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:"10px"}}>
                 <thead><tr>
-                  {["UNIT","FIELD","CROP","LOADS","BU","TONS",...(perms.canViewCosts?["REV."]:[])].map((h,i)=>(
+                  {["UNIT","FIELD","CROP","LOADS","BU","TONS","FIELD BU/AC",...(perms.canViewCosts?["REV."]:[])].map((h,i)=>(
                     <th key={h} style={{padding:"6px 8px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"8px",letterSpacing:"0.1em",color:"#6a7280",textAlign:i>=3?"right":"left",borderBottom:"2px solid #ddd8d0",background:"#f5f3ef"}}>{h}</th>
                   ))}
                 </tr></thead>
@@ -1314,11 +1324,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
                       <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)}</td>
                       <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{(r.totLbs/2000).toFixed(1)}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.fieldYieldPerAc!=null?r.fieldYieldPerAc.toFixed(1):"—"}</td>
                       {perms.canViewCosts&&<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#4a7535"}}>{r.grainPrice?`$${(r.totBu*parseFloat(r.grainPrice||0)).toFixed(0)}`:"—"}</td>}
                     </tr>
                   ))}
                   {reportBreakdown.length===0 && (
-                    <tr><td colSpan={perms.canViewCosts?7:6} style={{padding:"14px",textAlign:"center",color:"#b0a870",fontSize:"10px"}}>No loads recorded</td></tr>
+                    <tr><td colSpan={perms.canViewCosts?8:7} style={{padding:"14px",textAlign:"center",color:"#b0a870",fontSize:"10px"}}>No loads recorded</td></tr>
                   )}
                 </tbody>
               </table>
