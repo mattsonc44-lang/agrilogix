@@ -1,6 +1,20 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
 
+// ── Decimal-safe numeric text input sanitizer ────────────────────────────────
+// Plain <input type="number"> is a native browser control whose typing behavior
+// varies by OS/browser locale — some locales reject "." as a decimal separator
+// entirely, which makes it look like the field only accepts one digit at a time
+// and forces you to use the up/down spinner instead. Using type="text" with this
+// sanitizer sidesteps that: it strips anything that isn't a digit or a single
+// decimal point, so acres like "156.2" always type normally everywhere.
+function decOnly(v) {
+  let x = (v || "").replace(/[^0-9.]/g, "");
+  const parts = x.split(".");
+  if (parts.length > 2) x = parts[0] + "." + parts.slice(1).join("");
+  return x;
+}
+
 // ── Farm-scoped path helpers ────────────────────────────────────────────────
 // AgriPlan supports multiple farming entities per tenant (e.g. "Flat Acre Farms"
 // and "Via Terra") the same way FieldLog and AgriScale already do: the "default"
@@ -2327,7 +2341,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
               <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:6,padding:"6px 8px"}}>
                 <input value={uName} onChange={e=>updUnit("name",e.target.value)}
                   style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-                <input type="number" value={uAcres} onChange={e=>updUnit("acres",e.target.value)} placeholder="Acres"
+                <input type="text" inputMode="decimal" value={uAcres} onChange={e=>updUnit("acres",decOnly(e.target.value))} placeholder="Acres"
                   style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
                 <button onClick={()=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).filter((_,ix)=>ix!==i)}))}
                   style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
@@ -2339,7 +2353,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
             <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
               onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}}
               placeholder="e.g. Unit 0102" style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            <input type="number" value={newUnitAcres} onChange={e=>setNewUnitAcres(e.target.value)}
+            <input type="text" inputMode="decimal" value={newUnitAcres} onChange={e=>setNewUnitAcres(decOnly(e.target.value))}
               onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}}
               placeholder="Acres" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
             <button onClick={()=>{const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}
@@ -2548,7 +2562,7 @@ function AddFieldForm({onSave,onCancel}){
           <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:6,padding:"6px 8px",maxWidth:420}}>
             <input value={uName} onChange={e=>updUnit("name",e.target.value)}
               style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            <input type="number" value={uAcres} onChange={e=>updUnit("acres",e.target.value)} placeholder="Acres"
+            <input type="text" inputMode="decimal" value={uAcres} onChange={e=>updUnit("acres",decOnly(e.target.value))} placeholder="Acres"
               style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
             <button onClick={()=>upd("insuranceUnits",(d.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
               style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
@@ -2560,7 +2574,7 @@ function AddFieldForm({onSave,onCancel}){
         <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}}
           placeholder="e.g. Unit 0102" style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-        <input type="number" value={newUnitAcres} onChange={e=>setNewUnitAcres(e.target.value)}
+        <input type="text" inputMode="decimal" value={newUnitAcres} onChange={e=>setNewUnitAcres(decOnly(e.target.value))}
           onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}}
           placeholder="Acres" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
         <button onClick={()=>{const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}
