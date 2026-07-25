@@ -1172,6 +1172,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       </div>
                       <div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"4px",fontSize:"10px",flexWrap:"wrap"}}>
                         <span style={{background:"#f0ede4",borderRadius:"3px",padding:"1px 7px",color:"#7a5a3a"}}>{l.grainName||"?"}</span>
+                        {l.insuranceUnit&&l.insuranceUnit!=="none"&&<span style={{background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:"3px",padding:"1px 7px",color:"#2a5010"}}>🛡 {l.insuranceUnit}</span>}
                         <span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
                         {l.splitLabel&&<span style={{color:"#8a6a40"}}>#{l.splitLabel}</span>}
                         <span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
@@ -1596,10 +1597,10 @@ function FieldMo({field,perms,onSave,onClose}){
           const uName=typeof u==="string"?u:(u?.name||"");
           const uAcres=typeof u==="string"?"":(u?.acres||"");
           return(
-          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:"5px",background:"rgba(74,117,53,0.15)",border:"1px solid #4a7535",borderRadius:"12px",padding:"3px 5px 3px 10px",fontSize:"11px",color:"#d0e4c0"}}>
+          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:"6px",background:"#eaf4dc",border:"1px solid #4a7535",borderRadius:"12px",padding:"5px 6px 5px 12px",fontSize:"14px",fontWeight:600,color:"#1a4010"}}>
             {uName}{uAcres&&` — ${uAcres} ac`}
             <button onClick={()=>s("insuranceUnits",(f.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
-              style={{background:"none",border:"none",color:"#c07070",cursor:"pointer",fontSize:"13px",lineHeight:1,padding:"0 3px"}}>×</button>
+              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:"16px",lineHeight:1,padding:"0 3px",fontWeight:700}}>×</button>
           </span>
           );
         })}
