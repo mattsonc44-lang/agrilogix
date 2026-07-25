@@ -117,6 +117,30 @@ function BinGauge({ bin, grains, small }) {
   );
 }
 
+// ── Breakdown by Insurance Unit / Field / Crop — used by both the on-screen
+// REPORT tab and the printable report. Each load already carries its own
+// insuranceUnit, fieldId (via the field it's stored on) and grainName/grainBushelLbs
+// at the time it was recorded, so this is a straight group-and-sum with no lookups.
+function buildUnitFieldCropBreakdown(fields) {
+  const rows = {};
+  (fields||[]).forEach(field=>{
+    (field.loads||[]).filter(Boolean).forEach(load=>{
+      const unit = (load.insuranceUnit && load.insuranceUnit!=="none") ? load.insuranceUnit : "None";
+      const crop = load.grainName || "—";
+      const key = `${field.name}||${unit}||${crop}`;
+      if(!rows[key]) rows[key] = { fieldName:field.name, unit, crop, loads:0, totLbs:0, totBu:0, grainPrice:field.grainPrice, acres:parseFloat(field.acres)||0 };
+      rows[key].loads += 1;
+      rows[key].totLbs += load.net;
+      rows[key].totBu += load.net/(load.grainBushelLbs||60);
+    });
+  });
+  return Object.values(rows).sort((a,b)=>
+    (a.fieldName||"").localeCompare(b.fieldName||"", undefined,{numeric:true,sensitivity:"base"})
+    || a.unit.localeCompare(b.unit)
+    || a.crop.localeCompare(b.crop)
+  );
+}
+
 // ── Main module ───────────────────────────────────────────────────
 function PrintReport({ fields, bins, grains, onClose }) {
   const reportRef = useRef(null);
@@ -127,6 +151,7 @@ function PrintReport({ fields, bins, grains, onClose }) {
   const buOf = (load) => load.net / ((grainFor(load.grainName).bushel_lbs)||60);
   const grandTotalLbs = allLoads.reduce((s,l)=>s+l.net,0);
   const grandTotalBu = allLoads.reduce((s,l)=>s+buOf(l),0);
+  const unitFieldCropRows = buildUnitFieldCropBreakdown(fields);
   const reportDate = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
   const printTime = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
 
@@ -253,6 +278,28 @@ function PrintReport({ fields, bins, grains, onClose }) {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY INSURANCE UNIT / FIELD / CROP</div>
+          <table>
+            <thead><tr>
+              {["INSURANCE UNIT","FIELD","CROP","LOADS","TOTAL WEIGHT","TOTAL BU"].map((h,i)=>(
+                <th key={h} style={{...th,textAlign:i>=3?"right":"left"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {unitFieldCropRows.map((r,i)=>(
+                <tr key={i}>
+                  <td style={td}>{r.unit}</td>
+                  <td style={td}>{r.fieldName}</td>
+                  <td style={td}>{r.crop}</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.totLbs.toLocaleString()} lbs</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)} bu</td>
+                </tr>
+              ))}
+              {unitFieldCropRows.length===0 && <tr><td colSpan={6} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
             </tbody>
           </table>
         </div>
@@ -658,6 +705,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   };
 
   const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
+  const reportBreakdown = useMemo(()=>buildUnitFieldCropBreakdown(safeFields), [safeFields]);
   const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
   const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
   const btnBase = {cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
@@ -1247,6 +1295,35 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                 </div>
               ))}
             </div>
+
+            {/* Breakdown by Insurance Unit / Field / Crop */}
+            <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>BREAKDOWN BY INSURANCE UNIT / FIELD / CROP</div>
+            <div style={{overflowX:"auto",marginBottom:"16px"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:"10px"}}>
+                <thead><tr>
+                  {["UNIT","FIELD","CROP","LOADS","BU","TONS",...(perms.canViewCosts?["REV."]:[])].map((h,i)=>(
+                    <th key={h} style={{padding:"6px 8px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"8px",letterSpacing:"0.1em",color:"#6a7280",textAlign:i>=3?"right":"left",borderBottom:"2px solid #ddd8d0",background:"#f5f3ef"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {reportBreakdown.map((r,i)=>(
+                    <tr key={i} style={{background:i%2===0?"#fff":"#f9f8f5"}}>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#5a6a90"}}>{r.unit}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#4a5568"}}>{r.fieldName}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#4a5568"}}>{r.crop}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{(r.totLbs/2000).toFixed(1)}</td>
+                      {perms.canViewCosts&&<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#4a7535"}}>{r.grainPrice?`$${(r.totBu*parseFloat(r.grainPrice||0)).toFixed(0)}`:"—"}</td>}
+                    </tr>
+                  ))}
+                  {reportBreakdown.length===0 && (
+                    <tr><td colSpan={perms.canViewCosts?7:6} style={{padding:"14px",textAlign:"center",color:"#b0a870",fontSize:"10px"}}>No loads recorded</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
             {sortedFields.map(f=>{
               const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
               if(!(f.loads||[]).length) return null;
