@@ -462,6 +462,19 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
     setTenants(t => ({ ...t, [tenantId]: { ...t[tenantId], profile: newProfile } }));
   };
 
+  const changePlan = async (tenantId, newPlan) => {
+    const profile = tenants[tenantId]?.profile; if (!profile) return;
+    if (newPlan === profile.plan) return;
+    const newProfile = { ...profile, plan: newPlan };
+    // Only reset the 14-day clock when moving INTO trial from something else —
+    // switching to paid/comp should just stop enforcement, not touch trialEnds.
+    if (newPlan === "trial" && profile.plan !== "trial") {
+      newProfile.trialEnds = new Date(Date.now()+14*24*60*60*1000).toISOString();
+    }
+    await dbWrite(`tenants/${tenantId}/profile`, newProfile, token);
+    setTenants(t => ({ ...t, [tenantId]: { ...t[tenantId], profile: newProfile } }));
+  };
+
   const deleteOrg = async (tenantId, name) => {
     if (!confirm(`Permanently delete "${name}" and all its data?\n\nThis cannot be undone.`)) return;
     if (!confirm(`Second confirmation: delete "${name}"?`)) return;
@@ -675,11 +688,21 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"4px", flexWrap:"wrap" }}>
                     <span style={{ fontWeight:700, fontSize:"16px" }}>{p.name}</span>
-                    <span style={{ fontSize:"11px", padding:"2px 7px", borderRadius:"10px", fontWeight:700,
-                      background:p.plan==="paid"?T.brand+"20":p.plan==="trial"?"#C07010"+"20":"#44882020",
-                      color:p.plan==="paid"?T.brand:p.plan==="trial"?T.gold:"#448820" }}>
-                      {p.plan==="trial"?"TRIAL":p.plan==="paid"?"PAID":"COMP"}
-                    </span>
+                    <div style={{ display:"flex", gap:"3px" }}>
+                      {["trial","paid","comp"].map(pl => {
+                        const active = p.plan === pl;
+                        const col = pl==="paid" ? T.brand : pl==="trial" ? T.gold : "#448820";
+                        return (
+                          <button key={pl} onClick={()=>changePlan(p.id, pl)}
+                            title={pl==="trial"?"14-day Trial":pl==="paid"?"Paid":"Complimentary"}
+                            style={{ fontSize:"11px", padding:"2px 8px", borderRadius:"10px", fontWeight:700, cursor:"pointer",
+                              border:`1px solid ${active?col:T.border}`, background:active?col+"20":"transparent",
+                              color:active?col:T.faint }}>
+                            {pl==="trial"?"TRIAL":pl==="paid"?"PAID":"COMP"}
+                          </button>
+                        );
+                      })}
+                    </div>
                     {!p.active && <span style={{ fontSize:"11px", padding:"2px 7px", borderRadius:"10px", background:"#F0E8E8", color:T.danger, fontWeight:700 }}>SUSPENDED</span>}
                   </div>
                   {p.ownerEmail && <div style={{ fontSize:"12px", color:T.muted, marginBottom:"6px" }}>{p.ownerEmail}</div>}
