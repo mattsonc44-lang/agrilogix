@@ -2,6 +2,20 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 
+// ── Decimal-safe numeric text input sanitizer ────────────────────────────────
+// Plain <input type="number"> is a native browser control whose typing behavior
+// varies by OS/browser locale — some locales reject "." as a decimal separator
+// entirely, which makes it look like the field only accepts one digit at a time
+// and forces you to use the up/down spinner instead. Using type="text" with this
+// sanitizer sidesteps that: it strips anything that isn't a digit or a single
+// decimal point, so acres like "156.2" always type normally everywhere.
+function decOnly(v) {
+  let x = (v || "").replace(/[^0-9.]/g, "");
+  const parts = x.split(".");
+  if (parts.length > 2) x = parts[0] + "." + parts.slice(1).join("");
+  return x;
+}
+
 // ── Permission mapping from Agri Logix roles ──────────────────────
 const PERMS = {
   owner:    { canViewInsurance:true,  canViewCropShare:true,  canEditFields:true,  canEditBins:true,  canViewCosts:true,  canReport:true,  canEditComm:true  },
@@ -1603,7 +1617,7 @@ function FieldMo({field,perms,onSave,onClose}){
           <div key={i} style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px",background:"#eaf4dc",border:"1px solid #4a7535",borderRadius:"6px",padding:"6px 8px"}}>
             <input value={uName} onChange={e=>updUnit("name",e.target.value)}
               style={{flex:2,background:"#fff",border:"1px solid #4a8030",borderRadius:"4px",padding:"6px 8px",fontSize:"13px",fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-            <input type="number" value={uAcres} onChange={e=>updUnit("acres",e.target.value)} placeholder="Acres"
+            <input type="text" inputMode="decimal" value={uAcres} onChange={e=>updUnit("acres",decOnly(e.target.value))} placeholder="Acres"
               style={{flex:1,background:"#fff",border:"1px solid #4a8030",borderRadius:"4px",padding:"6px 8px",fontSize:"13px",fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
             <button onClick={()=>s("insuranceUnits",(f.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
               style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:"18px",lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
@@ -1615,7 +1629,7 @@ function FieldMo({field,perms,onSave,onClose}){
         <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
           placeholder="e.g. Unit 0102" style={{...inStyle,marginBottom:0,flex:2}}/>
-        <input type="number" value={newUnitAcres} onChange={e=>setNewUnitAcres(e.target.value)}
+        <input type="text" inputMode="decimal" value={newUnitAcres} onChange={e=>setNewUnitAcres(decOnly(e.target.value))}
           onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
           placeholder="Acres" style={{...inStyle,marginBottom:0,flex:1}}/>
         <button onClick={addUnit} style={{...btnBase_static,padding:"7px 14px",fontSize:"10px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0"}}>+ ADD</button>
