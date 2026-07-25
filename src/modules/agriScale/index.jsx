@@ -126,10 +126,20 @@ function buildUnitFieldCropBreakdown(fields) {
   // of how its loads split across insurance units or crops, so "field bu/ac" means
   // the same thing on every row for that field rather than a per-unit fraction.
   const fieldTotals = {};
+  const unitAcresByField = {};
   (fields||[]).forEach(field=>{
     const totBu = (field.loads||[]).filter(Boolean).reduce((s,l)=>s+l.net/(l.grainBushelLbs||60),0);
     const acres = parseFloat(field.acres)||0;
     fieldTotals[field.name] = { totBu, acres, yieldPerAc: acres>0 ? totBu/acres : null };
+    // Insurance units are stored as {name,acres} (older data may just be plain name strings —
+    // those have no acres info, so unit-level yield falls back to "—" for them).
+    const uMap = {};
+    (field.insuranceUnits||[]).forEach(u=>{
+      if(typeof u==="string" || !u?.name) return;
+      const a = parseFloat(u.acres)||0;
+      if(a>0) uMap[u.name] = a;
+    });
+    unitAcresByField[field.name] = uMap;
   });
   const rows = {};
   (fields||[]).forEach(field=>{
@@ -137,12 +147,17 @@ function buildUnitFieldCropBreakdown(fields) {
       const unit = (load.insuranceUnit && load.insuranceUnit!=="none") ? load.insuranceUnit : "None";
       const crop = load.grainName || "—";
       const key = `${field.name}||${unit}||${crop}`;
-      if(!rows[key]) rows[key] = { fieldName:field.name, unit, crop, loads:0, totLbs:0, totBu:0, grainPrice:field.grainPrice, acres:parseFloat(field.acres)||0, fieldYieldPerAc: fieldTotals[field.name]?.yieldPerAc ?? null };
+      if(!rows[key]) rows[key] = {
+        fieldName:field.name, unit, crop, loads:0, totLbs:0, totBu:0, grainPrice:field.grainPrice, acres:parseFloat(field.acres)||0,
+        fieldYieldPerAc: fieldTotals[field.name]?.yieldPerAc ?? null,
+        unitAcres: unitAcresByField[field.name]?.[unit] ?? null,
+      };
       rows[key].loads += 1;
       rows[key].totLbs += load.net;
       rows[key].totBu += load.net/(load.grainBushelLbs||60);
     });
   });
+  Object.values(rows).forEach(r=>{ r.unitYieldPerAc = (r.unitAcres>0) ? r.totBu/r.unitAcres : null; });
   return Object.values(rows).sort((a,b)=>
     (a.fieldName||"").localeCompare(b.fieldName||"", undefined,{numeric:true,sensitivity:"base"})
     || a.unit.localeCompare(b.unit)
@@ -293,7 +308,7 @@ function PrintReport({ fields, bins, grains, onClose }) {
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY INSURANCE UNIT / FIELD / CROP</div>
           <table>
             <thead><tr>
-              {["INSURANCE UNIT","FIELD","CROP","LOADS","TOTAL WEIGHT","TOTAL BU","FIELD BU/AC"].map((h,i)=>(
+              {["INSURANCE UNIT","FIELD","CROP","LOADS","TOTAL WEIGHT","TOTAL BU","FIELD BU/AC","UNIT BU/AC"].map((h,i)=>(
                 <th key={h} style={{...th,textAlign:i>=3?"right":"left"}}>{h}</th>
               ))}
             </tr></thead>
@@ -307,9 +322,10 @@ function PrintReport({ fields, bins, grains, onClose }) {
                   <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.totLbs.toLocaleString()} lbs</td>
                   <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)} bu</td>
                   <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.fieldYieldPerAc!=null?r.fieldYieldPerAc.toFixed(1)+" bu/ac":"—"}</td>
+                  <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.unitYieldPerAc!=null?r.unitYieldPerAc.toFixed(1)+" bu/ac":"—"}</td>
                 </tr>
               ))}
-              {unitFieldCropRows.length===0 && <tr><td colSpan={7} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
+              {unitFieldCropRows.length===0 && <tr><td colSpan={8} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
             </tbody>
           </table>
         </div>
@@ -547,7 +563,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
   const canRecord   = netLbs >= 100;
   const activeField = safeFields.find(f=>f.id===activeFieldId) || safeFields[0];
   const activeBin   = safeBins.find(b=>b.id===activeBinId)     || safeBins[0];
-  const fieldInsUnits = (activeField?.insuranceUnits||[]);
+  const fieldInsUnits = (activeField?.insuranceUnits||[]).map(u=>typeof u==="string"?u:(u?.name||"")).filter(Boolean);
   const activeTruck = safeTrucks.find(t=>t.id===truckColor)    || safeTrucks[0] || DEFAULT_TRUCKS[0];
 
   // ── Pull this year's PLANNED crop per field from AgriPlan, keyed by field name ──
@@ -1213,7 +1229,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       {f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
                       {f.landlord&&perms.canViewCropShare&&<div>LANDLORD: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
                       {perms.canViewInsurance&&f.insType&&<div style={{color:"#5a6a90"}}>INS: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} BU/AC GUAR.`:""}</div>}
-                      {perms.canViewInsurance&&(f.insuranceUnits||[]).length>0&&<div style={{color:"#5a6a90"}}>UNITS: {f.insuranceUnits.join(", ")}</div>}
+                      {perms.canViewInsurance&&(f.insuranceUnits||[]).length>0&&<div style={{color:"#5a6a90"}}>UNITS: {f.insuranceUnits.map(u=>typeof u==="string"?u:`${u?.name||""}${u?.acres?` (${u.acres}ac)`:""}`).join(", ")}</div>}
                     </div>
                   </div>
                   {perms.canEditFields&&(
@@ -1311,7 +1327,7 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
             <div style={{overflowX:"auto",marginBottom:"16px"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:"10px"}}>
                 <thead><tr>
-                  {["UNIT","FIELD","CROP","LOADS","BU","TONS","FIELD BU/AC",...(perms.canViewCosts?["REV."]:[])].map((h,i)=>(
+                  {["UNIT","FIELD","CROP","LOADS","BU","TONS","FIELD BU/AC","UNIT BU/AC",...(perms.canViewCosts?["REV."]:[])].map((h,i)=>(
                     <th key={h} style={{padding:"6px 8px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"8px",letterSpacing:"0.1em",color:"#6a7280",textAlign:i>=3?"right":"left",borderBottom:"2px solid #ddd8d0",background:"#f5f3ef"}}>{h}</th>
                   ))}
                 </tr></thead>
@@ -1325,11 +1341,12 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
                       <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)}</td>
                       <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{(r.totLbs/2000).toFixed(1)}</td>
                       <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.fieldYieldPerAc!=null?r.fieldYieldPerAc.toFixed(1):"—"}</td>
+                      <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.unitYieldPerAc!=null?r.unitYieldPerAc.toFixed(1):"—"}</td>
                       {perms.canViewCosts&&<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#4a7535"}}>{r.grainPrice?`$${(r.totBu*parseFloat(r.grainPrice||0)).toFixed(0)}`:"—"}</td>}
                     </tr>
                   ))}
                   {reportBreakdown.length===0 && (
-                    <tr><td colSpan={perms.canViewCosts?8:7} style={{padding:"14px",textAlign:"center",color:"#b0a870",fontSize:"10px"}}>No loads recorded</td></tr>
+                    <tr><td colSpan={perms.canViewCosts?9:8} style={{padding:"14px",textAlign:"center",color:"#b0a870",fontSize:"10px"}}>No loads recorded</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1561,8 +1578,9 @@ function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
 function FieldMo({field,perms,onSave,onClose}){
   const[f,setF]=useState({name:field.name,acres:field.acres||"",grainPrice:field.grainPrice||"",landlord:field.landlord||"",cropShare:field.cropShare||"",insCoverageLevel:field.insCoverageLevel||"",insGuaranteedYield:field.insGuaranteedYield||"",insPriceElection:field.insPriceElection||"",insType:field.insType||"",insInsuredAcres:field.insInsuredAcres||"",insuranceUnits:field.insuranceUnits||[]});
   const[newUnitText,setNewUnitText]=useState("");
+  const[newUnitAcres,setNewUnitAcres]=useState("");
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  const addUnit=()=>{const v=newUnitText.trim();if(v){s("insuranceUnits",[...(f.insuranceUnits||[]),v]);setNewUnitText("");}};
+  const addUnit=()=>{const v=newUnitText.trim();if(v){s("insuranceUnits",[...(f.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}};
   return(<div style={moStyle} onClick={onClose}><div style={{...cardStyle,maxWidth:"380px",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
     <div style={hdrStyle}>EDIT FIELD</div>
     <div style={lblStyle}>FIELD NAME</div><input style={inStyle} value={f.name} onChange={e=>s("name",e.target.value)}/>
@@ -1574,18 +1592,25 @@ function FieldMo({field,perms,onSave,onClose}){
       <div style={lblStyle}>INSURANCE UNIT(S)</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}}>
         {(f.insuranceUnits||[]).length===0 && <span style={{fontSize:"11px",color:"#8a9880",fontStyle:"italic"}}>None</span>}
-        {(f.insuranceUnits||[]).map((u,i)=>(
+        {(f.insuranceUnits||[]).map((u,i)=>{
+          const uName=typeof u==="string"?u:(u?.name||"");
+          const uAcres=typeof u==="string"?"":(u?.acres||"");
+          return(
           <span key={i} style={{display:"inline-flex",alignItems:"center",gap:"5px",background:"rgba(74,117,53,0.15)",border:"1px solid #4a7535",borderRadius:"12px",padding:"3px 5px 3px 10px",fontSize:"11px",color:"#d0e4c0"}}>
-            {u}
+            {uName}{uAcres&&` — ${uAcres} ac`}
             <button onClick={()=>s("insuranceUnits",(f.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
               style={{background:"none",border:"none",color:"#c07070",cursor:"pointer",fontSize:"13px",lineHeight:1,padding:"0 3px"}}>×</button>
           </span>
-        ))}
+          );
+        })}
       </div>
       <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
         <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
           onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
-          placeholder="e.g. Unit 0102" style={{...inStyle,marginBottom:0,flex:1}}/>
+          placeholder="e.g. Unit 0102" style={{...inStyle,marginBottom:0,flex:2}}/>
+        <input type="number" value={newUnitAcres} onChange={e=>setNewUnitAcres(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
+          placeholder="Acres" style={{...inStyle,marginBottom:0,flex:1}}/>
         <button onClick={addUnit} style={{...btnBase_static,padding:"7px 14px",fontSize:"10px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0"}}>+ ADD</button>
       </div>
     </>}
