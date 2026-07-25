@@ -1539,7 +1539,9 @@ export default function AgriScaleModule({ tenantId, token, userProfile, persist,
       )}
       {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
       {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
-      {editLoad&&<LoadMo load={editLoad.load} bins={safeBins} grains={safeGrains} onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL(null)}/>}
+      {editLoad&&<LoadMo load={editLoad.load} bins={safeBins} grains={safeGrains}
+        insuranceUnits={(safeFields.find(f=>f.id===editLoad.fieldId)?.insuranceUnits||[]).map(u=>typeof u==="string"?u:(u?.name||"")).filter(Boolean)}
+        onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL(null)}/>}
       {showReport&&<PrintReport fields={safeFields} bins={safeBins} grains={safeGrains} onClose={()=>setShowReport(false)}/>}
     </>
   );
@@ -1591,17 +1593,21 @@ function FieldMo({field,perms,onSave,onClose}){
     {perms.canViewInsurance&&<><div style={lblStyle}>INSURANCE TYPE</div><input style={inStyle} value={f.insType} onChange={e=>s("insType",e.target.value)} placeholder="RP, YP, APH..."/><div style={lblStyle}>COVERAGE LEVEL %</div><input style={inStyle} type="number" value={f.insCoverageLevel} onChange={e=>s("insCoverageLevel",e.target.value)}/><div style={lblStyle}>GUARANTEED YIELD (BU/AC)</div><input style={inStyle} type="number" value={f.insGuaranteedYield} onChange={e=>s("insGuaranteedYield",e.target.value)}/><div style={lblStyle}>PRICE ELECTION ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.insPriceElection} onChange={e=>s("insPriceElection",e.target.value)}/><div style={lblStyle}>INSURED ACRES</div><input style={inStyle} type="number" value={f.insInsuredAcres} onChange={e=>s("insInsuredAcres",e.target.value)}/></>}
     {perms.canViewInsurance&&<>
       <div style={lblStyle}>INSURANCE UNIT(S)</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}}>
-        {(f.insuranceUnits||[]).length===0 && <span style={{fontSize:"11px",color:"#8a9880",fontStyle:"italic"}}>None</span>}
+      <div style={{marginBottom:"8px"}}>
+        {(f.insuranceUnits||[]).length===0 && <div style={{fontSize:"12px",color:"#8a9880",fontStyle:"italic",marginBottom:"6px"}}>None</div>}
         {(f.insuranceUnits||[]).map((u,i)=>{
           const uName=typeof u==="string"?u:(u?.name||"");
-          const uAcres=typeof u==="string"?"":(u?.acres||"");
+          const uAcres=typeof u==="string"?"":(u?.acres??"");
+          const updUnit=(k,v)=>s("insuranceUnits",(f.insuranceUnits||[]).map((uu,ix)=>ix!==i?uu:{name:k==="name"?v:uName,acres:k==="acres"?v:uAcres}));
           return(
-          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:"6px",background:"#eaf4dc",border:"1px solid #4a7535",borderRadius:"12px",padding:"5px 6px 5px 12px",fontSize:"14px",fontWeight:600,color:"#1a4010"}}>
-            {uName}{uAcres&&` — ${uAcres} ac`}
+          <div key={i} style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px",background:"#eaf4dc",border:"1px solid #4a7535",borderRadius:"6px",padding:"6px 8px"}}>
+            <input value={uName} onChange={e=>updUnit("name",e.target.value)}
+              style={{flex:2,background:"#fff",border:"1px solid #4a8030",borderRadius:"4px",padding:"6px 8px",fontSize:"13px",fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+            <input type="number" value={uAcres} onChange={e=>updUnit("acres",e.target.value)} placeholder="Acres"
+              style={{flex:1,background:"#fff",border:"1px solid #4a8030",borderRadius:"4px",padding:"6px 8px",fontSize:"13px",fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
             <button onClick={()=>s("insuranceUnits",(f.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
-              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:"16px",lineHeight:1,padding:"0 3px",fontWeight:700}}>×</button>
-          </span>
+              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:"18px",lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
+          </div>
           );
         })}
       </div>
@@ -1657,8 +1663,8 @@ function TruckMo({truck,onSave,onClose}){
 // between two bins. Mirrors the split flow from the old standalone
 // grain-cart app (component_final.jsx), adapted to this module's data
 // shape (load.net in lbs, load.grainBushelLbs, load.binId).
-function LoadMo({load,bins,grains,onSave,onDelete,onSplit,onClose}){
-  const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||""});
+function LoadMo({load,bins,grains,insuranceUnits=[],onSave,onDelete,onSplit,onClose}){
+  const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||"",insuranceUnit:load.insuranceUnit&&load.insuranceUnit!=="none"?load.insuranceUnit:""});
   const[splitMode,setSplitMode]=useState(false);
   const[splitAmt,setSplitAmt]=useState("");
   const[splitBinId,setSplitBinId]=useState((bins.find(b=>b.id!==load.binId)||bins[0])?.id);
@@ -1734,9 +1740,14 @@ function LoadMo({load,bins,grains,onSave,onDelete,onSplit,onClose}){
     {parsedNet>0&&bushelLbs>0&&<div style={{marginTop:"-6px",marginBottom:"10px",fontSize:"14px",fontWeight:600,color:"#c47d0a"}}>{(parsedNet/bushelLbs).toFixed(1)} <span style={{fontSize:"10px",color:"#6a7280"}}>bu</span></div>}
     <div style={lblStyle}>BIN</div><select style={seStyle} value={f.binId} onChange={e=>s("binId",Number(e.target.value))}>{bins.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
     <div style={lblStyle}>OPERATOR</div><input style={inStyle} value={f.operator} onChange={e=>s("operator",e.target.value)}/>
+    <div style={lblStyle}>INSURANCE UNIT</div>
+    <select style={seStyle} value={f.insuranceUnit} onChange={e=>s("insuranceUnit",e.target.value)}>
+      <option value="">None</option>
+      {insuranceUnits.map(u=><option key={u} value={u}>{u}</option>)}
+    </select>
     <div style={{display:"flex",gap:"8px",marginBottom:"8px"}}>
       <MoBtn onClick={onClose}>CANCEL</MoBtn>
-      <MoBtn variant="primary" onClick={()=>onSave({...load,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs)})}>SAVE</MoBtn>
+      <MoBtn variant="primary" onClick={()=>onSave({...load,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs),insuranceUnit:f.insuranceUnit||"none"})}>SAVE</MoBtn>
     </div>
     <div style={{display:"flex",gap:"8px"}}>
       <MoBtn onClick={()=>setSplitMode(true)}>⇄ SPLIT LOAD</MoBtn>
