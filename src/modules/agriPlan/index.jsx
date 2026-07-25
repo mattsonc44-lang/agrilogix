@@ -1803,6 +1803,23 @@ function RevenueInputModal({ field, year, crop, existingData, onSave, onClose })
 
 function FieldHistoryTab({ field, activeYear, allFields, years, createYear, switchYear, onUpdate, tenantId, manualHistory={}, onSaveHistory }) {
   const histEntry = useMemo(() => {
+    // Prefer this field's OWN history — whatever the grower actually entered for it
+    // via this History tab (manualHistory, keyed by year -> {crop,yield,acres}) —
+    // over the legacy HISTORY_DATA seed table below. That table is old demo/import
+    // data for a completely different set of farms (Ray, Englund, Sharray, Nuxoll
+    // Land, etc.) and matching against it by common name alone was silently handing
+    // back someone else's crop history whenever a name happened to collide, while
+    // fields with real manually-entered history but no name collision got nothing —
+    // which is why suggestions looked populated for some fields and not others.
+    const ownYears = Object.keys(manualHistory || {});
+    if (ownYears.length > 0) {
+      const history = {};
+      ownYears.forEach(y => { if (manualHistory[y]?.crop) history[y] = manualHistory[y].crop; });
+      if (Object.keys(history).length > 0) {
+        return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
+      }
+    }
+    // Legacy fallback only if this field has no manually-entered history at all yet.
     // Primary: common|fieldNum
     const keyFn = field.common + '|' + field.fieldNum;
     if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
@@ -1822,7 +1839,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
       );
     }
     return null;
-  }, [field.common, field.fieldNum, field.legal]);
+  }, [field.common, field.fieldNum, field.legal, manualHistory]);
 
   const suggestions = useMemo(() => getCropSuggestions(histEntry, activeYear), [histEntry, activeYear]);
   const HIST_YEARS_ALL = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
@@ -2562,27 +2579,26 @@ let _aphData            = null; // imported APH data from crop insurance PDF
 let _fieldHistory       = null; // manually entered crop history per field
 let _cropPrices         = null; // per-tenant price elections + projected sell prices
 let _tenantIdCache      = null; // set from AgriPlanModule — tenantId for cache keys below
-let _farmIdCache        = null; // set from AgriPlanModule — farmId for cache keys below
 
 // ── Tenant-mode offline cache (mirrors AgriScale's queue/retry pattern) ──────
-function tenantCacheKey(tid, year, farmId){ const seg = (farmId && farmId !== "default") ? `_${farmId}` : ""; return `agriplan_tenant_${tid}${seg}_${year}`; }
-function tenantQueueKey(tid, year, farmId){ const seg = (farmId && farmId !== "default") ? `_${farmId}` : ""; return `agriplan_tenant_queue_${tid}${seg}_${year}`; }
-function loadTenantFieldsCache(tid, year, farmId){
-  try{ const r=localStorage.getItem(tenantCacheKey(tid,year,farmId)); return r?JSON.parse(r):null; }
+function tenantCacheKey(tid, year){ return `agriplan_tenant_${tid}_${year}`; }
+function tenantQueueKey(tid, year){ return `agriplan_tenant_queue_${tid}_${year}`; }
+function loadTenantFieldsCache(tid, year){
+  try{ const r=localStorage.getItem(tenantCacheKey(tid,year)); return r?JSON.parse(r):null; }
   catch{ return null; }
 }
-function saveTenantFieldsCache(tid, year, fields, farmId){
-  try{ localStorage.setItem(tenantCacheKey(tid,year,farmId), JSON.stringify(fields)); }catch{}
+function saveTenantFieldsCache(tid, year, fields){
+  try{ localStorage.setItem(tenantCacheKey(tid,year), JSON.stringify(fields)); }catch{}
 }
-function loadTenantQueue(tid, year, farmId){
-  try{ const r=localStorage.getItem(tenantQueueKey(tid,year,farmId)); return r?JSON.parse(r):null; }
+function loadTenantQueue(tid, year){
+  try{ const r=localStorage.getItem(tenantQueueKey(tid,year)); return r?JSON.parse(r):null; }
   catch{ return null; }
 }
-function saveTenantQueue(tid, year, fields, farmId){
-  try{ localStorage.setItem(tenantQueueKey(tid,year,farmId), JSON.stringify({fields,savedAt:Date.now()})); }catch{}
+function saveTenantQueue(tid, year, fields){
+  try{ localStorage.setItem(tenantQueueKey(tid,year), JSON.stringify({fields,savedAt:Date.now()})); }catch{}
 }
-function clearTenantQueue(tid, year, farmId){
-  try{ localStorage.removeItem(tenantQueueKey(tid,year,farmId)); }catch{}
+function clearTenantQueue(tid, year){
+  try{ localStorage.removeItem(tenantQueueKey(tid,year)); }catch{}
 }
 function lsKey(year){ return `agriplan_fields_${year}`; }
 
@@ -2595,7 +2611,7 @@ function saveYears(years){
   fbSaveYears(years).catch(()=>{});
 }
 function loadFields(year){
-  if(_isAgriLogixTenant) return _tenantIdCache ? (loadTenantFieldsCache(_tenantIdCache, year, _farmIdCache) || []) : [];
+  if(_isAgriLogixTenant) return _tenantIdCache ? (loadTenantFieldsCache(_tenantIdCache, year) || []) : [];
   // Try localStorage cache first (fast/offline)
   try{
     const raw=localStorage.getItem(lsKey(year));
@@ -2622,13 +2638,13 @@ function saveFields(year, fields, onStatus){
   } else if(_tenantIdCache){
     // Local-first, same as AgriScale: cache + queue BEFORE attempting the network write,
     // so a dropped connection never loses data — only delays the sync.
-    saveTenantFieldsCache(_tenantIdCache, year, fields, _farmIdCache);
-    saveTenantQueue(_tenantIdCache, year, fields, _farmIdCache);
+    saveTenantFieldsCache(_tenantIdCache, year, fields);
+    saveTenantQueue(_tenantIdCache, year, fields);
   }
   if(onStatus) onStatus('saving');
   fbSaveFields(year, fields)
     .then(()=>{
-      if(_isAgriLogixTenant && _tenantIdCache) clearTenantQueue(_tenantIdCache, year, _farmIdCache);
+      if(_isAgriLogixTenant && _tenantIdCache) clearTenantQueue(_tenantIdCache, year);
       if(onStatus) onStatus('saved');
     })
     .catch((e)=>{
@@ -3722,13 +3738,8 @@ function ImportWorkbookModal({ tenantId, token, onClose }) {
       await importAgriPlanYears(agriPlanFields.viaTerra, `farms/${VIA_TERRA_FARM_ID}/agriPlan`, "Via Terra");
 
       addLog("Importing AgriScale field lists…");
-      // AgriScale (unlike FieldLog) keeps ALL farms in ONE shared fields list and
-      // tags each record with farmId, filtering client-side — it does NOT use a
-      // separate farms/{id}/agriScale subtree. So both entities write to the same
-      // shared path; Via Terra's records just need the farmId tag added.
-      const asKey = f => `${f.farmId || "default"}|${(f.name||"").trim().toLowerCase()}`;
-      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.flatAcre.agriScaleFields, asKey, "Flat Acre Farms AgriScale");
-      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.viaTerra.agriScaleFields.map(f=>({...f, farmId: VIA_TERRA_FARM_ID})), asKey, "Via Terra AgriScale");
+      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.flatAcre.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms AgriScale");
+      await importListPath(`tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/agriScale/fields`, currentFields.viaTerra.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Via Terra AgriScale");
 
       addLog("Importing FieldLog field lists…");
       await importListPath(`tenants/${tenantId}/fieldlog/fields`, currentFields.flatAcre.fieldLogFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms FieldLog");
@@ -3766,11 +3777,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   // Configure Firebase and localStorage mode for this tenant
  _isAgriLogixTenant = !!tenantId;
   _tenantIdCache = tenantId || null;
-  _farmIdCache = farmId || null;
   initAgriPlan(tenantId, token, farmId);
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
-  const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026",farmId)||[]):loadFields(loadYears().slice(-1)[0]));
+  const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026")||[]):loadFields(loadYears().slice(-1)[0]));
   const[selectedField,setSelectedField]=useState(null);
   const[entityFilter,setEntityFilter]=useState("all");
   const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set([]));
@@ -3920,7 +3930,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
               eligibleCrops: (()=>{ const raw=f.eligibleCrops; const arr=Array.isArray(raw)?raw:raw&&typeof raw==="object"?Object.values(raw):[]; return arr.length>0?arr:(_tenantCrops||ALL_CROPS); })()
             }));
             setFields(normalized);
-            if(tenantId) saveTenantFieldsCache(tenantId, activeYear, normalized, farmId);
+            if(tenantId) saveTenantFieldsCache(tenantId, activeYear, normalized);
           }
           firstLoad = false;
           if(!tenantId){ localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields)); localStorage.setItem('agriplan_data_version',DATA_VERSION); }
@@ -3938,7 +3948,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       if(tenantId){
         setFields(prev => {
           if(prev && prev.length>0) return prev; // already have something (live or cached)
-          const cached = loadTenantFieldsCache(tenantId, activeYear, farmId);
+          const cached = loadTenantFieldsCache(tenantId, activeYear);
           return (cached && cached.length>0) ? cached : prev;
         });
       }
@@ -3974,18 +3984,18 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
     }
   },[fields,activeYear]);
 
-  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?(loadTenantFieldsCache(tenantId,yr,farmId)||[]):loadFields(yr));setSelectedField(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId,farmId]);
+  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?(loadTenantFieldsCache(tenantId,yr)||[]):loadFields(yr));setSelectedField(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId]);
   
    // Retry any queued offline save the moment the browser comes back online —
   // same behavior AgriScale already has.
   useEffect(()=>{
     if(!tenantId) return;
     const retry = () => {
-      const q = loadTenantQueue(tenantId, activeYear, farmId);
+      const q = loadTenantQueue(tenantId, activeYear);
       if(!q) return;
       setSaveStatus('pushing');
       fbSaveFields(activeYear, q.fields)
-        .then(()=>{ clearTenantQueue(tenantId, activeYear, farmId); setSaveStatus('saved'); setTimeout(()=>setSaveStatus('idle'),2000); })
+        .then(()=>{ clearTenantQueue(tenantId, activeYear); setSaveStatus('saved'); setTimeout(()=>setSaveStatus('idle'),2000); })
         .catch(()=>setSaveStatus('queued'));
     };
     window.addEventListener('online', retry);
