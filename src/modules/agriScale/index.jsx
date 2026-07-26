@@ -179,6 +179,63 @@ return Object.values(rows).sort((a,b)=>
 );
 }
 
+// ── Breakdown by Insurance Unit, THEN Field — same underlying load data as
+// buildUnitFieldCropBreakdown above, just re-grouped so the insurance unit is
+// the top-level heading and each field that fed into it is a sub-row beneath
+// it, with its own bushels/acres/yield. Fields with no insurance unit set are
+// left out entirely (that's what "Summary by Field" above already covers).
+// Grouping only works if the same unit name is typed identically on every
+// field that belongs to it (e.g. "Unit 4021-A" everywhere) — this is a
+// straight string match, there is no separate "unit" record to link to.
+function buildUnitBreakdown(fields) {
+const units = {};
+(fields||[]).forEach(field=>{
+// acres this field contributes to each of its named units
+const unitAcresMap = {};
+(field.insuranceUnits||[]).forEach(u=>{
+if(typeof u==="string" || !u?.name) return;
+const a = parseFloat(u.acres)||0;
+if(a>0) unitAcresMap[u.name] = a;
+});
+// this field's loads grouped by unit+crop
+const fieldRows = {};
+(field.loads||[]).filter(Boolean).forEach(load=>{
+const unit = (load.insuranceUnit && load.insuranceUnit!=="none") ? load.insuranceUnit : "None";
+if(unit==="None") return;
+const crop = load.grainName || "—";
+const key = `${unit}||${crop}`;
+if(!fieldRows[key]) fieldRows[key] = { unit, crop, loads:0, totLbs:0, totBu:0 };
+fieldRows[key].loads += 1;
+fieldRows[key].totLbs += load.net;
+fieldRows[key].totBu += load.net/(load.grainBushelLbs||60);
+});
+Object.values(fieldRows).forEach(r=>{
+if(!units[r.unit]) units[r.unit] = { unit:r.unit, totBu:0, totLoads:0, fields:[] };
+const u = units[r.unit];
+u.totBu += r.totBu;
+u.totLoads += r.loads;
+u.fields.push({
+fieldName: field.name, crop:r.crop, loads:r.loads, totLbs:r.totLbs, totBu:r.totBu,
+unitAcres: unitAcresMap[r.unit] ?? null, grainPrice: field.grainPrice,
+});
+});
+});
+Object.values(units).forEach(u=>{
+// Sum each distinct field's unit-acres once (a field with 2 crop rows under
+// the same unit shouldn't have its acres counted twice).
+const acresByField = {};
+u.fields.forEach(f=>{ if(f.unitAcres!=null) acresByField[f.fieldName]=f.unitAcres; });
+const acresVals = Object.values(acresByField);
+u.totAcres = acresVals.length ? acresVals.reduce((s,a)=>s+a,0) : null;
+u.unitYieldPerAc = (u.totAcres && u.totAcres>0) ? u.totBu/u.totAcres : null;
+u.fields.sort((a,b)=>
+a.fieldName.localeCompare(b.fieldName, undefined,{numeric:true,sensitivity:"base"})
+|| a.crop.localeCompare(b.crop)
+);
+});
+return Object.values(units).sort((a,b)=>a.unit.localeCompare(b.unit, undefined,{numeric:true,sensitivity:"base"}));
+}
+
 // ── Summary by Bin — how full each bin is, its crop, and which fields fed it.
 // Grouped straight off each field's recorded loads (load.binId) rather than just
 // trusting the bin's current storedLbs, so "fields" always lists exactly what's
@@ -219,7 +276,7 @@ const grandTotalLbs = allLoads.reduce((s,l)=>s+l.net,0);
 const grandTotalBu = allLoads.reduce((s,l)=>s+buOf(l),0);
 // Rows with no insurance unit are dropped here — "Summary by Field" above
 // already covers plain field totals, so a unit-less row would just repeat it.
-const unitFieldCropRows = buildUnitFieldCropBreakdown(fields).filter(r=>r.unit!=="None");
+const unitBreakdown = buildUnitBreakdown(fields);
 const binSummaryRows = buildBinSummary(fields, bins, grains);
 const reportDate = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
 const printTime = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
@@ -350,29 +407,37 @@ return (
 </tbody>
 </table>
 
-<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY INSURANCE UNIT / FIELD / CROP</div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY INSURANCE UNIT</div>
+{unitBreakdown.length===0 && <p style={{fontSize:"11px",color:"#bbb",textAlign:"center",padding:"14px 0"}}>No loads with an insurance unit recorded</p>}
+{unitBreakdown.map(u=>(
+<div key={u.unit} style={{marginBottom:"18px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px",paddingBottom:"4px",borderBottom:"1px solid #ccc"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,fontSize:"13px"}}>{u.unit}</div>
+<div style={{fontSize:"11px",color:"#666"}}>
+{u.totAcres!=null?`${u.totAcres} ac · `:""}{u.totBu.toFixed(0)} bu{u.unitYieldPerAc!=null?` · ${u.unitYieldPerAc.toFixed(1)} bu/ac`:""}
+</div>
+</div>
 <table>
 <thead><tr>
-{["INSURANCE UNIT","FIELD","CROP","LOADS","TOTAL WEIGHT","TOTAL BU","FIELD BU/AC","UNIT BU/AC"].map((h,i)=>(
-<th key={h} style={{...th,textAlign:i>=3?"right":"left"}}>{h}</th>
+{["FIELD","CROP","LOADS","TOTAL BU","ACRES","BU/AC"].map((h,i)=>(
+<th key={h} style={{...th,textAlign:i>=2?"right":"left"}}>{h}</th>
 ))}
 </tr></thead>
 <tbody>
-{unitFieldCropRows.map((r,i)=>(
+{u.fields.map((f,i)=>(
 <tr key={i}>
-<td style={td}>{r.unit==="None"?"":r.unit}</td>
-<td style={td}>{r.fieldName}</td>
-<td style={td}>{r.crop}</td>
-<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
-<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.totLbs.toLocaleString()} lbs</td>
-<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)} bu</td>
-<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.fieldYieldPerAc!=null?r.fieldYieldPerAc.toFixed(1)+" bu/ac":"—"}</td>
-<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.unitYieldPerAc!=null?r.unitYieldPerAc.toFixed(1)+" bu/ac":"—"}</td>
+<td style={td}>{f.fieldName}</td>
+<td style={td}>{f.crop}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{f.loads}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{f.totBu.toFixed(0)} bu</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{f.unitAcres!=null?f.unitAcres:"—"}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{(f.unitAcres>0)?(f.totBu/f.unitAcres).toFixed(1)+" bu/ac":"—"}</td>
 </tr>
 ))}
-{unitFieldCropRows.length===0 && <tr><td colSpan={8} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
 </tbody>
 </table>
+</div>
+))}
 
 <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY BIN</div>
 <table>
@@ -800,7 +865,7 @@ setEL(null);
 const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
 // Rows with no insurance unit are dropped here — "Summary by Field" above
 // already covers plain field totals, so a unit-less row would just repeat it.
-const reportBreakdown = useMemo(()=>buildUnitFieldCropBreakdown(safeFields).filter(r=>r.unit!=="None"), [safeFields]);
+const unitBreakdown = useMemo(()=>buildUnitBreakdown(safeFields), [safeFields]);
 const binSummary = useMemo(()=>buildBinSummary(safeFields, safeBins, safeGrains), [safeFields, safeBins, safeGrains]);
 const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
 const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
@@ -1393,35 +1458,34 @@ return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",font
 ))}
 </div>
 
-{/* Breakdown by Insurance Unit / Field / Crop */}
-<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>BREAKDOWN BY INSURANCE UNIT / FIELD / CROP</div>
-<div style={{overflowX:"auto",marginBottom:"16px"}}>
-<table style={{width:"100%",borderCollapse:"collapse",fontSize:"10px"}}>
-<thead><tr>
-{["UNIT","FIELD","CROP","LOADS","BU","TONS","FIELD BU/AC","UNIT BU/AC",...(perms.canViewCosts?["REV."]:[])].map((h,i)=>(
-<th key={h} style={{padding:"6px 8px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"8px",letterSpacing:"0.1em",color:"#6a7280",textAlign:i>=3?"right":"left",borderBottom:"2px solid #ddd8d0",background:"#f5f3ef"}}>{h}</th>
-))}
-</tr></thead>
-<tbody>
-{reportBreakdown.map((r,i)=>(
-<tr key={i} style={{background:i%2===0?"#fff":"#f9f8f5"}}>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#5a6a90"}}>{r.unit==="None"?"":r.unit}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#4a5568"}}>{r.fieldName}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#4a5568"}}>{r.crop}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{r.totBu.toFixed(0)}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{(r.totLbs/2000).toFixed(1)}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.fieldYieldPerAc!=null?r.fieldYieldPerAc.toFixed(1):"—"}</td>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.unitYieldPerAc!=null?r.unitYieldPerAc.toFixed(1):"—"}</td>
-{perms.canViewCosts&&<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#4a7535"}}>{r.grainPrice?`$${(r.totBu*parseFloat(r.grainPrice||0)).toFixed(0)}`:"—"}</td>}
-</tr>
-))}
-{reportBreakdown.length===0 && (
-<tr><td colSpan={perms.canViewCosts?9:8} style={{padding:"14px",textAlign:"center",color:"#b0a870",fontSize:"10px"}}>No loads recorded</td></tr>
+{/* Breakdown by Insurance Unit, then Field */}
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>BREAKDOWN BY INSURANCE UNIT</div>
+{unitBreakdown.length===0 && (
+<div style={{fontSize:"10px",color:"#b0a870",textAlign:"center",padding:"14px 0",marginBottom:"8px"}}>No loads with an insurance unit recorded</div>
 )}
-</tbody>
-</table>
+{unitBreakdown.map(u=>(
+<div key={u.unit} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"10px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px",paddingBottom:"5px",borderBottom:"1px solid #ddd8d0"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"12px",color:"#4a5568",letterSpacing:"0.08em"}}>{u.unit}</div>
+<div style={{fontSize:"9px",color:"#6a7280"}}>
+{u.totAcres!=null?`${u.totAcres} ac · `:""}{u.totBu.toFixed(0)} bu{u.unitYieldPerAc!=null?` · ${u.unitYieldPerAc.toFixed(1)} bu/ac`:""}
 </div>
+</div>
+{u.fields.map((f,i)=>(
+<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:"9px",color:"#4a5568",padding:"4px 0",borderBottom:i<u.fields.length-1?"1px solid #e8e4dc":"none",gap:"8px"}}>
+<div style={{flex:1,minWidth:0}}>
+<span style={{fontWeight:700}}>{f.fieldName}</span> <span style={{color:"#6a7280"}}>· {f.crop} · {f.loads} load{f.loads!==1?"s":""}</span>
+</div>
+<div style={{display:"flex",gap:"10px",flexShrink:0,fontFamily:"'IBM Plex Mono',monospace"}}>
+<span style={{color:"#c47d0a"}}>{f.totBu.toFixed(0)} bu</span>
+<span>{f.unitAcres!=null?`${f.unitAcres} ac`:"—"}</span>
+<span>{(f.unitAcres>0)?(f.totBu/f.unitAcres).toFixed(1)+" bu/ac":"—"}</span>
+{perms.canViewCosts&&<span style={{color:"#4a7535"}}>{f.grainPrice?`$${(f.totBu*parseFloat(f.grainPrice||0)).toFixed(0)}`:"—"}</span>}
+</div>
+</div>
+))}
+</div>
+))}
 
 {sortedFields.map(f=>{
 const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
