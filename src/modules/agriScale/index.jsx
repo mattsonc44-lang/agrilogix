@@ -358,7 +358,7 @@ return (
 <tbody>
 {unitFieldCropRows.map((r,i)=>(
 <tr key={i}>
-<td style={td}>{r.unit}</td>
+<td style={td}>{r.unit==="None"?"":r.unit}</td>
 <td style={td}>{r.fieldName}</td>
 <td style={td}>{r.crop}</td>
 <td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
@@ -1401,7 +1401,7 @@ return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",font
 <tbody>
 {reportBreakdown.map((r,i)=>(
 <tr key={i} style={{background:i%2===0?"#fff":"#f9f8f5"}}>
-<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#5a6a90"}}>{r.unit}</td>
+<td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#5a6a90"}}>{r.unit==="None"?"":r.unit}</td>
 <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#4a5568"}}>{r.fieldName}</td>
 <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",color:"#4a5568"}}>{r.crop}</td>
 <td style={{padding:"6px 8px",borderBottom:"1px solid #eee",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{r.loads}</td>
