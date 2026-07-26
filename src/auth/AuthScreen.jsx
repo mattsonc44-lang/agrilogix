@@ -102,6 +102,16 @@ const CSS = `
   .as-numpad { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
   .as-numpad-key { background:rgba(255,255,255,0.06); border:none; border-radius:3px; color:rgba(244,239,230,0.7); font-family:'Share Tech Mono',monospace; font-size:12px; padding:5px; text-align:center; }
 
+  /* AgriPlan mockup */
+  .ap-table { background:rgba(255,255,255,0.04); border:1px solid rgba(192,112,16,0.2); border-radius:4px; padding:10px; margin-bottom:10px; }
+  .ap-row { display:grid; grid-template-columns:1fr 60px 60px; gap:6px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.06); align-items:center; }
+  .ap-row:last-child { border-bottom:none; }
+  .ap-row-head { font-family:'Share Tech Mono',monospace; font-size:9px; color:rgba(244,239,230,0.35); letter-spacing:0.1em; text-transform:uppercase; }
+  .ap-row-field { font-family:'Barlow',sans-serif; font-size:12px; color:rgba(244,239,230,0.8); }
+  .ap-row-num { font-family:'Share Tech Mono',monospace; font-size:11px; color:#b0c8a0; text-align:right; }
+  .ap-unit-chip { display:inline-flex; align-items:center; gap:5px; background:rgba(192,112,16,0.12); border:1px solid rgba(192,112,16,0.3); border-radius:4px; padding:6px 9px; font-family:'Share Tech Mono',monospace; font-size:10px; color:#e0b070; margin-bottom:5px; }
+  .ap-unit-chip span { color:rgba(244,239,230,0.4); }
+
   /* ServiceLog mockup */
   .sl-vehicles { margin-bottom:8px; }
   .sl-vehicle { display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.04); border-radius:4px; margin-bottom:4px; border-left:3px solid transparent; }
@@ -116,28 +126,29 @@ const CSS = `
 
   /* ── PRICING ── */
   .land-pricing { padding:80px 32px; background:#1A2818; }
-  .land-pricing-inner { max-width:1000px; margin:0 auto; }
+  .land-pricing-inner { max-width:1180px; margin:0 auto; }
   .land-pricing .land-section-tag { color:#b0c8a0; }
   .land-pricing .land-section-h2 { color:#F4EFE6; }
   .land-pricing .land-section-sub { color:rgba(244,239,230,0.6); margin-bottom:48px; }
-  .land-pricing-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1.2fr; gap:16px; align-items:stretch; }
-  .land-price-card { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:28px 24px; display:flex; flex-direction:column; }
+  .land-pricing-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1.2fr; gap:14px; align-items:stretch; }
+  .land-price-card { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:24px 18px; display:flex; flex-direction:column; }
   .land-price-card.bundle { background:rgba(192,112,16,0.12); border:1px solid rgba(192,112,16,0.4); position:relative; overflow:hidden; }
   .land-price-card.bundle::before { content:'BEST VALUE'; position:absolute; top:14px; right:-22px; background:#C07010; color:#F4EFE6; font-family:'Share Tech Mono',monospace; font-size:9px; letter-spacing:0.15em; padding:4px 28px; transform:rotate(35deg); }
-  .land-price-icon { font-size:28px; margin-bottom:12px; }
-  .land-price-name { font-family:'Playfair Display',serif; font-size:20px; color:#F4EFE6; margin-bottom:6px; }
-  .land-price-desc { font-size:13px; color:rgba(244,239,230,0.5); line-height:1.5; margin-bottom:20px; flex:1; }
-  .land-price-amount { font-family:'Share Tech Mono',monospace; font-size:36px; color:#C07010; line-height:1; }
-  .land-price-amount span { font-size:14px; color:rgba(244,239,230,0.4); font-family:'Barlow',sans-serif; }
-  .land-price-save { font-family:'Share Tech Mono',monospace; font-size:11px; color:#b0c8a0; letter-spacing:0.1em; margin-top:4px; margin-bottom:20px; }
-  .land-price-features { list-style:none; padding:0; margin:0 0 24px; display:flex; flex-direction:column; gap:7px; }
-  .land-price-features li { font-size:13px; color:rgba(244,239,230,0.6); display:flex; gap:7px; align-items:flex-start; }
+  .land-price-icon { font-size:26px; margin-bottom:10px; }
+  .land-price-name { font-family:'Playfair Display',serif; font-size:19px; color:#F4EFE6; margin-bottom:6px; }
+  .land-price-desc { font-size:12.5px; color:rgba(244,239,230,0.5); line-height:1.5; margin-bottom:18px; flex:1; }
+  .land-price-amount { font-family:'Share Tech Mono',monospace; font-size:32px; color:#C07010; line-height:1; }
+  .land-price-amount span { font-size:13px; color:rgba(244,239,230,0.4); font-family:'Barlow',sans-serif; }
+  .land-price-save { font-family:'Share Tech Mono',monospace; font-size:10.5px; color:#b0c8a0; letter-spacing:0.1em; margin-top:4px; margin-bottom:18px; }
+  .land-price-features { list-style:none; padding:0; margin:0 0 22px; display:flex; flex-direction:column; gap:6px; }
+  .land-price-features li { font-size:12.5px; color:rgba(244,239,230,0.6); display:flex; gap:6px; align-items:flex-start; }
   .land-price-features li::before { content:'✓'; color:#C07010; flex-shrink:0; }
-  .land-price-btn { background:transparent; color:#C07010; border:1px solid rgba(192,112,16,0.5); border-radius:4px; padding:10px; font-family:'Barlow',sans-serif; font-size:14px; font-weight:600; cursor:pointer; letter-spacing:0.04em; transition:all .15s; }
+  .land-price-btn { background:transparent; color:#C07010; border:1px solid rgba(192,112,16,0.5); border-radius:4px; padding:10px; font-family:'Barlow',sans-serif; font-size:13px; font-weight:600; cursor:pointer; letter-spacing:0.04em; transition:all .15s; }
   .land-price-btn:hover { background:#C07010; color:#F4EFE6; }
   .land-price-card.bundle .land-price-btn { background:#C07010; color:#F4EFE6; border-color:#C07010; }
   .land-price-card.bundle .land-price-btn:hover { background:#A05A0A; }
   .land-price-note { text-align:center; font-size:12px; color:rgba(244,239,230,0.35); margin-top:24px; font-family:'Share Tech Mono',monospace; letter-spacing:0.06em; }
+  @media(max-width:1000px){ .land-pricing-grid{ grid-template-columns:1fr 1fr 1fr; } }
   @media(max-width:768px){ .land-pricing-grid{ grid-template-columns:1fr 1fr; } .land-pricing{ padding:48px 20px; } }
   @media(max-width:480px){ .land-pricing-grid{ grid-template-columns:1fr; } }
 
@@ -287,9 +298,9 @@ export default function AuthScreen({ onAuth }) {
             <div>
               <div className="land-hero-eyebrow">Farm Management Platform</div>
               <h1 className="land-hero-h1">Your whole operation,<br/><em>one platform.</em></h1>
-              <p className="land-hero-sub">AgriField, AgriScale, and AgriService — purpose-built for modern farm operations. Pick the module you need, or bundle all three and save 20%.</p>
+              <p className="land-hero-sub">AgriPlan, AgriField, AgriScale, and AgriService — purpose-built for modern farm operations. Pick the module you need, or bundle all four and save.</p>
               <div className="land-hero-stats">
-                <div><div className="land-hero-stat-n">3</div><div className="land-hero-stat-l">Modules</div></div>
+                <div><div className="land-hero-stat-n">4</div><div className="land-hero-stat-l">Modules</div></div>
                 <div><div className="land-hero-stat-n">∞</div><div className="land-hero-stat-l">Fields</div></div>
                 <div><div className="land-hero-stat-n">24/7</div><div className="land-hero-stat-l">Offline sync</div></div>
               </div>
@@ -303,11 +314,44 @@ export default function AuthScreen({ onAuth }) {
         {/* Modules */}
         <div className="land-modules">
           <div className="land-section-tag">What's included</div>
-          <h2 className="land-section-h2">Three tools.<br/>Every season.</h2>
+          <h2 className="land-section-h2">Four tools.<br/>Every season.</h2>
           <p className="land-section-sub">Each module is purpose-built for a specific part of your operation — no bloat, no learning curve.</p>
 
-          {/* FieldLog */}
+          {/* AgriPlan */}
           <div className="land-module-row">
+            <div className="land-mockup">
+              <div className="land-mockup-bar">
+                <div className="land-mockup-dot" style={{background:"#FF5F57"}}/>
+                <div className="land-mockup-dot" style={{background:"#FFBD2E"}}/>
+                <div className="land-mockup-dot" style={{background:"#28CA42"}}/>
+                <span className="land-mockup-title">AgriPlan — Crop Plan</span>
+              </div>
+              <div className="land-mockup-body">
+                <div className="ap-unit-chip">Unit 4021-A <span>· 148.2 ac</span></div>
+                <div className="ap-table">
+                  <div className="ap-row ap-row-head"><span>Field</span><span style={{textAlign:"right"}}>APH</span><span style={{textAlign:"right"}}>Acres</span></div>
+                  <div className="ap-row"><span className="ap-row-field">North Quarter</span><span className="ap-row-num">42.8</span><span className="ap-row-num">148.2</span></div>
+                  <div className="ap-row"><span className="ap-row-field">River Bottom</span><span className="ap-row-num">51.3</span><span className="ap-row-num">96.5</span></div>
+                  <div className="ap-row"><span className="ap-row-field">Home Section</span><span className="ap-row-num">38.6</span><span className="ap-row-num">210.0</span></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="land-module-badge">📋 AgriPlan</div>
+              <h3 className="land-module-h3">Crop planning &amp; insurance unit tracking</h3>
+              <p className="land-module-desc">Plan your crop year field by field — track APH production history, set price assumptions, and manage insurance units with acreage so harvest reporting lines up cleanly with your policy.</p>
+              <ul className="land-module-features">
+                <li>Field-by-field crop plans with price &amp; revenue projections</li>
+                <li>APH production history tracked per field</li>
+                <li>Insurance units with editable acreage, right down to the decimal</li>
+                <li>Field and unit data feeds straight into AgriScale's harvest reports</li>
+                <li>Works alongside AgriField and AgriScale</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* FieldLog */}
+          <div className="land-module-row reverse">
             <div className="land-mockup">
               <div className="land-mockup-bar">
                 <div className="land-mockup-dot" style={{background:"#FF5F57"}}/>
@@ -342,16 +386,16 @@ export default function AuthScreen({ onAuth }) {
           </div>
 
           {/* AgriScale */}
-          <div className="land-module-row reverse">
+          <div className="land-module-row">
             <div>
               <div className="land-module-badge">⚙️ AgriScale</div>
-              <h3 className="land-module-h3">Grain cart & harvest tracking</h3>
-              <p className="land-module-desc">Real-time harvest tracking with grain cart scale integration, live bin gauges, multi-field load logging, and complete harvest reports by field and commodity.</p>
+              <h3 className="land-module-h3">Grain cart &amp; harvest tracking</h3>
+              <p className="land-module-desc">Real-time harvest tracking with grain cart scale integration, live bin gauges, multi-field load logging, and complete harvest reports by field, insurance unit, and commodity.</p>
               <ul className="land-module-features">
                 <li>Live bin fill gauges with remaining capacity</li>
-                <li>Per-field load logging with truck and grain tracking</li>
+                <li>Per-field load logging with truck, grain, and insurance unit tracking</li>
                 <li>Multiple commodities with custom lbs/bushel</li>
-                <li>Yield and revenue calculations per field</li>
+                <li>Yield reports broken down by field, insurance unit, and crop</li>
                 <li>Multi-device sync with offline queue</li>
               </ul>
             </div>
@@ -375,7 +419,19 @@ export default function AuthScreen({ onAuth }) {
           </div>
 
           {/* ServiceLog */}
-          <div className="land-module-row">
+          <div className="land-module-row reverse">
+            <div>
+              <div className="land-module-badge">🔧 AgriService</div>
+              <h3 className="land-module-h3">Fleet &amp; equipment maintenance</h3>
+              <p className="land-module-desc">Keep your equipment running with complete service history, parts ordering, vendor tracking, invoicing, and cost analysis for your entire fleet.</p>
+              <ul className="land-module-features">
+                <li>Full service history per vehicle with cost tracking</li>
+                <li>Parts ordering with receive tracking and price lookup</li>
+                <li>Parts inventory with low-stock alerts</li>
+                <li>Customer invoicing for service work</li>
+                <li>Cost analysis by equipment, type, and year</li>
+              </ul>
+            </div>
             <div className="land-mockup">
               <div className="land-mockup-bar">
                 <div className="land-mockup-dot" style={{background:"#FF5F57"}}/>
@@ -396,18 +452,6 @@ export default function AuthScreen({ onAuth }) {
                 </div>
               </div>
             </div>
-            <div>
-              <div className="land-module-badge">🔧 AgriService</div>
-              <h3 className="land-module-h3">Fleet & equipment maintenance</h3>
-              <p className="land-module-desc">Keep your equipment running with complete service history, parts ordering, vendor tracking, invoicing, and cost analysis for your entire fleet.</p>
-              <ul className="land-module-features">
-                <li>Full service history per vehicle with cost tracking</li>
-                <li>Parts ordering with receive tracking and price lookup</li>
-                <li>Parts inventory with low-stock alerts</li>
-                <li>Customer invoicing for service work</li>
-                <li>Cost analysis by equipment, type, and year</li>
-              </ul>
-            </div>
           </div>
         </div>
 
@@ -418,10 +462,25 @@ export default function AuthScreen({ onAuth }) {
             <h2 className="land-section-h2">Pick what you need.<br/>Bundle and save.</h2>
             <p className="land-section-sub">Start with one module or go all-in. Every plan includes a 14-day free trial, offline sync, and multi-device access.</p>
             <div className="land-pricing-grid">
+              {/* AgriPlan */}
+              <div className="land-price-card">
+                <div className="land-price-icon">📋</div>
+                <div className="land-price-name">AgriPlan</div>
+                <div className="land-price-desc">Crop planning, APH history, and insurance unit &amp; acreage tracking by field.</div>
+                <div className="land-price-amount">$150<span>/yr</span></div>
+                <div className="land-price-save">&nbsp;</div>
+                <ul className="land-price-features">
+                  <li>Field-by-field crop plans</li>
+                  <li>APH production history</li>
+                  <li>Insurance units with acres</li>
+                  <li>Feeds AgriScale's yield reports</li>
+                </ul>
+                <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
+              </div>
               {/* FieldLog */}
               <div className="land-price-card">
                 <div className="land-price-icon">🌾</div>
-                <div class="land-price-name">AgriField</div>
+                <div className="land-price-name">AgriField</div>
                 <div className="land-price-desc">Field activity tracking, GPS boundaries, crop rotation, and harvest reports.</div>
                 <div className="land-price-amount">$150<span>/yr</span></div>
                 <div className="land-price-save">&nbsp;</div>
@@ -443,7 +502,7 @@ export default function AuthScreen({ onAuth }) {
                 <ul className="land-price-features">
                   <li>Unlimited bins &amp; fields</li>
                   <li>Live bin fill gauges</li>
-                  <li>Per-field yield tracking</li>
+                  <li>Insurance unit &amp; yield reports</li>
                   <li>Multi-device sync</li>
                 </ul>
                 <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
@@ -451,7 +510,7 @@ export default function AuthScreen({ onAuth }) {
               {/* ServiceLog */}
               <div className="land-price-card">
                 <div className="land-price-icon">🔧</div>
-                <div class="land-price-name">AgriService</div>
+                <div className="land-price-name">AgriService</div>
                 <div className="land-price-desc">Fleet maintenance, parts ordering, vendor tracking, invoicing, and cost analysis.</div>
                 <div className="land-price-amount">$150<span>/yr</span></div>
                 <div className="land-price-save">&nbsp;</div>
@@ -465,15 +524,15 @@ export default function AuthScreen({ onAuth }) {
               </div>
               {/* Bundle */}
               <div className="land-price-card bundle">
-                <div className="land-price-icon">🌾⚙️🔧</div>
+                <div className="land-price-icon">📋🌾⚙️🔧</div>
                 <div className="land-price-name">Full Bundle</div>
-                <div className="land-price-desc">All three modules. The complete picture of your farm operation — fields, harvest, and equipment.</div>
-                <div className="land-price-amount">$360<span>/yr</span></div>
+                <div className="land-price-desc">All four modules. The complete picture of your farm operation — planning, fields, harvest, and equipment.</div>
+                <div className="land-price-amount">$510<span>/yr</span></div>
                 <div className="land-price-save">↓ SAVE $90 vs. buying separately</div>
                 <ul className="land-price-features">
-                  <li>Everything in all 3 modules</li>
+                  <li>Everything in all 4 modules</li>
                   <li>Cross-module reporting</li>
-                  <li>AgriScale + AgriField sync</li>
+                  <li>AgriPlan + AgriScale + AgriField sync</li>
                   <li>Unlimited users</li>
                 </ul>
                 <button className="land-price-btn" onClick={()=>{setMode("signup");setShowLogin(true);window.scrollTo({top:0,behavior:"smooth"});}}>Start Free Trial</button>
