@@ -217,7 +217,9 @@ const grainFor = (name) => (grains||[]).find(g=>g.name===name) || FALLBACK_GRAIN
 const buOf = (load) => load.net / ((grainFor(load.grainName).bushel_lbs)||60);
 const grandTotalLbs = allLoads.reduce((s,l)=>s+l.net,0);
 const grandTotalBu = allLoads.reduce((s,l)=>s+buOf(l),0);
-const unitFieldCropRows = buildUnitFieldCropBreakdown(fields);
+// Rows with no insurance unit are dropped here — "Summary by Field" above
+// already covers plain field totals, so a unit-less row would just repeat it.
+const unitFieldCropRows = buildUnitFieldCropBreakdown(fields).filter(r=>r.unit!=="None");
 const binSummaryRows = buildBinSummary(fields, bins, grains);
 const reportDate = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
 const printTime = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
@@ -796,7 +798,9 @@ setEL(null);
 };
 
 const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
-const reportBreakdown = useMemo(()=>buildUnitFieldCropBreakdown(safeFields), [safeFields]);
+// Rows with no insurance unit are dropped here — "Summary by Field" above
+// already covers plain field totals, so a unit-less row would just repeat it.
+const reportBreakdown = useMemo(()=>buildUnitFieldCropBreakdown(safeFields).filter(r=>r.unit!=="None"), [safeFields]);
 const binSummary = useMemo(()=>buildBinSummary(safeFields, safeBins, safeGrains), [safeFields, safeBins, safeGrains]);
 const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
 const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
