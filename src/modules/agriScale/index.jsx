@@ -232,6 +232,12 @@ u.fields.sort((a,b)=>
 a.fieldName.localeCompare(b.fieldName, undefined,{numeric:true,sensitivity:"base"})
 || a.crop.localeCompare(b.crop)
 );
+// Per-crop subtotal within this unit — e.g. "Total Spring Wheat for Unit A
+// North", separate from "Total Barley for Unit A North", since a unit can
+// carry more than one crop across its fields.
+const cropMap = {};
+u.fields.forEach(f=>{ cropMap[f.crop] = (cropMap[f.crop]||0) + f.totBu; });
+u.crops = Object.entries(cropMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([crop,totBu])=>({crop,totBu}));
 });
 return Object.values(units).sort((a,b)=>a.unit.localeCompare(b.unit, undefined,{numeric:true,sensitivity:"base"}));
 }
@@ -436,6 +442,13 @@ return (
 ))}
 </tbody>
 </table>
+<div style={{marginTop:"8px",paddingTop:"6px",borderTop:"1px dashed #ccc"}}>
+{u.crops.map(c=>(
+<div key={c.crop} style={{fontSize:"11px",color:"#444",padding:"2px 0"}}>
+Total <strong>{c.crop}</strong> for {u.unit} = <span style={{fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a",fontWeight:700}}>{c.totBu.toFixed(0)} bu</span>
+</div>
+))}
+</div>
 </div>
 ))}
 
@@ -1484,6 +1497,13 @@ return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",font
 </div>
 </div>
 ))}
+<div style={{marginTop:"6px",paddingTop:"5px",borderTop:"1px dashed #ccc4b8"}}>
+{u.crops.map(c=>(
+<div key={c.crop} style={{fontSize:"9px",color:"#4a5568",padding:"1px 0"}}>
+Total <strong>{c.crop}</strong> for {u.unit} = <span style={{fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a",fontWeight:700}}>{c.totBu.toFixed(0)} bu</span>
+</div>
+))}
+</div>
 </div>
 ))}
 
