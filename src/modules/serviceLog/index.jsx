@@ -829,7 +829,7 @@ function CostView({D,custName}){
   const typeCosts={};recs.forEach(r=>{const t=r.type||"Other";typeCosts[t]=(typeCosts[t]||0)+(parseFloat(r.cost)||0);});
   const topTypes=Object.entries(typeCosts).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const maxT=topTypes[0]?.[1]||1;
-  const yearCosts={};recs.forEach(r=>{const y=(r.date||"").slice(0,4);if(y>="2010")yearCosts[y]=(yearCosts[y]||0)+(parseFloat(r.cost)||0);});
+  const yearCosts={};recs.forEach(r=>{const y=String(r.date||"").slice(0,4);if(y>="2010")yearCosts[y]=(yearCosts[y]||0)+(parseFloat(r.cost)||0);});
   const years=Object.entries(yearCosts).sort((a,b)=>a[0].localeCompare(b[0]));
   const maxY=Math.max(...years.map(y=>y[1]),1);
   return(<div>
