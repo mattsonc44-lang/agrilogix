@@ -1,0 +1,30 @@
+name: Nightly Firebase Backup
+
+on:
+  schedule:
+    # 08:00 UTC = 2:00 AM Central Daylight Time (adjust if you want a different local hour;
+    # note US clock changes will shift this by an hour twice a year since cron is UTC-fixed)
+    - cron: '0 8 * * *'
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab any time
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run backup script
+        env:
+          FIREBASE_DB_SECRET: ${{ secrets.FIREBASE_DB_SECRET }}
+          FIREBASE_DB_URL: https://agrilogix-1bd06-default-rtdb.firebaseio.com
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        run: node scripts/nightly-backup.mjs
