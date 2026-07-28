@@ -3797,6 +3797,9 @@ const flClearQ = ()=>{ try{ localStorage.removeItem(FL_QUEUE_KEY); }catch(e){} }
 const flLoadQ = ()=>{ try{ const r=localStorage.getItem(FL_QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
 
 const persist=useCallback(async(newFields,newActs)=>{
+// Safety guard: never write if we'd be wiping fields/activities that exist in current state
+if(fields.length > 0 && newFields.length === 0) { console.warn("FieldLog save blocked: would wipe fields"); return; }
+if(activities.length > 0 && newActs.length === 0) { console.warn("FieldLog save blocked: would wipe activities"); return; }
 setSync("saving");
 skipSSE.current=true;
 const fieldsObj = Object.fromEntries(newFields.map(f=>[f.id,f]));
@@ -3818,7 +3821,7 @@ setSync("error");
 }finally{
 setTimeout(()=>{ skipSSE.current=false; setSync("idle"); },1500);
 }
-},[token, BASE]);
+},[token, BASE, fields, activities]);
 
 // ── Chemical restriction writer ──────────────────────────────────────────────
 // Called after any spraying activity is saved — writes plantback data to a shared
