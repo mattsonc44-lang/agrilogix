@@ -673,9 +673,14 @@ return ()=>window.removeEventListener("online", retry);
 },[tenantId,token]);
 
 const save = useCallback(async (nf,nb,ng,nt)=>{
+const nextFields = nf||fields;
+const nextBins = nb||bins;
+// Safety guard: never write if we'd be wiping fields/bins that exist in current state
+if(fields.length > 0 && nextFields.length === 0) { console.warn("AgriScale save blocked: would wipe fields"); return; }
+if(bins.length > 0 && nextBins.length === 0) { console.warn("AgriScale save blocked: would wipe bins"); return; }
 const payload = {
-fields: Object.fromEntries((nf||fields).map(f=>[f.id,f])),
-bins: Object.fromEntries((nb||bins).map(b=>[b.id,b])),
+fields: Object.fromEntries(nextFields.map(f=>[f.id,f])),
+bins: Object.fromEntries(nextBins.map(b=>[b.id,b])),
 customGrains:Object.fromEntries((ng||grains).map((g,i)=>[i,g])),
 trucks: Object.fromEntries((nt||trucks).map((t,i)=>[i,t])),
 };
