@@ -93,11 +93,36 @@ export default function App() {
   },[session?.idToken,session?.localId]);
 
   // ── Onboarding wizard trigger ────────────────────────────────────
+  // Only auto-show the wizard for genuinely new/empty tenants. Tenants that
+  // predate this feature (or were created before `setup.completed` existed)
+  // would otherwise get the wizard on every load, and clicking through its
+  // steps PUTs local (empty) wizard state over real fields/crops/prices —
+  // see OnboardingWizard.jsx save guards for the other half of this fix.
   useEffect(()=>{
     if(!profile?.tenantId||!session?.idToken) return;
     if(profile.role!=="owner") return;
-    fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${profile.tenantId}/setup.json?auth=${session.idToken}`)
-      .then(r=>r.json()).then(d=>{ if(!d?.completed) setShowWizard(true); }).catch(()=>{});
+    const base = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${profile.tenantId}`;
+    fetch(`${base}/setup.json?auth=${session.idToken}`)
+      .then(r=>r.json())
+      .then(async d=>{
+        if(d?.completed) return;
+        const [fieldsRes, cropsRes] = await Promise.all([
+          fetch(`${base}/fields.json?shallow=true&auth=${session.idToken}`).then(r=>r.json()).catch(()=>null),
+          fetch(`${base}/agriPlan/crops.json?auth=${session.idToken}`).then(r=>r.json()).catch(()=>null),
+        ]);
+        const hasExistingData = !!fieldsRes || (Array.isArray(cropsRes) && cropsRes.length > 0);
+        if (hasExistingData) {
+          // Back-fill setup.completed so we don't re-run this check on every
+          // load for accounts that already have real data.
+          fetch(`${base}/setup.json?auth=${session.idToken}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ completed: true, completedAt: new Date().toISOString(), backfilled: true }),
+          }).catch(()=>{});
+          return;
+        }
+        setShowWizard(true);
+      }).catch(()=>{});
   },[profile?.tenantId,profile?.role,session?.idToken]);
 
   // ── Live tenant profile listener ─────────────────────────────────
