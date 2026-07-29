@@ -3521,6 +3521,10 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, 
       else if (m) matchTo = newFieldDrafts[String(m).slice(4)]?.common || "";
       return [i, u.fieldName || "", u.legal || "", u.crop || "", yearRange, u.aphYield ?? "", unitNumberFor(i), matchTo, latestAcres];
     });
+    // Sort by legal description (natural/numeric-aware, so "9-31N-5E" sorts before "16-31N-5E")
+    // so units on the same section land next to each other when reviewing in a spreadsheet.
+    // _unit stays intact as the real join key, so row order here has no effect on re-import.
+    rows.sort((a, b) => String(a[2]).localeCompare(String(b[2]), undefined, { numeric: true, sensitivity: "base" }));
     const csv = [headers, ...rows].map(r => r.map(csvEscape).join(",")).join("\n");
     downloadTextFile(`aph-field-mapping-${(parsed.insured || "import").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`, csv);
   };
