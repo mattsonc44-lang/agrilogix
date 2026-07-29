@@ -4,7 +4,11 @@
 //   2. Confirm that user exists in the Agri Logix user database
 //      (i.e. you actually set them up — not just any Firebase account)
 
-const FIREBASE_API_KEY  = process.env.FIREBASE_WEB_API_KEY;   // Firebase web API key
+// Reuses FIREBASE_API_KEY (already provisioned in Netlify and confirmed working —
+// it's the same var netlify.toml injects into the client bundle) instead of a
+// separate FIREBASE_WEB_API_KEY, which was never actually set and caused every
+// function behind checkAuth to reject valid tokens as "Unauthorized."
+const FIREBASE_API_KEY  = process.env.FIREBASE_API_KEY;   // Firebase web API key
 const AGRILOGIX_DB_URL  = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
 
 function deny(msg, status = 401) {
@@ -27,7 +31,7 @@ async function checkAuth(event) {
   if (!idToken) return deny("Unauthorized — empty token");
 
   if (!FIREBASE_API_KEY) {
-    console.error("FIREBASE_WEB_API_KEY not set — denying all requests");
+    console.error("FIREBASE_API_KEY not set — denying all requests");
     return deny("Auth service misconfigured", 503);
   }
 
