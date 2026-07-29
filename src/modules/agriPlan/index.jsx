@@ -3222,14 +3222,68 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
   );
 }
 
+// ── CSV helpers for the APH field-mapping export/re-import ────────────────────────────────
+// Crop-insurance units frequently don't line up 1:1 with how a farm actually names/splits its
+// fields (insurance groups by legal description, farmers think in terms of "the home quarter").
+// Instead of forcing every mismatch through the in-browser dropdown, ImportAPHModal can export
+// the parsed units to a CSV, let the user fix the mapping in a spreadsheet, and read it back.
+const csvEscape = (v) => {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+const csvParseLine = (line) => {
+  // Minimal RFC4180 field splitter — handles quoted fields with embedded commas/quotes.
+  const out = []; let cur = ""; let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; } }
+      else cur += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ",") { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+  }
+  out.push(cur);
+  return out;
+};
+const parseCSV = (text) => {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").filter(l => l.length > 0);
+  if (!lines.length) return [];
+  const headers = csvParseLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const cells = csvParseLine(line);
+    const row = {};
+    headers.forEach((h, i) => { row[h] = cells[i] ?? ""; });
+    return row;
+  });
+};
+const downloadTextFile = (filename, text, mime = "text/csv") => {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // ── APH Import Modal ──────────────────────────────────────────────────────────
-function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }) {
+function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, onCreateField, onUpdateField }) {
   const [stage, setStage] = useState("upload"); // upload | converting | parsing | review | saving | done
   const [error, setError] = useState("");
   const [parsed, setParsed] = useState(null);   // merged Claude output across all batches
-  const [matches, setMatches] = useState({});   // unitIndex → fieldId
+  const [matches, setMatches] = useState({});   // unitIndex → fieldId, or "NEW:<groupKey>" for a pending new field
   const [pageProgress, setPageProgress] = useState({ done: 0, total: 0 });
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  // Per-unit-index override of the crop insurance unit number, filled in from a mapping CSV's
+  // "Insurance Unit" column (editable there). Falls back to whatever Claude read off the PDF
+  // itself (unit.unitNumber) when there's no override — see unitNumberFor() below.
+  const [unitOverrides, setUnitOverrides] = useState({});
+  // Drafts for fields the user chose to create fresh from this PDF instead of matching to an
+  // existing one — keyed by groupKeyOf(unit.fieldName). Nothing is written to Firebase until
+  // Import is clicked (matches the rest of this modal — Cancel never leaves a stray field behind).
+  const [newFieldDrafts, setNewFieldDrafts] = useState({}); // groupKey → {common, acres, legal}
 
   const MAX_PAGES = 60;           // generous hard cap — batching means page count itself isn't the constraint
   const MAX_BATCH_BYTES = 1.6e6;  // small enough that each batch also finishes well inside the function timeout, not just the payload size limit
@@ -3445,9 +3499,161 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }
 
   const matchedCount = Object.values(matches).filter(Boolean).length;
 
+  // The crop insurance unit number for a parsed row — a mapping CSV's "Insurance Unit" column
+  // (if edited) wins, otherwise whatever Claude read directly off the PDF for that unit.
+  const unitNumberFor = (idx) => (unitOverrides[idx] ?? parsed?.units?.[idx]?.unitNumber ?? "").trim();
+
+  // ── Export the parsed units to CSV so the field mapping can be fixed in a spreadsheet ────
+  // Only the mapping (and insurance unit number) is editable here — the yield/production
+  // history from the PDF is left alone and re-attached by _unit index on import, so nothing
+  // about the parsed data itself can drift out of sync.
+  const exportMappingCSV = () => {
+    const headers = ["_unit", "APH Field Name", "Legal", "Crop", "Years", "APH Yield", "Insurance Unit", "Match To", "Acres"];
+    const rows = (parsed.units || []).map((u, i) => {
+      const ys = u.years || [];
+      const yearRange = ys.length ? `${Math.min(...ys.map(y => y.year))}-${Math.max(...ys.map(y => y.year))}` : "";
+      const latestAcres = [...ys].sort((a, b) => b.year - a.year)[0]?.acres ?? "";
+      // Pre-fill Match To with whatever's already matched in-browser (existing field name, or
+      // the new-field draft name), so exporting after some manual matching doesn't lose it.
+      const m = matches[i];
+      let matchTo = "";
+      if (m && !String(m).startsWith("NEW:")) matchTo = fields.find(f => f.id === m)?.common || "";
+      else if (m) matchTo = newFieldDrafts[String(m).slice(4)]?.common || "";
+      return [i, u.fieldName || "", u.legal || "", u.crop || "", yearRange, u.aphYield ?? "", unitNumberFor(i), matchTo, latestAcres];
+    });
+    const csv = [headers, ...rows].map(r => r.map(csvEscape).join(",")).join("\n");
+    downloadTextFile(`aph-field-mapping-${(parsed.insured || "import").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`, csv);
+  };
+
+  // ── Read a mapped CSV back and resolve "Match To" into matches/newFieldDrafts ───────────
+  // Existing-field matches are exact (case-insensitive) name lookups against `fields`. Any
+  // other text creates a new field — grouped by the *target name itself* (not the original
+  // PDF grouping), since the whole point of the spreadsheet round-trip is letting the user
+  // split or merge units differently than the insurance company grouped them.
+  const importMappingCSV = async (file) => {
+    setError("");
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      const nextMatches = {};
+      const nextDrafts = {};
+      const nextOverrides = {};
+      let unresolved = 0;
+      rows.forEach(row => {
+        const idx = parseInt(row["_unit"], 10);
+        if (Number.isNaN(idx) || !parsed.units[idx]) return;
+        if ("Insurance Unit" in row) nextOverrides[idx] = row["Insurance Unit"] || "";
+        const target = (row["Match To"] || "").trim();
+        if (!target) { nextMatches[idx] = ""; return; }
+        const existing = fields.find(f => (f.common || "").toLowerCase() === target.toLowerCase());
+        if (existing) {
+          nextMatches[idx] = existing.id;
+        } else {
+          const draftKey = target.toLowerCase();
+          nextMatches[idx] = `NEW:${draftKey}`;
+          nextDrafts[draftKey] = nextDrafts[draftKey] || {
+            common: target,
+            acres: row["Acres"] || "",
+            legal: parsed.units[idx].legal || "",
+          };
+          unresolved++;
+        }
+      });
+      setMatches(m => ({ ...m, ...nextMatches }));
+      setNewFieldDrafts(d => ({ ...d, ...nextDrafts }));
+      setUnitOverrides(o => ({ ...o, ...nextOverrides }));
+      if (unresolved > 0) {
+        setError(`Mapped CSV loaded — ${unresolved} row${unresolved !== 1 ? "s" : ""} will create new field${unresolved !== 1 ? "s" : ""}. Review below before importing.`);
+      }
+    } catch (err) {
+      setError("Could not read that CSV — " + err.message);
+    }
+  };
+
   const handleSave = async () => {
     setStage("saving");
     try {
+      // Materialize any "create new field" selections into real fields first. This is the
+      // only place this modal actually creates fields — everything up to now was just local
+      // draft state, so Cancel never leaves an orphan field behind. Reuses AgriPlan's own
+      // addField (passed in as onCreateField) so new fields sync to FieldLog exactly the way
+      // manually-added fields do.
+      const newGroupKeys = [...new Set(
+        Object.values(matches).filter(v => typeof v === "string" && v.startsWith("NEW:")).map(v => v.slice(4))
+      )];
+      const createdByGroup = {};
+      for (const key of newGroupKeys) {
+        const draft = newFieldDrafts[key] || {};
+        if (!draft.common || !draft.common.trim()) {
+          throw new Error(`Enter a name for the new field (currently "${key}")`);
+        }
+        // Which units actually resolved to this draft — keyed by the match value itself (not
+        // groupKeyOf), since a mapping CSV can group units by whatever name the user typed,
+        // independent of how the PDF originally grouped them.
+        const unitsInGroup = (parsed.units || [])
+          .map((u, idx) => ({ u, idx }))
+          .filter(({ idx }) => matches[idx] === `NEW:${key}`);
+        const groupCrops = [...new Set(unitsInGroup.map(({ u }) => u.crop).filter(Boolean))];
+        // Build this field's insuranceUnits from whatever unit number(s) the PDF (or a mapping
+        // CSV override) carries for its rows — a field can end up with more than one insurance
+        // unit if, say, its Winter Wheat and Spring Wheat units were merged into it here.
+        const insuranceUnitsByName = {};
+        unitsInGroup.forEach(({ u, idx }) => {
+          const num = unitNumberFor(idx);
+          if (!num) return;
+          const ys = [...(u.years || [])].sort((a, b) => b.year - a.year);
+          insuranceUnitsByName[num] = { name: num, acres: ys[0]?.acres ?? 0 };
+        });
+        createdByGroup[key] = onCreateField({
+          common: draft.common.trim(), farm: "", entity: "",
+          legal: draft.legal || "", fieldNum: "", acres: +draft.acres || 0, crop: "",
+          eligibleCrops: groupCrops,
+          income: { bushelGuarantee:0, priceGuarantee:0, bushelProjection:0, currentPrice:0 },
+          expenseOverrides: {},
+          landlord: "", sharePercent: 100,
+          insuranceType: "APH", coverageLevel: 80, insuredAcres: +draft.acres || 0,
+          insuranceUnits: Object.values(insuranceUnitsByName),
+        });
+      }
+      // Resolve every "NEW:<key>" match to the real field id just created, and keep a combined
+      // fields list (prop + freshly created) so the lookups below find them regardless.
+      const resolvedMatches = {};
+      Object.entries(matches).forEach(([i, v]) => {
+        resolvedMatches[i] = (typeof v === "string" && v.startsWith("NEW:"))
+          ? (createdByGroup[v.slice(4)]?.id || "")
+          : v;
+      });
+      const allFields = [...fields, ...Object.values(createdByGroup)];
+
+      // Merge insurance unit numbers into any EXISTING matched field too (new fields already
+      // got theirs above) — additive only, via the same updateField path every other AgriPlan
+      // edit goes through (local state + the app's normal autosave), never a raw Firebase PUT
+      // from in here. Never removes or overwrites a unit already on the field.
+      if (onUpdateField) {
+        const createdIds = new Set(Object.values(createdByGroup).map(f => f.id));
+        const addsByField = {}; // fieldId -> { unitName -> {name, acres} }
+        (parsed.units || []).forEach((u, idx) => {
+          const fieldId = resolvedMatches[idx];
+          if (!fieldId || createdIds.has(fieldId)) return;
+          const num = unitNumberFor(idx);
+          if (!num) return;
+          const field = fields.find(f => f.id === fieldId);
+          if (!field) return;
+          const already = (field.insuranceUnits || []).some(
+            eu => (typeof eu === "string" ? eu : eu?.name) === num
+          );
+          if (already) return;
+          const ys = [...(u.years || [])].sort((a, b) => b.year - a.year);
+          addsByField[fieldId] = addsByField[fieldId] || {};
+          addsByField[fieldId][num] = { name: num, acres: ys[0]?.acres ?? 0 };
+        });
+        Object.entries(addsByField).forEach(([fieldId, adds]) => {
+          const field = fields.find(f => f.id === fieldId);
+          if (!field) return;
+          onUpdateField(fieldId, { insuranceUnits: [...(field.insuranceUnits || []), ...Object.values(adds)] });
+        });
+      }
+
       // Merge into whatever APH data already exists rather than replacing it outright —
       // aphData.json is a single node, and a PUT overwrites the whole thing. Importing a
       // second PDF covering different fields must not erase the first import's data, so we
@@ -3459,8 +3665,8 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }
       // Build aphData: { [fieldCommon]: { [crop]: { years: {[year]: {acres, yield, production}}, aphYield, aphYears } } }
       const aphData = { ...(existingAphData || {}) };
       (parsed.units || []).forEach((unit, i) => {
-        const fieldId = matches[i]; if (!fieldId) return;
-        const field = fields.find(f => f.id === fieldId); if (!field) return;
+        const fieldId = resolvedMatches[i]; if (!fieldId) return;
+        const field = allFields.find(f => f.id === fieldId); if (!field) return;
         const key = field.common;
         const crop = unit.crop;
         aphData[key] = { ...(aphData[key] || {}) };
@@ -3489,7 +3695,7 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }
       // Extract price elections and save to cropPrices (insurance price only — not projected sell)
       const priceUpdates = {};
       (parsed.units || []).forEach((unit, i) => {
-        const fieldId = matches[i]; if(!fieldId) return;
+        const fieldId = resolvedMatches[i]; if(!fieldId) return;
         const crop = unit.crop;
         if(crop && unit.priceElection > 0) {
           if(!priceUpdates[crop] || unit.priceElection > priceUpdates[crop].priceGuar) {
@@ -3516,7 +3722,7 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }
       // (next year's APH PDF, a corrected re-import, etc.) auto-fill without re-matching.
       const fieldMapUpdates = {};
       (parsed.units || []).forEach((unit, i) => {
-        const fieldId = matches[i]; if (!fieldId) return;
+        const fieldId = resolvedMatches[i]; if (!fieldId) return;
         const key = groupKeyOf(unit.fieldName);
         if (key) fieldMapUpdates[key] = fieldId;
       });
@@ -3591,10 +3797,23 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }
 
         {stage === "review" && parsed && (
           <>
-            <div style={{ background:"#f0f8e8", border:"1px solid #a8d880", borderRadius:6, padding:"8px 14px", marginBottom:16, fontSize:12, color:"#2a6010" }}>
+            <div style={{ background:"#f0f8e8", border:"1px solid #a8d880", borderRadius:6, padding:"8px 14px", marginBottom:10, fontSize:12, color:"#2a6010" }}>
               Found <strong>{parsed.units?.length}</strong> field unit{parsed.units?.length !== 1 ? "s" : ""} for <strong>{parsed.insured || "Unknown"}</strong>
               {parsed.county ? ` — ${parsed.county}` : ""}.
               {" "}<strong>{matchedCount}</strong> matched to AgriPlan fields.
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:16 }}>
+              <span style={{ fontSize:11, color:"#7a9260" }}>
+                Insurance units often don't line up with your field names — match below, or fix it in a spreadsheet:
+              </span>
+              <button onClick={exportMappingCSV} style={{ background:"#f8fbf5", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 10px", fontSize:11, color:"#3a6020", cursor:"pointer", whiteSpace:"nowrap" }}>
+                ⬇ Export mapping CSV
+              </button>
+              <label style={{ background:"#f8fbf5", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 10px", fontSize:11, color:"#3a6020", cursor:"pointer", whiteSpace:"nowrap" }}>
+                ⬆ Import mapped CSV
+                <input type="file" accept=".csv,text/csv" style={{ display:"none" }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importMappingCSV(f); e.target.value = ""; }} />
+              </label>
             </div>
             <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:16 }}>
               <thead>
@@ -3621,29 +3840,65 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported }
                       {unit.aphYield ? `${unit.aphYield} bu/ac` : "—"}
                     </td>
                     <td style={{ padding:"6px 10px" }}>
-                      <select
-                        value={matches[i] || ""}
-                        onChange={e => {
-                          const val = e.target.value;
-                          const key = groupKeyOf(unit.fieldName);
-                          // Applying a match here also applies it to every other row sharing
-                          // this same farm/field name — no need to re-pick it for each crop.
-                          setMatches(m => {
-                            const next = { ...m };
-                            (parsed.units || []).forEach((u, j) => { if (groupKeyOf(u.fieldName) === key) next[j] = val; });
-                            return next;
-                          });
-                        }}
-                        style={{ width:"100%", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 6px", fontSize:11, background:"#f8fbf5", color:"#1a3010" }}>
-                        <option value="">— skip —</option>
-                        {[...fields].sort((a,b)=>(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
-                      </select>
                       {(() => {
-                        const key = groupKeyOf(unit.fieldName);
-                        const siblingCount = (parsed.units || []).filter(u => groupKeyOf(u.fieldName) === key).length;
-                        return siblingCount > 1
-                          ? <div style={{ fontSize:9, color:"#8a9a70", marginTop:2 }}>applies to {siblingCount} rows for this field</div>
-                          : null;
+                        const groupKey = groupKeyOf(unit.fieldName);
+                        const m = matches[i] || "";
+                        // "NEW:<key>" can come from either the in-browser dropdown (keyed by the
+                        // PDF's own field-name grouping) or an imported mapping CSV (keyed by
+                        // whatever name the user typed in "Match To") — handle both the same way.
+                        const isNew = typeof m === "string" && m.startsWith("NEW:");
+                        const newKey = isNew ? m.slice(4) : null;
+                        const draft = isNew ? (newFieldDrafts[newKey] || { common: "", acres: "" }) : null;
+                        const updDraft = (k, v) => setNewFieldDrafts(d => ({ ...d, [newKey]: { ...(d[newKey]||{}), [k]: v } }));
+                        const siblingCount = (parsed.units || []).filter(u => groupKeyOf(u.fieldName) === groupKey).length;
+                        return (
+                          <>
+                            <select
+                              value={isNew ? `NEW:${newKey}` : m}
+                              onChange={e => {
+                                const val = e.target.value;
+                                // Applying a match here also applies it to every other row sharing
+                                // this same farm/field name — no need to re-pick it for each crop.
+                                setMatches(mm => {
+                                  const next = { ...mm };
+                                  (parsed.units || []).forEach((u, j) => { if (groupKeyOf(u.fieldName) === groupKey) next[j] = val; });
+                                  return next;
+                                });
+                                if (val === `NEW:${groupKey}`) {
+                                  // Seed the draft from the PDF's own data the first time this
+                                  // group is set to "create new" — editable below.
+                                  setNewFieldDrafts(d => (d[groupKey] ? d : {
+                                    ...d,
+                                    [groupKey]: {
+                                      common: (unit.fieldName || groupKey).split("|")[0].trim(),
+                                      acres: (() => {
+                                        const ys = [...(unit.years || [])].sort((a, b) => b.year - a.year);
+                                        return ys[0]?.acres ?? "";
+                                      })(),
+                                      legal: unit.legal || "",
+                                    },
+                                  }));
+                                }
+                              }}
+                              style={{ width:"100%", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 6px", fontSize:11, background:"#f8fbf5", color:"#1a3010" }}>
+                              <option value="">— skip —</option>
+                              {[...fields].sort((a,b)=>(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
+                              <option value={`NEW:${groupKey}`}>+ Create new field…</option>
+                              {isNew && newKey !== groupKey && <option value={`NEW:${newKey}`}>🆕 {draft?.common || newKey} (from mapping CSV)</option>}
+                            </select>
+                            {siblingCount > 1 && !isNew && (
+                              <div style={{ fontSize:9, color:"#8a9a70", marginTop:2 }}>applies to {siblingCount} rows for this field</div>
+                            )}
+                            {isNew && (
+                              <div style={{ marginTop:6, padding:8, background:"#fffbe8", border:"1px solid #e0d090", borderRadius:4, display:"flex", flexDirection:"column", gap:4 }}>
+                                <input value={draft.common} onChange={e => updDraft("common", e.target.value)}
+                                  placeholder="New field name" style={{ border:"1px solid #d8c880", borderRadius:3, padding:"3px 6px", fontSize:11 }} />
+                                <input value={draft.acres} onChange={e => updDraft("acres", e.target.value)} type="number"
+                                  placeholder="Acres" style={{ border:"1px solid #d8c880", borderRadius:3, padding:"3px 6px", fontSize:11 }} />
+                              </div>
+                            )}
+                          </>
+                        );
                       })()}
                     </td>
                   </tr>
@@ -4165,6 +4420,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   const addField=useCallback(nf=>{
     const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};
     setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");
+    // field.id is assigned synchronously above (before the async FieldLog sync below fires),
+    // so callers — e.g. ImportAPHModal creating fields straight from a parsed APH PDF — can
+    // use the returned field's id immediately without waiting on the state update.
     // ── Sync to FieldLog — update existing (keep boundary) or add to Default Farm ──
     if(tenantId&&token){(async()=>{
       const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
@@ -4205,6 +4463,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         }
       }catch(e){console.warn("AgriPlan→AgriField sync failed:",e.message);}
     })();}
+    return field;
   },[tenantId,token]);
   const selectField=f=>{setSelectedField(typeof f==="object"?f:fields.find(x=>x.id===f)||null);setMainView("detail");setAddMode(false);};
 
@@ -4230,7 +4489,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       expenseDefaults={expenseDefaults} cropExpDefaults={cropExpDefaults}
       onSave={(base,crops)=>{ setExpenseDefaults(base); setCropExpDefaults(crops); }}
       onClose={()=>setShowRatesEditor(false)}/>}
-    {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} farmId={farmId} fields={fields} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
+    {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} farmId={farmId} fields={fields} onCreateField={addField} onUpdateField={updateField} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
     {showImportWorkbook&&<ImportWorkbookModal tenantId={tenantId} token={token} onClose={()=>setShowImportWorkbook(false)}/>}
     {/* Header */}
     <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
