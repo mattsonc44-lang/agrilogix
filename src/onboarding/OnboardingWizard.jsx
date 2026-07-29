@@ -358,41 +358,55 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
   const atLast = step === STEPS.length - 1;
 
   // ── Save current step data to Firebase ───────────────────────────────────────
+  // Guard: every write here only fires if the wizard actually collected something
+  // this step. Local wizard state always starts empty, so an unguarded PUT would
+  // silently wipe real tenant data (fields/crops/prices) for any account that
+  // reaches this wizard with existing data already in Firebase — same failure
+  // mode as the FieldLog persist() data-loss bug. App.jsx also gates who ever
+  // sees the wizard, but this guard is the last line of defense.
   const saveStep = async (stepIdx) => {
     setSaving(true); setErr("");
     try {
       if(stepIdx === 0) {
-        // Save operation name to tenant profile
-        await fb(`tenants/${tenantId}/profile/name`, token, "PUT", tenantName);
+        // Save operation name to tenant profile — skip if left blank so we
+        // never overwrite a real business name with an empty string.
+        if(tenantName.trim()) {
+          await fb(`tenants/${tenantId}/profile/name`, token, "PUT", tenantName.trim());
+        }
       } else if(stepIdx === 1) {
-        // Save crop list
-        await fb(`tenants/${tenantId}/agriPlan/crops`, token, "PUT", crops);
+        // Save crop list — skip if nothing selected.
+        if(crops.length > 0) {
+          await fb(`tenants/${tenantId}/agriPlan/crops`, token, "PUT", crops);
+        }
       } else if(stepIdx === 2) {
-        // Save prices as array (avoids Firebase key restrictions)
+        // Save prices as array (avoids Firebase key restrictions) — skip if empty.
         const arr = Object.entries(prices).map(([crop,v])=>({crop,...v}));
-        await fb(`tenants/${tenantId}/agriPlan/cropPrices`, token, "PUT", arr);
+        if(arr.length > 0) {
+          await fb(`tenants/${tenantId}/agriPlan/cropPrices`, token, "PUT", arr);
+        }
       } else if(stepIdx === 3) {
-        // Save fields to canonical store
-        const obj = {};
-        fields.forEach((f,i) => { obj[i] = f; });
-        await fb(`tenants/${tenantId}/fields`, token, "PUT", obj);
-        // Also sync to AgriPlan for current year
-        const yr = new Date().getFullYear();
-        const apFields = {};
-        fields.forEach((f,i) => {
-          apFields[i] = {
-            id: f.id, common: f.name, farm: f.farm||"", entity: f.entity||"",
-            legal: f.legal||"", fieldNum: "", acres: f.acres||0, crop: "",
-            eligibleCrops: crops.length>0?[...crops]:[],
-            income:{bushelGuarantee:0,priceGuarantee:0,bushelProjection:0,currentPrice:0},
-            expenseOverrides:{},
-            landlord: f.landlord||"", sharePercent: f.sharePercent||100,
-            insuranceType: f.insuranceType||"APH",
-            coverageLevel: f.coverageLevel||80,
-            insuredAcres: f.insuredAcres||0,
-          };
-        });
-        if(fields.length>0) {
+        // Save fields to canonical store — skip if none added, so we never
+        // PUT an empty object over a tenant's real field list.
+        if(fields.length > 0) {
+          const obj = {};
+          fields.forEach((f,i) => { obj[i] = f; });
+          await fb(`tenants/${tenantId}/fields`, token, "PUT", obj);
+          // Also sync to AgriPlan for current year
+          const yr = new Date().getFullYear();
+          const apFields = {};
+          fields.forEach((f,i) => {
+            apFields[i] = {
+              id: f.id, common: f.name, farm: f.farm||"", entity: f.entity||"",
+              legal: f.legal||"", fieldNum: "", acres: f.acres||0, crop: "",
+              eligibleCrops: crops.length>0?[...crops]:[],
+              income:{bushelGuarantee:0,priceGuarantee:0,bushelProjection:0,currentPrice:0},
+              expenseOverrides:{},
+              landlord: f.landlord||"", sharePercent: f.sharePercent||100,
+              insuranceType: f.insuranceType||"APH",
+              coverageLevel: f.coverageLevel||80,
+              insuredAcres: f.insuredAcres||0,
+            };
+          });
           await fb(`tenants/${tenantId}/agriPlan/fields/${yr}`, token, "PUT", apFields);
         }
       } else if(stepIdx === 4) {
