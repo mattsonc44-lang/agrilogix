@@ -4065,8 +4065,8 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 // single-tenant customization: `if (isFlatAcreTenant(tenantId)) { ...custom... } else { ...regular... }`.
 // FLAT_ACRE_TENANT_ID must be the real Firebase tenantId for that tenant —
 // find it in the browser console while logged into that account:
-// JSON.parse(localStorage.getItem("al_session")).tenantId
-const FLAT_ACRE_TENANT_ID = "REPLACE_WITH_REAL_TENANT_ID";
+// fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/users/${JSON.parse(localStorage.getItem("al_session")).localId}.json?auth=${JSON.parse(localStorage.getItem("al_session")).idToken}`).then(r=>r.json()).then(d=>console.log("tenantId:", d.tenantId))
+const FLAT_ACRE_TENANT_ID = "Kya4wOKb5naH6ngRwoaKNuntJdw2_org";
 const isFlatAcreTenant = (tenantId) => !!tenantId && tenantId === FLAT_ACRE_TENANT_ID;
 
 // ── One-time Flat Acre Farms / Via Terra workbook import ───────────────────
