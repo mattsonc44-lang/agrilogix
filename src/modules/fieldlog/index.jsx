@@ -244,9 +244,13 @@ border:"#D8CEBC",borderHi:"#C4A468",
 gold:"#C07010",goldSoft:"#D48820",
 text:"#1E1408",muted:"#7A6645",faint:"#B8A880",
 green:"#2A5E2A",blue:"#1E5078",danger:"#841A18",
+// Dark page treatment — matches AgriScale's badge-derived palette so the
+// two modules feel like one brand.
+pageGradient:"linear-gradient(160deg, #182420 0%, #101815 55%, #0B120F 100%)",
+logoGreen:"#1F3B22",logoGreenSoft:"#4FA95C",logoGold:"#C9A227",
 };
 const S={
-app: {fontFamily:"'Barlow',sans-serif",background:T.bg,minHeight:"100vh",color:T.text},
+app: {fontFamily:"'Barlow',sans-serif",background:T.pageGradient,minHeight:"100vh",color:T.text,position:"relative",overflow:"hidden"},
 header:{background:T.panel,borderBottom:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",alignItems:"center",gap:"14px",position:"sticky",top:0,zIndex:50},
 content:{padding:"20px",maxWidth:"1100px",margin:"0 auto"},
 card: {background:T.card,border:`1px solid ${T.border}`,borderRadius:"10px",padding:"16px",marginBottom:"12px"},
@@ -4065,8 +4069,10 @@ if(loading) return(
 
 return(
 <div style={S.app}>
+<div aria-hidden="true" style={{position:"absolute",right:"-100px",bottom:"-100px",width:"480px",height:"480px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {/* Header */}
-<div style={S.header}>
+<div style={{...S.header,position:"sticky",top:0}}>
+<div style={{position:"absolute",top:0,left:0,right:0,height:"4px",background:`linear-gradient(90deg, ${T.logoGreenSoft}, ${T.logoGold})`}}/>
 <div style={{width:"36px",height:"36px",background:T.gold,borderRadius:"8px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",flexShrink:0}}>🌾</div>
 <div>
 <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:"20px",color:T.gold,margin:0}}>FieldLog</h1>
