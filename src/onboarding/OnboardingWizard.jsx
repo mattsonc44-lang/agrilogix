@@ -372,6 +372,14 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
         // never overwrite a real business name with an empty string.
         if(tenantName.trim()) {
           await fb(`tenants/${tenantId}/profile/name`, token, "PUT", tenantName.trim());
+          // Seed the default farm's name from the same input, once, so it
+          // reads correctly from day one (e.g. "Mattson Bros", "Flat Acre")
+          // without anyone having to rename it by hand afterward. This is a
+          // one-time write at setup, not an ongoing sync — later renames via
+          // the farm-edit pencil are never overwritten.
+          await fb(`tenants/${tenantId}/farms/default/profile`, token, "PUT", {
+            id: "default", name: tenantName.trim(), color: "#4A7535",
+          });
         }
       } else if(stepIdx === 1) {
         // Save crop list — skip if nothing selected.
@@ -424,12 +432,12 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
   const next = async () => {
     await saveStep(step);
     if(err) return;
-    if(atLast) { onComplete(); return; }
+    if(atLast) { onComplete(tenantName.trim()||null); return; }
     setStep(s => s+1);
   };
 
   const skip = async () => {
-    if(atLast) { onComplete(); return; }
+    if(atLast) { onComplete(tenantName.trim()||null); return; }
     setStep(s => s+1);
   };
 
