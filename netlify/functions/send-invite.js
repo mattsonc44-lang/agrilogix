@@ -6,11 +6,19 @@
 //   SMTP_PASSWORD = (already set in Netlify)
 
 const nodemailer = require("nodemailer");
+const { checkAuth } = require("./auth-check");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
+
+  // Require a real, registered Agri Logix login — without this, this endpoint
+  // is an open mail relay: anyone on the internet could POST an arbitrary
+  // toEmail/inviteUrl and have a legitimate-looking branded email sent
+  // through Chris's own SMTP account (spam/phishing risk).
+  const auth = await checkAuth(event);
+  if (auth.error) return auth.error;
 
   let body;
   try { body = JSON.parse(event.body); }
