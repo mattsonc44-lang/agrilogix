@@ -3,7 +3,12 @@ import { T, S, mkBtn } from "./core/theme.js";
 import { MODULES, FB_CONFIGURED, ROLES } from "./core/config.js";
 import { dbRead, dbWrite, dbListen } from "./core/firebase.js";
 import { authRefreshToken } from "./core/firebase.js";
+import { installAuthGuard, onSessionRefreshed } from "./core/authGuard.js";
 import { obj2arr, genId } from "./core/helpers.js";
+
+// Patches window.fetch once, at module load, so it's in place before any component gets a
+// chance to make its first Firebase call — see core/authGuard.js for why this exists.
+installAuthGuard();
 import AuthScreen  from "./auth/AuthScreen.jsx";
 import TermsModal from "./onboarding/TermsModal.jsx";
 import OnboardingWizard from "./onboarding/OnboardingWizard.jsx";
@@ -72,6 +77,11 @@ export default function App() {
   }, []);
 
   // ── Token refresh ─────────────────────────────────────────────────
+  // Preemptive — fires ~5 min before expiry. This is a best-effort backstop, not the only
+  // thing keeping the session alive: authGuard.js also refreshes reactively (on the first 401
+  // any Firebase write hits), which is what actually saves you if this timer gets throttled by
+  // a backgrounded tab and misses its window. Subscribe to that guard below so a reactive
+  // refresh updates this component's state too, not just localStorage.
   useEffect(() => {
     if (!session?.refreshToken) return;
     const ms = ((parseInt(session.expiresIn)||3600) - 300) * 1000;
@@ -84,6 +94,9 @@ export default function App() {
     }, Math.max(ms, 30000));
     return () => clearTimeout(refreshTimer.current);
   }, [session]);
+
+  // ── Reactive refresh sync — see core/authGuard.js ──────────────────
+  useEffect(() => onSessionRefreshed(updated => setSession(updated)), []);
 
   // ── Terms acceptance check — fires for ALL users on every login ─────────────
   useEffect(()=>{
