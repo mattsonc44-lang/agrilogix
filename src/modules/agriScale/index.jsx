@@ -69,6 +69,7 @@ const CSS = `
 // gets a dark, high-contrast "instrument" treatment instead of a pale box.
 const AS = {
   page:     "#F4F2EC",
+  pageGradient: "linear-gradient(160deg, #F8F5EC 0%, #F3EEDD 55%, #EFE6CB 100%)",
   card:     "#FFFFFF",
   cardAlt:  "#F7F6F1",
   border:   "#E4E1D6",
@@ -84,6 +85,12 @@ const AS = {
   readout:      "#0F1512",
   readoutMuted: "#7FA88F",
   readoutText:  "#E8F5EE",
+  // Pulled from the Agri Logix badge mark (public/icons) — used sparingly
+  // as brand accents (thin bars, underlines) rather than large fills.
+  logoGreen:     "#1F3B22",
+  logoGreenSoft: "#4FA95C",
+  logoGold:      "#C9A227",
+  logoGoldSoft:  "#E4C468",
 };
 
 // ── BinGauge SVG (matches original exactly) ───────────────────────
@@ -1170,10 +1177,12 @@ if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'I
 return (
 <>
 <style>{CSS}</style>
-<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.page,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace"}}>
-<div style={{width:"100%",maxWidth:"420px"}}>
+<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.pageGradient,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace",position:"relative",overflow:"hidden"}}>
+<div aria-hidden="true" style={{position:"absolute",right:"-90px",bottom:"-90px",width:"420px",height:"420px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
+<div style={{width:"100%",maxWidth:"420px",position:"relative"}}>
 
 {/* Header */}
+<div style={{height:"4px",borderRadius:"4px",background:`linear-gradient(90deg, ${AS.logoGreen}, ${AS.logoGold})`,marginBottom:"12px"}}/>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}}>
 <div>
 <div style={{fontSize:"18px",fontWeight:700,color:AS.text,letterSpacing:"0.01em"}}>AgriScale</div>
