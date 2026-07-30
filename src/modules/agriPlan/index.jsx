@@ -948,7 +948,7 @@ function cropColor(crop) { return CROP_COLORS[crop] || "#aabbaa"; }
 // ─── HISTORY VIEW ─────────────────────────────────────────────────────────────
 const HIST_YEARS = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
 
-function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHistory=null }) {
+function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHistory=null, onDeleteAphCrop=null }) {
   const [year, setYear] = useState("2026");
   const [search, setSearch] = useState("");
   const [filterViol, setFilterViol] = useState(false);
@@ -1144,7 +1144,21 @@ function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHist
                     </td>
                     <td style={{padding:"5px 10px",color:"#8a9a70",fontSize:10,borderBottom:"1px solid #e0eccc"}}>{d.fieldNum||"—"}</td>
                     <td style={{padding:"5px 10px",color:"#527a38",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #e0eccc"}}>{d.acres.toFixed(0)}</td>
-                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={crop}/></td>
+                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:5}}>
+                        <CropBadge c={crop}/>
+                        {crop&&onDeleteAphCrop&&aphData?.[d.common]?.[crop]&&(
+                          <button
+                            title={`Remove "${crop}" from ${d.common}'s imported APH history — this cannot be undone`}
+                            onClick={()=>{
+                              if(window.confirm(`Remove "${crop}" from ${d.common}'s imported APH history? This deletes it for every year, not just ${year}. Use this if a crop got attributed to the wrong field during import.`)){
+                                onDeleteAphCrop(d.common,crop);
+                              }
+                            }}
+                            style={{background:"none",border:"none",color:"#c04040",cursor:"pointer",fontSize:11,padding:"0 2px",opacity:0.6}}>✕</button>
+                        )}
+                      </div>
+                    </td>
                     <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={prev1}/></td>
                     <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={prev2}/></td>
                     <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={prev3}/></td>
@@ -3586,10 +3600,28 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, 
         Object.values(matches).filter(v => typeof v === "string" && v.startsWith("NEW:")).map(v => v.slice(4))
       )];
       const createdByGroup = {};
+      const actuallyCreatedIds = new Set(); // only fields genuinely created here — not redirected below
       for (const key of newGroupKeys) {
         const draft = newFieldDrafts[key] || {};
         if (!draft.common || !draft.common.trim()) {
           throw new Error(`Enter a name for the new field (currently "${key}")`);
+        }
+        const trimmedName = draft.common.trim();
+        // A repeat import (or just picking "+ Create new field..." out of habit instead of
+        // scrolling to find it in the dropdown) can easily end up naming a "new" field the same
+        // as one that already exists. Since aphData is keyed by field NAME, not id, a true
+        // duplicate would silently share that name's aphData bucket with the original field —
+        // which is exactly what caused a stray crop entry to keep reappearing no matter how
+        // many times a field was "re-imported": each import was quietly creating another
+        // same-named field instead of updating the one already there. Redirect to the existing
+        // field instead of creating a duplicate.
+        // Check both the existing fields list AND anything already created earlier in this
+        // same import (two drafts typed with the same name shouldn't produce two fields either).
+        const collision = [...fields, ...Object.values(createdByGroup)]
+          .find(f => (f.common || "").trim().toLowerCase() === trimmedName.toLowerCase());
+        if (collision) {
+          createdByGroup[key] = collision;
+          continue;
         }
         // Which units actually resolved to this draft — keyed by the match value itself (not
         // groupKeyOf), since a mapping CSV can group units by whatever name the user typed,
@@ -3609,7 +3641,7 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, 
           insuranceUnitsByName[num] = { name: num, acres: ys[0]?.acres ?? 0 };
         });
         createdByGroup[key] = onCreateField({
-          common: draft.common.trim(), farm: "", entity: "",
+          common: trimmedName, farm: "", entity: "",
           legal: draft.legal || "", fieldNum: "", acres: +draft.acres || 0, crop: "",
           eligibleCrops: groupCrops,
           income: { bushelGuarantee:0, priceGuarantee:0, bushelProjection:0, currentPrice:0 },
@@ -3618,9 +3650,11 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, 
           insuranceType: "APH", coverageLevel: 80, insuredAcres: +draft.acres || 0,
           insuranceUnits: Object.values(insuranceUnitsByName),
         });
+        actuallyCreatedIds.add(createdByGroup[key].id);
       }
-      // Resolve every "NEW:<key>" match to the real field id just created, and keep a combined
-      // fields list (prop + freshly created) so the lookups below find them regardless.
+      // Resolve every "NEW:<key>" match to the real field id just created (or the existing field
+      // it collided with), and keep a combined fields list (prop + freshly created) so the
+      // lookups below find them regardless.
       const resolvedMatches = {};
       Object.entries(matches).forEach(([i, v]) => {
         resolvedMatches[i] = (typeof v === "string" && v.startsWith("NEW:"))
@@ -3629,32 +3663,45 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, 
       });
       const allFields = [...fields, ...Object.values(createdByGroup)];
 
-      // Merge insurance unit numbers into any EXISTING matched field too (new fields already
-      // got theirs above) — additive only, via the same updateField path every other AgriPlan
-      // edit goes through (local state + the app's normal autosave), never a raw Firebase PUT
-      // from in here. Never removes or overwrites a unit already on the field.
+      // Merge insurance unit numbers AND eligible crops into any EXISTING matched field too —
+      // that includes fields matched normally from the dropdown, and any "new" field redirected
+      // above because it collided with an existing name. Additive only, via the same
+      // updateField path every other AgriPlan edit goes through (local state + the app's normal
+      // autosave), never a raw Firebase PUT from in here. Never removes or overwrites anything
+      // already on the field.
       if (onUpdateField) {
-        const createdIds = new Set(Object.values(createdByGroup).map(f => f.id));
-        const addsByField = {}; // fieldId -> { unitName -> {name, acres} }
+        const addsByField = {}; // fieldId -> { units: {unitName -> {name,acres}}, crops: Set }
         (parsed.units || []).forEach((u, idx) => {
           const fieldId = resolvedMatches[idx];
-          if (!fieldId || createdIds.has(fieldId)) return;
-          const num = unitNumberFor(idx);
-          if (!num) return;
-          const field = fields.find(f => f.id === fieldId);
+          if (!fieldId || actuallyCreatedIds.has(fieldId)) return;
+          const field = allFields.find(f => f.id === fieldId);
           if (!field) return;
-          const already = (field.insuranceUnits || []).some(
-            eu => (typeof eu === "string" ? eu : eu?.name) === num
-          );
-          if (already) return;
-          const ys = [...(u.years || [])].sort((a, b) => b.year - a.year);
-          addsByField[fieldId] = addsByField[fieldId] || {};
-          addsByField[fieldId][num] = { name: num, acres: ys[0]?.acres ?? 0 };
+          addsByField[fieldId] = addsByField[fieldId] || { units: {}, crops: new Set() };
+          const num = unitNumberFor(idx);
+          if (num) {
+            const already = (field.insuranceUnits || []).some(
+              eu => (typeof eu === "string" ? eu : eu?.name) === num
+            );
+            if (!already) {
+              const ys = [...(u.years || [])].sort((a, b) => b.year - a.year);
+              addsByField[fieldId].units[num] = { name: num, acres: ys[0]?.acres ?? 0 };
+            }
+          }
+          if (u.crop && !(field.eligibleCrops || []).includes(u.crop)) {
+            addsByField[fieldId].crops.add(u.crop);
+          }
         });
         Object.entries(addsByField).forEach(([fieldId, adds]) => {
           const field = fields.find(f => f.id === fieldId);
           if (!field) return;
-          onUpdateField(fieldId, { insuranceUnits: [...(field.insuranceUnits || []), ...Object.values(adds)] });
+          const upd = {};
+          if (Object.keys(adds.units).length > 0) {
+            upd.insuranceUnits = [...(field.insuranceUnits || []), ...Object.values(adds.units)];
+          }
+          if (adds.crops.size > 0) {
+            upd.eligibleCrops = [...(field.eligibleCrops || []), ...adds.crops];
+          }
+          if (Object.keys(upd).length > 0) onUpdateField(fieldId, upd);
         });
       }
 
@@ -4398,6 +4445,25 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   const updateIncome=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,income:{...f.income,[k]:+v}}:f);}),[pushUndo]);
   const updateExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,expenseOverrides:{...(f.expenseOverrides||{}),[k]:+v}}:f);}),[pushUndo]);
   const resetExpense=useCallback((id,k)=>setFields(p=>p.map(f=>{if(f.id!==id)return f;const ov={...(f.expenseOverrides||{})};delete ov[k];return{...f,expenseOverrides:ov};})),[]);
+  // Removes a single crop's entire imported APH history (all years) from one field — for
+  // cleaning up a crop that got attributed to the wrong field during an APH import (e.g. a
+  // duplicate same-named field that shared the wrong field's aphData bucket before that was
+  // fixed). Deletes only that one field+crop sub-path, not the whole aphData tree.
+  const deleteAphCrop=useCallback((fieldCommon,crop)=>{
+    if(!tenantId||!token) return;
+    const url=`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData/${encodeURIComponent(fieldCommon)}/${encodeURIComponent(crop)}.json?auth=${token}`;
+    fetch(url,{method:"DELETE"})
+      .then(()=>{
+        setAphData(prev=>{
+          if(!prev?.[fieldCommon]?.[crop]) return prev;
+          const next={...prev,[fieldCommon]:{...prev[fieldCommon]}};
+          delete next[fieldCommon][crop];
+          if(Object.keys(next[fieldCommon]).length===0) delete next[fieldCommon];
+          return next;
+        });
+      })
+      .catch(e=>console.error(`Failed to remove ${crop} from ${fieldCommon}'s APH history:`,e.message));
+  },[tenantId,token,farmId]);
   const deleteField=useCallback(id=>{
     setFields(p=>{
       const remaining=p.filter(f=>f.id!==id);
@@ -4599,7 +4665,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
           <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
-          :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} />)
+          :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
