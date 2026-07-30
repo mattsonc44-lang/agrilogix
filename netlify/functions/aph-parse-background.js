@@ -108,7 +108,7 @@ Return ONLY valid JSON — no markdown, no explanation — using this exact stru
       "unitNumber": "unit number if shown",
       "fieldName": "field or unit descriptive name",
       "legal": "legal description e.g. 16-31N-5E or Section 16, T31N R5E",
-      "crop": "crop name e.g. Spring Wheat, Winter Wheat, Lentils, Chickpeas",
+      "crop": "<crop name, read directly and only from what is printed on THIS page — see rules below>",
       "practice": "irrigated or dryland if specified",
       "years": [
         { "year": 2015, "acres": 314.0, "production": 18000, "yield": 57.3 }
@@ -120,8 +120,19 @@ Return ONLY valid JSON — no markdown, no explanation — using this exact stru
   ]
 }
 
+DO NOT GUESS OR INVENT DATA. This is the most important rule — accuracy for crop insurance and
+yield-history data matters far more than completeness. For every field, unit, crop, legal
+description, and year: only include it if you can read it directly and confidently from the
+image in front of you. If any single value on a unit — especially the crop — is blurry, cut
+off, ambiguous, or you find yourself inferring rather than reading, DROP THAT ENTIRE UNIT from
+your output rather than guess at it. A missing unit can be caught and re-scanned; a fabricated
+one silently corrupts the farm's real records. The standardized crop names below (and the
+"e.g." examples elsewhere in this prompt) are ONLY there to tell you how to spell/format a crop
+name you already read on the page — never treat them as a menu of things to pick from when
+you're unsure what a unit's actual crop is.
+
 Rules:
-- Include every unit and every year shown — don't skip any rows
+- Include every unit and every year shown — don't skip any rows you can actually read
 - yield = bushels per acre (bu/ac). If not shown, calculate as production / acres.
 - production = total bushels harvested. If blank or zero, use 0.
 - Include years with zero production (crop failure, prevented planting) — set production: 0
@@ -130,7 +141,11 @@ Rules:
 - priceElection = the crop insurance price election shown on the document ($/bu). If not shown use 0
 - If multiple crops on one unit (e.g. wheat and lentils on same ground), create separate unit entries
 - fieldName should be the most descriptive identifier available (common name, legal desc, or both)
-- crop names: use "Spring Wheat", "Winter Wheat", "CC WW", "Barley", "Durum", "Lentils", "Chickpeas", "Green Peas", "Yellow Peas", "Austrians", "Mustard", "Canola", "Flax" where possible
+- Once you've read a crop directly off the page, spell/format it using one of these standardized
+  names if it matches: "Spring Wheat", "Winter Wheat", "CC WW", "Barley", "Durum", "Lentils",
+  "Chickpeas", "Green Peas", "Yellow Peas", "Austrians", "Mustard", "Canola", "Flax". If it
+  doesn't match any of these, use the crop name exactly as printed instead of forcing it into
+  this list.
 
 WHEAT TYPE CODES — read these literally from each unit's "Type" field (a short code shown near Practice/Legal Description on the MPCI Acreage and Production Reporting pages). Do NOT infer wheat class from context, farm name, or nearby units — every unit's Type code must be read independently, even if two units share the same Farm Description or legal description:
 - Type "W" = Winter Wheat
