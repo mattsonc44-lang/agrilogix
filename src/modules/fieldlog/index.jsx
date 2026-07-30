@@ -4069,7 +4069,6 @@ if(loading) return(
 
 return(
 <div style={S.app}>
-<div aria-hidden="true" style={{position:"absolute",right:"-100px",bottom:"-100px",width:"480px",height:"480px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {/* Header */}
 <div style={{...S.header,position:"sticky",top:0}}>
 <div style={{position:"absolute",top:0,left:0,right:0,height:"4px",background:`linear-gradient(90deg, ${T.logoGreenSoft}, ${T.logoGold})`}}/>
@@ -4095,7 +4094,8 @@ return(
 <div><strong>Offline mode</strong> — showing cached data. Any new activities will sync automatically when connection returns.</div>
 </div>
 )}
-<div style={S.content}>
+<div style={{...S.content,position:"relative",overflow:"hidden"}}>
+<div aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
 {view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId}/>}
 {view==="rotation" &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
