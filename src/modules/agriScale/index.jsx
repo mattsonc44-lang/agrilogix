@@ -1179,9 +1179,9 @@ if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'I
 return (
 <>
 <style>{CSS}</style>
-<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.pageGradient,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace",position:"relative",overflow:"hidden"}}>
-<div aria-hidden="true" style={{position:"absolute",right:"-90px",bottom:"-90px",width:"420px",height:"420px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.1,pointerEvents:"none"}}/>
-<div style={{width:"100%",maxWidth:"420px",position:"relative"}}>
+<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.pageGradient,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace"}}>
+<div style={{width:"100%",maxWidth:"420px",position:"relative",overflow:"hidden"}}>
+<div aria-hidden="true" style={{position:"absolute",right:"-60px",bottom:"-60px",width:"280px",height:"280px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.1,pointerEvents:"none"}}/>
 
 {/* Header */}
 <div style={{height:"4px",borderRadius:"4px",background:`linear-gradient(90deg, ${AS.logoGreenSoft}, ${AS.logoGold})`,marginBottom:"12px"}}/>
