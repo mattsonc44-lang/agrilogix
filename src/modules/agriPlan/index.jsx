@@ -4056,6 +4056,19 @@ function NewYearModal({existingYears,onConfirm,onClose}){
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 // AgriPlan module — tenant-isolated, starts blank inside Agri Logix
+
+// ── Tenant-only customization gate ──────────────────────────────────────────
+// A handful of features exist for exactly one tenant (Chris's own Flat Acre
+// Farms / Via Terra operation) and should stay completely invisible to every
+// other tenant on the platform. Rather than deleting that code, gate it
+// behind isFlatAcreTenant(tenantId) — same pattern works for any future
+// single-tenant customization: `if (isFlatAcreTenant(tenantId)) { ...custom... } else { ...regular... }`.
+// FLAT_ACRE_TENANT_ID must be the real Firebase tenantId for that tenant —
+// find it in the browser console while logged into that account:
+// JSON.parse(localStorage.getItem("al_session")).tenantId
+const FLAT_ACRE_TENANT_ID = "REPLACE_WITH_REAL_TENANT_ID";
+const isFlatAcreTenant = (tenantId) => !!tenantId && tenantId === FLAT_ACRE_TENANT_ID;
+
 // ── One-time Flat Acre Farms / Via Terra workbook import ───────────────────
 // Uses the currently logged-in user's own Firebase session (tenantId/token from
 // props) — no separate credentials ever change hands. Reads the pre-built data
@@ -4560,7 +4573,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       onSave={(base,crops)=>{ setExpenseDefaults(base); setCropExpDefaults(crops); }}
       onClose={()=>setShowRatesEditor(false)}/>}
     {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} farmId={farmId} fields={fields} onCreateField={addField} onUpdateField={updateField} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
-    {showImportWorkbook&&<ImportWorkbookModal tenantId={tenantId} token={token} onClose={()=>setShowImportWorkbook(false)}/>}
+    {showImportWorkbook&&isFlatAcreTenant(tenantId)&&<ImportWorkbookModal tenantId={tenantId} token={token} onClose={()=>setShowImportWorkbook(false)}/>}
     {/* Header */}
     <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
       <span style={{fontFamily:"'Playfair Display',serif",fontSize:19,color:"#c8e8a0",letterSpacing:0.5}}>🌾 AgriPlan</span>
@@ -4607,7 +4620,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         <button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
-        {tenantId&&<button onClick={()=>setShowImportWorkbook(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import Workbook</button>}
+        {isFlatAcreTenant(tenantId)&&<button onClick={()=>setShowImportWorkbook(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import Workbook</button>}
         {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
         {tenantId&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
