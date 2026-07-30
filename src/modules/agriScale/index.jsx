@@ -69,7 +69,9 @@ const CSS = `
 // gets a dark, high-contrast "instrument" treatment instead of a pale box.
 const AS = {
   page:     "#F4F2EC",
-  pageGradient: "linear-gradient(160deg, #F8F5EC 0%, #F3EEDD 55%, #EFE6CB 100%)",
+  pageGradient: "linear-gradient(160deg, #182420 0%, #101815 55%, #0B120F 100%)",
+  textOnDark:     "#F2F0E8",
+  textOnDarkSoft: "#9BA79C",
   card:     "#FFFFFF",
   cardAlt:  "#F7F6F1",
   border:   "#E4E1D6",
@@ -1178,15 +1180,15 @@ return (
 <>
 <style>{CSS}</style>
 <div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.pageGradient,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace",position:"relative",overflow:"hidden"}}>
-<div aria-hidden="true" style={{position:"absolute",right:"-90px",bottom:"-90px",width:"420px",height:"420px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
+<div aria-hidden="true" style={{position:"absolute",right:"-90px",bottom:"-90px",width:"420px",height:"420px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.1,pointerEvents:"none"}}/>
 <div style={{width:"100%",maxWidth:"420px",position:"relative"}}>
 
 {/* Header */}
-<div style={{height:"4px",borderRadius:"4px",background:`linear-gradient(90deg, ${AS.logoGreen}, ${AS.logoGold})`,marginBottom:"12px"}}/>
+<div style={{height:"4px",borderRadius:"4px",background:`linear-gradient(90deg, ${AS.logoGreenSoft}, ${AS.logoGold})`,marginBottom:"12px"}}/>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}}>
 <div>
-<div style={{fontSize:"18px",fontWeight:700,color:AS.text,letterSpacing:"0.01em"}}>AgriScale</div>
-<div style={{fontSize:"12px",color:AS.textSoft,marginTop:"1px"}}>{farmName || "Default Farm"}</div>
+<div style={{fontSize:"18px",fontWeight:700,color:AS.textOnDark,letterSpacing:"0.01em"}}>AgriScale</div>
+<div style={{fontSize:"12px",color:AS.textOnDarkSoft,marginTop:"1px"}}>{farmName || "Default Farm"}</div>
 </div>
 <div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"180px"}}>
 <span style={{fontSize:"10px",color:AS.textSoft,background:AS.cardAlt,border:`1px solid ${AS.border}`,borderRadius:"20px",padding:"3px 9px"}}>{operatorName}</span>
@@ -1295,7 +1297,7 @@ style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily
 
 {/* Weight display — dark "instrument" readout, accent stripe matches the active
 commodity's own color so it visually ties back to the Commodity card above. */}
-<div style={{background:AS.readout,borderRadius:"14px",padding:"20px 20px 16px",marginBottom:"10px",position:"relative",overflow:"hidden",borderTop:`3px solid ${grain.color||AS.amber}`}}>
+<div style={{background:AS.readout,borderRadius:"14px",padding:"20px 20px 16px",marginBottom:"10px",position:"relative",overflow:"hidden",border:"1px solid rgba(255,255,255,.08)",borderTop:`3px solid ${grain.color||AS.amber}`}}>
 <div style={{textAlign:"center"}}>
 <div style={{fontSize:"11px",color:AS.readoutMuted,letterSpacing:"0.12em",marginBottom:"6px",fontFamily:"'Barlow',sans-serif"}}>NET WEIGHT</div>
 <div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:"8px"}}>
