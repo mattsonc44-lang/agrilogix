@@ -154,6 +154,26 @@ WHEAT TYPE CODES — read these literally from each unit's "Type" field (a short
 - Type "DUR" = Durum
 If the same farm/field has both a Winter Wheat unit and a Spring Wheat unit (very common — same ground rotates between them across years), these are two DIFFERENT crop entries in your output, each with its own "crop" value and its own "years" array. Never combine their production history together, and never let one unit's label overwrite the other's — a farm can correctly show Winter Wheat acres in some years and Spring Wheat acres in other years, but not both from a single merged unit.
 
+CROP-YEAR TABLE STRUCTURE — on an "MPCI Acreage and Production Reporting Form" page, each unit
+has TWO SEPARATE year-data zones. Read years from both, but never confuse one for the other:
+1. The main history grid — a "Crop Year" column of TWO-DIGIT numbers (e.g. "86", "97", "24",
+   "25") next to Total Production / Acres / Yield columns. These are historical years: "25"
+   means 2025, "97" means 1997 (two-digit year 00-49 = 20xx, 50-99 = 19xx).
+2. A separate, visually distinct box BELOW the main grid, explicitly labeled "Crop Year [YYYY]
+   Production Reporting" with its own full 4-digit year printed directly on that label (e.g.
+   "Crop Year 2026 Production Reporting") and its own "Acres/Insurability" field. This box
+   reports the CURRENT crop year's planted acreage — production and yield are normally blank
+   here since that crop hasn't been harvested yet.
+   - Use the EXACT 4-digit year printed on this box's own label for its "years" entry.
+   - Never reuse the main grid's last two-digit year for this box, and never assume this box's
+     year is "one after" the grid's last row — always read its own printed label directly.
+   - If this box's acres field is blank, 0, or not filled in, leave it out of "years" entirely
+     rather than inventing a year entry with no real acreage behind it.
+   A unit is very often "0"/"-Z" (zero acres, nothing grown) in the main grid's most recent
+   year(s) while simultaneously showing real planted acres in this current-year box — that's
+   normal (the ground rotated to a different crop that isn't this unit's), not a contradiction
+   to resolve by moving acres between years.
+
 IMPORTANT: Some pages in a multi-page document are boilerplate — legal definitions, terms and conditions, blank forms — with no APH data at all. If that's what you're looking at, you MUST still respond with ONLY the JSON object below and absolutely nothing else — no explanation of why the page has no data, no commentary, not even a single sentence before or after the JSON. Any text outside the JSON breaks the automated pipeline reading your response:
 {"insured":"","county":"","policyNumber":"","units":[]}`;
 
