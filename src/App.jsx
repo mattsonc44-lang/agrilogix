@@ -209,10 +209,13 @@ export default function App() {
       const f = farms.find(f => f.id === saved);
       if (f) setActiveFarm(f);
     } else {
-      // No saved farm for this tenant yet (e.g. just switched into Admin View
-      // for a different tenant) — don't keep showing whatever farm was active
-      // for the previous tenant.
-      setActiveFarm(DEFAULT_FARM);
+      // No saved farm choice for this tenant yet (e.g. first visit, or just
+      // switched into Admin View for a different tenant) — don't keep showing
+      // whatever farm was active for the previous tenant. Still check for a
+      // real saved "default" farm profile (name set during onboarding) before
+      // falling back to the generic placeholder.
+      const d = farms.find(f => f.id === "default");
+      setActiveFarm(d || DEFAULT_FARM);
     }
   }, [effectiveTenantId, farms]);
 
@@ -221,20 +224,13 @@ export default function App() {
     if (effectiveTenantId) localStorage.setItem(`al_farm_${effectiveTenantId}`, activeFarm.id);
   }, [activeFarm.id, effectiveTenantId]);
 
-  // ── Keep the default farm's display name in sync with the org name ───────
-  // "Default Farm" is just a placeholder until the tenant's own profile name
-  // (set at signup, e.g. "Flat Acre Farms") loads — and until someone
-  // explicitly renames the default farm via the farm-edit modal (which saves
-  // a real farms/default/profile and takes over from here).
-  useEffect(() => {
-    const orgName = tenant?.profile?.name;
-    if (!orgName) return;
-    const hasCustomDefault = farms.some(f => f.id === "default");
-    if (hasCustomDefault) return;
-    if (activeFarm.id === "default" && activeFarm.name !== orgName) {
-      setActiveFarm(f => ({ ...f, name: orgName }));
-    }
-  }, [tenant?.profile?.name, farms, activeFarm.id, activeFarm.name]);
+  // Removed: the default farm used to silently auto-rename itself to the
+  // tenant's own org/company name (e.g. a tenant called "Flat Acre Farms"
+  // would show "Flat Acre Farms" as its FARM name too, even for tenants
+  // with multiple farms where org name and farm name are different things).
+  // The default farm now just stays "Default Farm" until someone explicitly
+  // renames it via the pencil-edit icon on the farm switcher — same as any
+  // other farm, for every tenant.
 
   const loadUserProfile = async (sess) => {
     setLoading(true);
@@ -455,7 +451,15 @@ export default function App() {
         token={session?.idToken}
         profile={profile}
         tenant={tenant}
-        onComplete={()=>setShowWizard(false)}/>}
+        onComplete={(defaultFarmName)=>{
+          setShowWizard(false);
+          // Wizard just seeded farms/default/profile with this name — reflect
+          // it immediately instead of waiting for a reload to re-fetch farms.
+          if(defaultFarmName){
+            setFarms(f => f.some(x=>x.id==="default") ? f : [...f, {id:"default",name:defaultFarmName,color:"#4A7535"}]);
+            setActiveFarm(f => f.id==="default" ? {...f, name:defaultFarmName} : f);
+          }
+        }}/>}
       {showOrg && <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>}
 
       {/* ── Admin view banner ── */}
