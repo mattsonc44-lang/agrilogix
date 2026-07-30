@@ -55,13 +55,16 @@ async function checkAuth(event) {
   }
 
   // ── Layer 2: confirm this user exists in the Agri Logix database ──────────
-  // Only users you've explicitly set up have a record at users/{uid}
+  // Only users you've explicitly set up have a record at users/{uid}.
+  // Reads with the caller's OWN idToken (never unauthenticated) — the
+  // database rules only allow a user to read their own users/{uid} record,
+  // so this doubles as a self-check rather than relying on open DB access.
   try {
     const resp = await fetch(
-      `${AGRILOGIX_DB_URL}/users/${uid}.json?shallow=true`,
+      `${AGRILOGIX_DB_URL}/users/${uid}.json?shallow=true&auth=${idToken}`,
     );
     const data = await resp.json();
-    if (!data) {
+    if (!data || data.error) {
       console.warn(`[AUTH DENIED] uid=${uid} email=${email} — not in Agri Logix user database`);
       return deny("Unauthorized — not a registered Agri Logix user");
     }
