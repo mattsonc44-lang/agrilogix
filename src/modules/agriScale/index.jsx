@@ -1393,48 +1393,48 @@ Total: {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushe
 {/* ── FIELDS TAB ── */}
 {tab==="FIELDS"&&(<>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px",flexWrap:"wrap"}}>
-<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>FIELDS</div>
-<div style={{display:"flex",gap:"6px"}}>
-{perms.canEditFields&&<button onClick={openFLImport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↓ FROM FIELDLOG</button>}
-{perms.canEditFields&&<button onClick={openAPImport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f0ede4",color:"#7a5a3a",border:"1px solid #c8b090",boxShadow:"0 2px 0 #a89070"}}>↓ FROM AGRIPLAN</button>}
-{perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD FIELD</button>}
+<div style={{fontSize:"14px",fontWeight:700,color:AS.textOnDark,fontFamily:"'Barlow',sans-serif"}}>Fields</div>
+<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+{perms.canEditFields&&<button onClick={openFLImport} style={{cursor:"pointer",padding:"6px 11px",fontSize:"11px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.greenBg,color:AS.greenText,border:"none",borderRadius:"20px"}}>↓ From FieldLog</button>}
+{perms.canEditFields&&<button onClick={openAPImport} style={{cursor:"pointer",padding:"6px 11px",fontSize:"11px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.amberBg,color:AS.amberText,border:"none",borderRadius:"20px"}}>↓ From AgriPlan</button>}
+{perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{cursor:"pointer",padding:"6px 11px",fontSize:"11px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.card,color:AS.text,border:"none",borderRadius:"20px"}}>+ Add field</button>}
 </div>
 </div>
 {sortedFields.map(f=>{
 const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
-return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"6px",padding:"10px 12px",marginBottom:"8px"}}>
+return(<div key={f.id} style={{background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"12px 14px",marginBottom:"9px"}}>
 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
 <div style={{flex:1}}>
-<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"4px"}}>{f.name}</div>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",lineHeight:1.8}}>
-{f.acres?<div>ACRES: {f.acres}</div>:null}
-<div>LOADS: {(f.loads||[]).length} · TOTAL: {totalBu.toFixed(0)} BU</div>
-{f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
-{f.landlord&&perms.canViewCropShare&&<div>LANDLORD: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
-{perms.canViewInsurance&&f.insType&&<div style={{color:"#5a6a90"}}>INS: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} BU/AC GUAR.`:""}</div>}
-{perms.canViewInsurance&&(f.insuranceUnits||[]).length>0&&<div style={{color:"#5a6a90"}}>UNITS: {f.insuranceUnits.map(u=>typeof u==="string"?u:`${u?.name||""}${u?.acres?` (${u.acres}ac)`:""}`).join(", ")}</div>}
+<div style={{fontSize:"14px",fontWeight:600,color:AS.text,fontFamily:"'Barlow',sans-serif",marginBottom:"4px"}}>{f.name}</div>
+<div style={{fontSize:"11px",color:AS.textSoft,lineHeight:1.8,fontFamily:"'Barlow',sans-serif"}}>
+{f.acres?<div>Acres: {f.acres}</div>:null}
+<div>Loads: {(f.loads||[]).length} · Total: {totalBu.toFixed(0)} bu</div>
+{f.grainPrice&&perms.canViewCosts&&<div style={{color:AS.teal,fontWeight:600}}>Revenue: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
+{f.landlord&&perms.canViewCropShare&&<div>Landlord: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
+{perms.canViewInsurance&&f.insType&&<div style={{color:AS.blue}}>Insurance: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} bu/ac guar.`:""}</div>}
+{perms.canViewInsurance&&(f.insuranceUnits||[]).length>0&&<div style={{color:AS.blue}}>Units: {f.insuranceUnits.map(u=>typeof u==="string"?u:`${u?.name||""}${u?.acres?` (${u.acres}ac)`:""}`).join(", ")}</div>}
 </div>
 </div>
 {perms.canEditFields&&(
 <div style={{display:"flex",gap:"4px",flexShrink:0}}>
-<button onClick={()=>setEF(f)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
-{safeFields.length>1&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains,trucks);}} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+<button onClick={()=>setEF(f)} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"20px"}}>Edit</button>
+{safeFields.length>1&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains,trucks);}} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.dangerBg,color:AS.danger,border:"none",borderRadius:"20px"}}>✕</button>}
 </div>
 )}
 </div>
 {/* Mini load log */}
 {(f.loads||[]).length>0&&(
-<div style={{marginTop:"8px",borderTop:"1px solid #ddd8d0",paddingTop:"6px",maxHeight:"120px",overflowY:"auto"}}>
+<div style={{marginTop:"9px",borderTop:`1px solid ${AS.border}`,paddingTop:"7px",maxHeight:"120px",overflowY:"auto"}}>
 {[...(f.loads||[])].reverse().map(l=>{
 const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
 const tHex=l.truckColor||"#f0f0f0";
 const bn=bins.find(b=>b.id===l.binId);
-return(<div key={l.id} style={{display:"flex",gap:"6px",alignItems:"center",fontSize:"9px",color:"#6a7280",padding:"2px 0",borderBottom:"1px solid #e8e4dc"}}>
-<div style={{width:"7px",height:"7px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
-<span style={{color:"#4a5568",fontWeight:"bold"}}>{bu} BU {l.splitLabel?`#${l.splitLabel}`:""}</span>
+return(<div key={l.id} style={{display:"flex",gap:"7px",alignItems:"center",fontSize:"11px",color:AS.textSoft,padding:"3px 0",borderBottom:`1px solid ${AS.border}`,fontFamily:"'Barlow',sans-serif"}}>
+<div style={{width:"8px",height:"8px",borderRadius:"50%",background:tHex,flexShrink:0}}/>
+<span style={{color:AS.text,fontWeight:600}}>{bu} bu {l.splitLabel?`#${l.splitLabel}`:""}</span>
 <span>{l.grainName}</span>
 <span>{bn?.name||"?"}</span>
-<span style={{marginLeft:"auto"}}>{l.date} {l.timeOnly}</span>
+<span style={{marginLeft:"auto",color:AS.textFaint}}>{l.date} {l.timeOnly}</span>
 </div>);
 })}
 </div>
