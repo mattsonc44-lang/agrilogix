@@ -134,6 +134,22 @@ const nowLocal = ()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d
 const fmtDate = (iso)=>{ try{return new Date(iso).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"2-digit",minute:"2-digit"})}catch{return iso||""} };
 // obj2arr imported from core/helpers
 
+// ── Weather capture (used by AddActivityModal) ─────────────────────────
+// 16-point compass from a wind-direction degree (0/360 = N, 90 = E, etc.)
+const degToCompass = (deg) => {
+if(deg==null || isNaN(deg)) return "";
+const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+return dirs[Math.round((((deg%360)+360)%360) / 22.5) % 16];
+};
+const fmtWeather = (w) => {
+if(!w) return "";
+const parts = [];
+if(w.tempF!=null && w.tempF!=="") parts.push(`${w.tempF}°F`);
+if(w.windMph!=null && w.windMph!=="") parts.push(`Wind ${w.windDir?w.windDir+" ":""}${w.windMph}mph`);
+if(w.humidity!=null && w.humidity!=="") parts.push(`${w.humidity}% RH`);
+return parts.join(" · ");
+};
+
 // ── GeoJSON / KML parsers for field import ────────────────────────────
 const parseShapefileZip = async (arrayBuffer) => {
 const shp = window.shp;
@@ -1469,7 +1485,7 @@ return(
 <button style={{...mkBtn("ghost"),padding:"3px 7px",fontSize:"11px",color:T.danger,borderColor:"#4A1010"}} onClick={e=>{e.stopPropagation();onDelete(activity.id)}}>✕</button>
 </div>
 </div>
-{open&&<div style={{borderTop:`1px solid ${T.border}`,marginTop:"10px",paddingTop:"4px"}}>{activity.type==="scouting"?scoutDetail():detail()}{activity.notes&&<p style={{margin:"10px 0 0",fontSize:"12px",color:T.muted,fontStyle:"italic"}}>📝 {activity.notes}</p>}</div>}
+{open&&<div style={{borderTop:`1px solid ${T.border}`,marginTop:"10px",paddingTop:"4px"}}>{activity.type==="scouting"?scoutDetail():detail()}{fmtWeather(activity.data?.weather)&&<p style={{margin:"8px 0 0",fontSize:"12px",color:T.blue}}>🌡️ {fmtWeather(activity.data.weather)}</p>}{activity.notes&&<p style={{margin:"10px 0 0",fontSize:"12px",color:T.muted,fontStyle:"italic"}}>📝 {activity.notes}</p>}</div>}
 </div>
 );
 }
@@ -1516,6 +1532,33 @@ const[data,setData]=useState(initial?.data||{});
 const[notes,setNotes]=useState(initial?.notes||"");
 const[err,setErr]=useState("");
 const[aiParsing,setAIParsing]=useState(false);
+const[weatherLoading,setWeatherLoading]=useState(false);
+const[weatherErr,setWeatherErr]=useState("");
+const getWeather=()=>{
+if(!navigator.geolocation){ setWeatherErr("Location isn't available in this browser."); return; }
+setWeatherErr(""); setWeatherLoading(true);
+navigator.geolocation.getCurrentPosition(
+async(pos)=>{
+try{
+const{latitude,longitude}=pos.coords;
+const res=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m,wind_direction_10m,relative_humidity_2m&temperature_unit=fahrenheit&wind_speed_unit=mph`);
+const j=await res.json();
+const c=j.current;
+if(!c) throw new Error("No current data returned");
+setData(d=>({...d,weather:{
+tempF: Math.round(c.temperature_2m),
+windMph: Math.round(c.wind_speed_10m),
+windDir: degToCompass(c.wind_direction_10m),
+humidity: Math.round(c.relative_humidity_2m),
+capturedAt: new Date().toISOString(),
+}}));
+}catch(e){ setWeatherErr("Couldn't fetch weather — try again or enter it manually below."); }
+setWeatherLoading(false);
+},
+()=>{ setWeatherErr("Location permission denied — enter weather manually below."); setWeatherLoading(false); },
+{ enableHighAccuracy:false, timeout:10000 }
+);
+};
 const{listening:voiceListening,toggle:voiceToggle,stop:voiceStop}=useVoiceInput();
 const activityType=type;
 const isEdit = !!initial;
@@ -1712,6 +1755,23 @@ return(
 <button style={{...mkBtn("ghost"),padding:"5px 10px"}} onClick={onClose}>✕</button>
 </div>
 <div style={S.row}><label style={S.label}>Date & Time</label><input style={S.input} type="datetime-local" value={date} onChange={e=>setDate(e.target.value)}/></div>
+<div style={S.row}>
+<label style={S.label}>Weather</label>
+<div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:data.weather?"8px":0}}>
+<button type="button" onClick={getWeather} disabled={weatherLoading} style={{...mkBtn("outline"),padding:"7px 14px",fontSize:"12px"}}>
+{weatherLoading?"Getting weather…":(data.weather?"🔄 Refresh":"📍 Get current weather")}
+</button>
+{!data.weather && <span style={{fontSize:"11px",color:T.muted,cursor:"pointer",textDecoration:"underline"}} onClick={()=>setData(d=>({...d,weather:{}}))}>enter manually</span>}
+{weatherErr && <span style={{fontSize:"11px",color:T.danger}}>{weatherErr}</span>}
+</div>
+{data.weather && (
+<div style={S.g3}>
+<div><label style={{...S.label,fontSize:"10px"}}>Temp (°F)</label><input style={S.input} type="number" value={data.weather.tempF??""} onChange={e=>setData(d=>({...d,weather:{...d.weather,tempF:e.target.value}}))}/></div>
+<div><label style={{...S.label,fontSize:"10px"}}>Wind (mph)</label><input style={S.input} type="number" value={data.weather.windMph??""} onChange={e=>setData(d=>({...d,weather:{...d.weather,windMph:e.target.value}}))}/></div>
+<div><label style={{...S.label,fontSize:"10px"}}>Wind Dir</label><input style={S.input} placeholder="e.g. SW" value={data.weather.windDir??""} onChange={e=>setData(d=>({...d,weather:{...d.weather,windDir:e.target.value}}))}/></div>
+</div>
+)}
+</div>
 <div style={S.row}>
 <label style={S.label}>Activity Type</label>
 <div style={S.g3}>
@@ -2601,6 +2661,7 @@ No {meta.label.toLowerCase()} records found{(dateFrom||dateTo)?" in this date ra
 <span style={{fontSize:"12px",color:T.muted}}>{fmtDate(a.date)}</span>
 </div>
 {a.type==="scouting"?renderScoutDetail(a.data||{}):renderDetail(a)}
+{fmtWeather(a.data?.weather)&&<p style={{margin:"8px 0 0",fontSize:"12px",color:T.blue}}>🌡️ {fmtWeather(a.data.weather)}</p>}
 {a.notes&&<p style={{margin:"8px 0 0",fontSize:"12px",color:T.muted,fontStyle:"italic"}}>📝 {a.notes}</p>}
 </div>
 );})}
@@ -2620,6 +2681,7 @@ return(
 <span style={{fontSize:"12px",color:T.muted}}>{fmtDate(a.date)}</span>
 </div>
 {a.type==="scouting"?renderScoutDetail(a.data||{}):renderDetail(a)}
+{fmtWeather(a.data?.weather)&&<p style={{margin:"8px 0 0",fontSize:"12px",color:T.blue}}>🌡️ {fmtWeather(a.data.weather)}</p>}
 {a.notes&&<p style={{margin:"8px 0 0",fontSize:"12px",color:T.muted,fontStyle:"italic"}}>📝 {a.notes}</p>}
 </div>
 );})
