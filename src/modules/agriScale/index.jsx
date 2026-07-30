@@ -62,6 +62,30 @@ const CSS = `
 ::-webkit-scrollbar-thumb { background: #9a8a72; border-radius: 2px; }
 `;
 
+// ── AgriScale design tokens (SCALE tab redesign) ───────────────────────────
+// Flat, rounded-card look with color-coded sections instead of the old uniform
+// tan/beige panels — each control group gets a hue that maps to what it is
+// (storage = teal, commodity = amber, land = green), and the weight readout
+// gets a dark, high-contrast "instrument" treatment instead of a pale box.
+const AS = {
+  page:     "#F4F2EC",
+  card:     "#FFFFFF",
+  cardAlt:  "#F7F6F1",
+  border:   "#E4E1D6",
+  borderStrong: "#D3CFC0",
+  text:     "#1C2420",
+  textSoft: "#6B7268",
+  textFaint:"#98988C",
+  teal:     "#0F6E56", tealBg: "#E1F5EE", tealText: "#085041",
+  amber:    "#BA7517", amberBg:"#FAEEDA", amberText:"#412402",
+  green:    "#3B6D11", greenBg:"#EAF3DE", greenText:"#173404",
+  blue:     "#185FA5", blueBg: "#E6F1FB", blueText: "#042C53",
+  danger:   "#A32D2D", dangerBg:"#FCEBEB",
+  readout:      "#0F1512",
+  readoutMuted: "#7FA88F",
+  readoutText:  "#E8F5EE",
+};
+
 // ── BinGauge SVG (matches original exactly) ───────────────────────
 function BinGauge({ bin, grains, small }) {
 const grain = (grains||[]).filter(Boolean).find(g=>g.name===bin.grainName) || FALLBACK_GRAIN;
@@ -1146,98 +1170,89 @@ if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'I
 return (
 <>
 <style>{CSS}</style>
-<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:"#f0eeea",backgroundImage:"radial-gradient(ellipse at 30% 20%, #e8f2dc 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, #f5eed8 0%, transparent 60%)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace"}}>
-<div style={{width:"100%",maxWidth:"520px"}}>
+<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.page,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace"}}>
+<div style={{width:"100%",maxWidth:"420px"}}>
 
 {/* Header */}
-<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
-<div style={{fontFamily:"'Orbitron',monospace",fontSize:"20px",fontWeight:700,color:"#4a5568",letterSpacing:"0.08em"}}>
-AGRI<span style={{color:"#4a7535"}}>SCALE</span>
-<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",fontWeight:400,color:"#8a9a80",letterSpacing:"0.1em",marginTop:"2px"}}>{farmName || "Default Farm"}</div>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}}>
+<div>
+<div style={{fontSize:"18px",fontWeight:700,color:AS.text,letterSpacing:"0.01em"}}>AgriScale</div>
+<div style={{fontSize:"12px",color:AS.textSoft,marginTop:"1px"}}>{farmName || "Default Farm"}</div>
 </div>
-<div style={{textAlign:"right"}}>
-<div style={{color:"#4a5568",fontSize:"11px",letterSpacing:"0.08em"}}>{activeField?.name}</div>
-<div style={{color:"#4a7535",fontSize:"10px",letterSpacing:"0.06em"}}>→ {activeBin?.name}</div>
-<div style={{display:"flex",gap:"5px",justifyContent:"flex-end",alignItems:"center",marginTop:"3px",flexWrap:"wrap"}}>
-<span style={{fontSize:"8px",color:"#fff",background:"#5a6878",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em"}}>{operatorName}</span>
-<span style={{fontSize:"8px",fontFamily:"monospace",letterSpacing:"0.08em",color:syncColor,background:syncStatus==="live"?"#e8e2d8":syncStatus==="queued"?"#fff0f0":"#f0f0f0",border:`1px solid ${syncStatus==="live"?"#b0a08a":syncStatus==="queued"?"#e0c0c0":"#ddd"}`,borderRadius:"3px",padding:"1px 6px"}}>{syncLabel}</span>
-<span style={{fontSize:"8px",color:"#9a8a72",background:"#ede9e4",border:"1px solid #c0b8ac",borderRadius:"3px",padding:"1px 6px",letterSpacing:"0.08em",textTransform:"uppercase"}}>{role}</span>
-</div>
+<div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"180px"}}>
+<span style={{fontSize:"10px",color:AS.textSoft,background:AS.cardAlt,border:`1px solid ${AS.border}`,borderRadius:"20px",padding:"3px 9px"}}>{operatorName}</span>
+<span style={{fontSize:"10px",fontWeight:600,letterSpacing:"0.02em",color:syncStatus==="live"?AS.tealText:syncStatus==="queued"?AS.danger:AS.textSoft,background:syncStatus==="live"?AS.tealBg:syncStatus==="queued"?AS.dangerBg:AS.cardAlt,borderRadius:"20px",padding:"3px 9px"}}>{syncLabel}</span>
 </div>
 </div>
 
 {/* Tabs */}
-<div style={{display:"flex",gap:"4px",marginBottom:"12px",background:"#e8e2d8",borderRadius:"6px",padding:"3px"}}>
+<div style={{display:"flex",gap:"4px",marginBottom:"14px",background:AS.cardAlt,borderRadius:"10px",padding:"4px"}}>
 {TABS.map(t=>(
-<button key={t} onClick={()=>setTab(t)} style={{...btnBase,flex:1,padding:"8px 4px",fontSize:"10px",letterSpacing:"0.12em",background:tab===t?"#fafaf6":"transparent",color:tab===t?"#4a5568":"#9a8a72",border:tab===t?"1px solid #ccc4b8":"1px solid transparent",boxShadow:tab===t?"0 1px 3px rgba(0,0,0,.1)":"none"}}>
-{t}
+<button key={t} onClick={()=>setTab(t)} style={{cursor:"pointer",flex:1,padding:"8px 4px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"8px",background:tab===t?AS.card:"transparent",color:tab===t?AS.teal:AS.textSoft,border:"none",boxShadow:tab===t?`0 0 0 1px ${AS.border}`:"none",textTransform:"capitalize"}}>
+{t.charAt(0)+t.slice(1).toLowerCase()}
 </button>
 ))}
 </div>
 
 {/* ── SCALE TAB ── */}
 {tab==="SCALE"&&(<>
-{/* Active bin gauge */}
-{activeBin&&<div style={{marginBottom:"8px"}}><BinGauge bin={activeBin} grains={grains}/></div>}
-
-{/* Bin selector — dropdown so the list doesn't eat up screen space; stays on
-whatever bin was last picked until you choose a different one. */}
-<div style={{marginTop:"8px",background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px",marginBottom:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>DESTINATION BIN</div>
+{/* Destination bin — compact card with an inline fill bar instead of the full silo
+graphic (still available on the BINS tab); stays on whatever bin was last picked. */}
+{(()=>{
+const g=safeGrains.find(x=>x&&x.name===activeBin?.grainName)||FALLBACK_GRAIN;
+const pct=activeBin&&activeBin.capacityBu>0?Math.min(100,activeBin.storedLbs/(g.bushel_lbs||60)/activeBin.capacityBu*100):0;
+return(
+<div style={{background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"10px 12px",marginBottom:"8px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"7px"}}>
+<span style={{fontSize:"11px",color:AS.textFaint,fontFamily:"'Barlow',sans-serif"}}>Destination bin</span>
+{activeBin&&<span style={{fontSize:"11px",color:AS.teal,fontWeight:600,fontFamily:"'Barlow',sans-serif"}}>{pct.toFixed(0)}% full</span>}
+</div>
 <select
 value={activeBinId!=null?String(activeBinId):""}
 onChange={e=>{ const picked=sortedBins.find(b=>String(b.id)===e.target.value); if(picked) setABId(picked.id); }}
-style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",background:"#fff",border:"1px solid #ccc4b8",borderRadius:"4px",color:"#4a5568",outline:"none"}}
+style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,border:"none",borderRadius:"8px",color:AS.text,outline:"none",marginBottom:"7px"}}
 >
 {sortedBins.map(b=>{
-const g=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
-const pct=b.capacityBu>0?Math.min(100,b.storedLbs/(g.bushel_lbs||60)/b.capacityBu*100):0;
-return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.location}`:""} ({pct.toFixed(0)}%)</option>);
+const bg=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
+const bpct=b.capacityBu>0?Math.min(100,b.storedLbs/(bg.bushel_lbs||60)/b.capacityBu*100):0;
+return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.location}`:""} ({bpct.toFixed(0)}%)</option>);
 })}
 </select>
+<div style={{height:"6px",borderRadius:"4px",background:AS.tealBg,overflow:"hidden"}}>
+<div style={{width:`${pct}%`,height:"100%",background:pct>=95?AS.danger:pct>=80?AS.amber:AS.teal,transition:"width .2s"}}/>
 </div>
+</div>
+);
+})()}
 
-{/* Status bar */}
-<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",background:"#ffffff",border:"1px solid #ddd8d0",borderRadius:"4px",fontSize:"10px",letterSpacing:"0.12em",marginBottom:"8px"}}>
-<div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-<div style={{width:"7px",height:"7px",borderRadius:"50%",background:"#c0b8ac"}}/>
-<span style={{color:"#6a7280"}}>STANDBY</span>
-</div>
-<div style={{color:"#5a6878"}}>{grain.name} · {grain.bushel_lbs} LBS/BU</div>
-</div>
-
-{/* Display unit + grain + field + truck */}
-<div style={{display:"flex",flexDirection:"column",gap:"7px",marginBottom:"8px"}}>
-{/* Unit */}
-<div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>DISPLAY UNIT</div>
-<div style={{display:"flex",gap:"6px"}}>
+{/* Display unit + commodity + field + insurance unit + truck */}
+<div style={{display:"flex",flexDirection:"column",gap:"8px",marginBottom:"8px"}}>
+{/* Unit toggle */}
+<div style={{display:"flex",gap:"5px",background:AS.cardAlt,borderRadius:"10px",padding:"4px"}}>
 {UNITS.map(u=>(
-<button key={u} onClick={()=>setUnit(u)} style={{...btnBase,flex:1,padding:"5px 0",fontSize:"10px",background:unit===u?"#e8e2d8":"transparent",border:unit===u?"1px solid #9a8a72":"1px solid #ccc4b8",color:unit===u?"#4a5568":"#6a7280",boxShadow:unit===u?"inset 0 1px 3px rgba(0,0,0,.1)":"none"}}>
+<button key={u} onClick={()=>setUnit(u)} style={{cursor:"pointer",flex:1,padding:"7px 0",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"7px",background:unit===u?AS.card:"transparent",border:"none",color:unit===u?AS.text:AS.textSoft,boxShadow:unit===u?`0 0 0 1px ${AS.border}`:"none"}}>
 {u}
 </button>
 ))}
 </div>
-</div>
-{/* Grain */}
-<div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>COMMODITY</div>
-<div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+{/* Commodity */}
+<div style={{background:AS.amberBg,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.amberText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Commodity · {grain.bushel_lbs} lbs/bu</div>
+<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
 {safeGrains.map((g,i)=>(
-<button key={i} onClick={()=>setGrainIdx(i)} style={{...btnBase,padding:"5px 10px",fontSize:"10px",background:grainIdx===i?"#e8e2d8":"transparent",border:grainIdx===i?`1px solid ${g.color||"#9a8a72"}`:"1px solid #ccc4b8",color:grainIdx===i?"#4a5568":"#6a7280"}}>
+<button key={i} onClick={()=>setGrainIdx(i)} style={{cursor:"pointer",padding:"6px 12px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",border:"none",background:grainIdx===i?(g.color||AS.amber):"rgba(255,255,255,.55)",color:grainIdx===i?"#fff":AS.amberText}}>
 {g.name}
 </button>
 ))}
 </div>
 </div>
-{/* Field — dropdown so the list doesn't eat up screen space; stays on
-whatever field was last picked until you choose a different one. */}
-<div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>FIELD</div>
+{/* Field */}
+<div style={{background:AS.greenBg,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.greenText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Field</div>
 <select
 value={activeFieldId!=null?String(activeFieldId):""}
 onChange={e=>{ const picked=sortedFields.find(f=>String(f.id)===e.target.value); if(picked) setAFId(picked.id); }}
-style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",background:"#fff",border:"1px solid #ccc4b8",borderRadius:"4px",color:"#4a5568",outline:"none"}}
+style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.greenText,outline:"none"}}
 >
 {sortedFields.map(f=>(
 <option key={f.id} value={String(f.id)}>{f.name} ({(f.loads||[]).length})</option>
@@ -1245,23 +1260,23 @@ style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mon
 </select>
 </div>
 {/* Insurance Unit — pulled from the active field's Insurance Unit(s) set in AgriPlan; defaults to None. */}
-<div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>INSURANCE UNIT</div>
+<div style={{background:AS.blueBg,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.blueText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Insurance unit</div>
 <select
 value={activeUnit||""}
 onChange={e=>setActiveUnit(e.target.value)}
-style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",background:"#fff",border:"1px solid #ccc4b8",borderRadius:"4px",color:"#4a5568",outline:"none"}}
+style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.blueText,outline:"none"}}
 >
 <option value="">None</option>
 {fieldInsUnits.map(u=>(<option key={u} value={u}>{u}</option>))}
 </select>
 </div>
 {/* Truck */}
-<div style={{background:"#f5f3ef",border:"1px solid #ccc4b8",borderRadius:"4px",padding:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>TRUCK</div>
-<div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+<div style={{background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.textFaint,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Truck</div>
+<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
 {safeTrucks.map(t=>(
-<button key={t.id} onClick={()=>setTruckColor(t.id)} style={{...btnBase,padding:"4px 8px",fontSize:"9px",background:t.hex,color:t.text,border:truckColor===t.id?`2px solid #4a5568`:`1px solid ${t.border||"#aaa"}`,boxShadow:truckColor===t.id?"0 0 6px rgba(74,85,104,.4)":"none"}}>
+<button key={t.id} onClick={()=>setTruckColor(t.id)} style={{cursor:"pointer",padding:"6px 12px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",background:t.hex,color:t.text,border:"none",boxShadow:truckColor===t.id?`0 0 0 2px ${AS.text}`:"none"}}>
 {t.name}
 </button>
 ))}
@@ -1269,80 +1284,83 @@ style={{width:"100%",padding:"7px 8px",fontSize:"11px",fontFamily:"'IBM Plex Mon
 </div>
 </div>
 
-{/* Weight display */}
-<div style={{background:"#f5f7f2",border:"2px solid #8ab870",borderRadius:"8px",padding:"20px 28px 16px",boxShadow:"inset 0 1px 4px rgba(0,0,0,.04)",marginBottom:"10px",position:"relative",overflow:"hidden"}}>
+{/* Weight display — dark "instrument" readout, accent stripe matches the active
+commodity's own color so it visually ties back to the Commodity card above. */}
+<div style={{background:AS.readout,borderRadius:"14px",padding:"20px 20px 16px",marginBottom:"10px",position:"relative",overflow:"hidden",borderTop:`3px solid ${grain.color||AS.amber}`}}>
 <div style={{textAlign:"center"}}>
-<div style={{fontSize:"9px",color:"#6a8060",letterSpacing:"0.2em",marginBottom:"4px"}}>NET WEIGHT</div>
-<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"54px",fontWeight:700,color:"#1a2a1a",letterSpacing:"0.05em",lineHeight:1,WebkitFontSmoothing:"antialiased",MozOsxFontSmoothing:"grayscale"}}>
+<div style={{fontSize:"11px",color:AS.readoutMuted,letterSpacing:"0.12em",marginBottom:"6px",fontFamily:"'Barlow',sans-serif"}}>NET WEIGHT</div>
+<div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:"8px"}}>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"52px",fontWeight:700,color:AS.readoutText,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
 {fmtWt(netLbs,unit,grain.bushel_lbs).value}
+</span>
+<span style={{fontSize:"18px",color:grain.color||AS.amber,fontWeight:600,fontFamily:"'Barlow',sans-serif"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</span>
 </div>
-<div style={{fontSize:"16px",color:"#4a6040",marginLeft:"8px",letterSpacing:"0.15em",fontWeight:700,fontFamily:"'Barlow',sans-serif"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</div>
 </div>
-<div style={{display:"flex",gap:"32px",marginTop:"14px",paddingTop:"10px",borderTop:"1px solid #ccc4b8",justifyContent:"center"}}>
+<div style={{display:"flex",gap:"32px",marginTop:"16px",paddingTop:"12px",borderTop:`1px solid rgba(255,255,255,.1)`,justifyContent:"center"}}>
 {[{label:"GROSS",lbs:rawLbs},{label:"TARE",lbs:tare}].map(({label,lbs})=>(
-<div key={label} style={{fontFamily:"monospace",textAlign:"center"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em"}}>{label}</div>
-<div style={{fontSize:"18px",color:"#1a2a1a",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,WebkitFontSmoothing:"antialiased"}}>{fmtWt(lbs,unit,grain.bushel_lbs).value} <span style={{fontSize:"10px",color:"#5a6878"}}>{fmtWt(lbs,unit,grain.bushel_lbs).label}</span></div>
+<div key={label} style={{textAlign:"center"}}>
+<div style={{fontSize:"10px",color:AS.readoutMuted,letterSpacing:"0.1em",fontFamily:"'Barlow',sans-serif"}}>{label}</div>
+<div style={{fontSize:"16px",color:AS.readoutText,fontFamily:"'IBM Plex Mono',monospace",fontWeight:600}}>{fmtWt(lbs,unit,grain.bushel_lbs).value} <span style={{fontSize:"11px",color:AS.readoutMuted}}>{fmtWt(lbs,unit,grain.bushel_lbs).label}</span></div>
 </div>
 ))}
 </div>
 </div>
 
 {/* Tare button */}
-<button onClick={()=>setTare(rawLbs)} style={{...btnBase,width:"100%",padding:"8px",fontSize:"10px",letterSpacing:"0.12em",background:"#f5f3ef",color:"#6a7280",boxShadow:"0 2px 0 #c8ccc0",marginBottom:"6px"}}>
-SET TARE ({fmtWt(rawLbs,unit,grain.bushel_lbs).value} {fmtWt(rawLbs,unit,grain.bushel_lbs).label})
+<button onClick={()=>setTare(rawLbs)} style={{cursor:"pointer",width:"100%",padding:"11px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"10px",marginBottom:"7px"}}>
+Set tare — {fmtWt(rawLbs,unit,grain.bushel_lbs).value} {fmtWt(rawLbs,unit,grain.bushel_lbs).label}
 </button>
 
 {/* Numpad */}
-<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px",marginBottom:"8px"}}>
+<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"7px",marginBottom:"9px"}}>
 {["7","8","9","4","5","6","1","2","3","⌫","0","CLR"].map(k=>(
-<button key={k} className="as-numkey" onClick={()=>onKey(k)} style={{...btnBase,padding:"14px 0",fontSize:"16px",background:k==="CLR"?"#fff0f0":k==="⌫"?"#fef8e8":"#fafaf6",color:k==="CLR"?"#e74c3c":k==="⌫"?"#c47d0a":"#4a5568",border:k==="CLR"?"1px solid #e0c0c0":k==="⌫"?"1px solid #e8d8a8":"1px solid #c0b8ac",boxShadow:"0 2px 0 #c8ccc0"}}>
+<button key={k} className="as-numkey" onClick={()=>onKey(k)} style={{cursor:"pointer",padding:"15px 0",fontSize:"17px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"10px",background:k==="CLR"?AS.dangerBg:k==="⌫"?AS.amberBg:AS.cardAlt,color:k==="CLR"?AS.danger:k==="⌫"?AS.amberText:AS.text,border:"none"}}>
 {k}
 </button>
 ))}
 </div>
 
 {/* Record button */}
-<button className="as-record-btn" onClick={recordLoad} disabled={!canRecord} style={{width:"100%",padding:"16px",fontFamily:"'Orbitron',monospace",fontSize:"14px",fontWeight:700,letterSpacing:"0.15em",background:canRecord?"#4a7535":"#c0b8ac",color:canRecord?"#fff":"#8a8278",border:"none",borderRadius:"6px",cursor:canRecord?"pointer":"not-allowed",transition:"all .15s",boxShadow:canRecord?"0 3px 0 #2d5520, 0 0 20px rgba(74,117,53,.3)":"0 2px 0 #a0a898",animation:canRecord?"as-pulse 2s infinite":"none"}}>
-✓ RECORD LOAD
+<button className="as-record-btn" onClick={recordLoad} disabled={!canRecord} style={{width:"100%",padding:"15px",fontSize:"14px",fontWeight:600,fontFamily:"'Barlow',sans-serif",letterSpacing:"0.02em",background:canRecord?AS.teal:AS.borderStrong,color:canRecord?"#fff":AS.textFaint,border:"none",borderRadius:"12px",cursor:canRecord?"pointer":"not-allowed",transition:"all .15s",animation:canRecord?"as-pulse 2s infinite":"none"}}>
+Log load
 </button>
 
 {/* Recent loads for active field */}
 {(activeField?.loads||[]).length > 0 && (
-<div style={{marginTop:"10px",background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"8px"}}>
-<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"5px"}}>RECENT LOADS — {activeField.name}</div>
+<div style={{marginTop:"12px",background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.textFaint,marginBottom:"6px",fontFamily:"'Barlow',sans-serif"}}>Recent loads — {activeField.name}</div>
 <div style={{maxHeight:"320px",overflowY:"auto"}}>
 {[...(activeField?.loads||[])].reverse().slice(0,10).map(l=>{
 const f=fmtWt(l.net,unit,l.grainBushelLbs||60);
 const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
 const tHex=l.truckColor||"#f0f0f0";
 const bn=bins.find(b=>b.id===l.binId);
-return(<div key={l.id} style={{borderBottom:"1px solid #ddd8d0",padding:"8px 4px",color:"#4a5568"}}>
+return(<div key={l.id} style={{borderBottom:`1px solid ${AS.border}`,padding:"9px 2px",color:AS.text,fontFamily:"'Barlow',sans-serif"}}>
 <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
-<div style={{width:"10px",height:"10px",borderRadius:"50%",background:tHex,border:"1px solid rgba(0,0,0,.15)",flexShrink:0}}/>
-<span style={{flex:1,fontSize:"20px",fontWeight:700,color:"#c47d0a"}}>{bu} <span style={{fontSize:"12px",color:"#8a6a40"}}>BU</span></span>
-<span style={{fontSize:"13px",color:"#4a5568"}}>{f.value} {f.label}</span>
+<div style={{width:"10px",height:"10px",borderRadius:"50%",background:tHex,flexShrink:0}}/>
+<span style={{flex:1,fontSize:"18px",fontWeight:600,color:AS.text}}>{bu} <span style={{fontSize:"12px",color:AS.textFaint,fontWeight:400}}>bu</span></span>
+<span style={{fontSize:"13px",color:AS.textSoft}}>{f.value} {f.label}</span>
 </div>
-<div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"4px",fontSize:"10px",flexWrap:"wrap"}}>
-<span style={{background:"#f0ede4",borderRadius:"3px",padding:"1px 7px",color:"#7a5a3a"}}>{l.grainName||"?"}</span>
-{l.insuranceUnit&&l.insuranceUnit!=="none"&&<span style={{background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:"3px",padding:"1px 7px",color:"#2a5010"}}>🛡 {l.insuranceUnit}</span>}
-<span style={{color:"#6a7280"}}>{bn?.name||"?"}</span>
-{l.splitLabel&&<span style={{color:"#8a6a40"}}>#{l.splitLabel}</span>}
+<div style={{display:"flex",gap:"7px",alignItems:"center",marginTop:"5px",fontSize:"11px",flexWrap:"wrap"}}>
+<span style={{background:AS.amberBg,borderRadius:"20px",padding:"2px 9px",color:AS.amberText}}>{l.grainName||"?"}</span>
+{l.insuranceUnit&&l.insuranceUnit!=="none"&&<span style={{background:AS.blueBg,borderRadius:"20px",padding:"2px 9px",color:AS.blueText}}>{l.insuranceUnit}</span>}
+<span style={{color:AS.textSoft}}>{bn?.name||"?"}</span>
+{l.splitLabel&&<span style={{color:AS.textFaint}}>#{l.splitLabel}</span>}
 <span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
-<span style={{width:"9px",height:"9px",borderRadius:"2px",background:tHex,border:"1px solid rgba(0,0,0,.2)",flexShrink:0}}/>
-<span style={{color:"#9a8a72"}}>{l.truckName||""}</span>
+<span style={{width:"8px",height:"8px",borderRadius:"2px",background:tHex,flexShrink:0}}/>
+<span style={{color:AS.textFaint}}>{l.truckName||""}</span>
 </span>
-<span style={{color:"#9a8a72"}}>{l.date} {l.timeOnly}</span>
+<span style={{color:AS.textFaint}}>{l.date} {l.timeOnly}</span>
 <span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
-<button onClick={()=>setEL({load:l,fieldId:activeField.id})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",border:"1px solid #ccc4b8"}}>EDIT</button>
-<button onClick={()=>{if(confirm("Delete this load?"))deleteLoad(l);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>
+<button onClick={()=>setEL({load:l,fieldId:activeField.id})} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"20px"}}>Edit</button>
+<button onClick={()=>{if(confirm("Delete this load?"))deleteLoad(l);}} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.dangerBg,color:AS.danger,border:"none",borderRadius:"20px"}}>✕</button>
 </span>
 </div>
 </div>);
 })}
 </div>
-<div style={{marginTop:"5px",fontSize:"9px",color:"#4a7535",letterSpacing:"0.08em"}}>
-TOTAL: {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).value} {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).label}
+<div style={{marginTop:"7px",fontSize:"12px",fontWeight:600,color:AS.teal,fontFamily:"'Barlow',sans-serif"}}>
+Total: {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).value} {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).label}
 </div>
 </div>
 )}
