@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO } from "../../core/agriscale.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
 // Plain <input type="number"> is a native browser control whose typing behavior
@@ -575,6 +576,7 @@ const [flExportModal, setFLExportModal] = useState(false);
 const [flExportData, setFLExportData] = useState([]);
 const [flExportSel, setFLExportSel] = useState(new Set());
 const [flExporting, setFLExporting] = useState(false);
+const [sendActualsToAgriPlan, setSendActualsToAgriPlan] = useState(true);
 const [logFieldId, setLogFId] = useState(null);
 const [editField, setEF] = useState(null);
 const [editBin, setEB] = useState(null);
@@ -1102,17 +1104,26 @@ const flFieldList = obj2arr(flFieldData || {}).filter(Boolean);
 const flByName = {};
 flFieldList.forEach(f => { flByName[f.name.trim().toLowerCase()] = f; });
 
-// Build export rows — one per AgriScale field with loads
+// AgriPlan match, for the optional "also send actuals to AgriPlan" path —
+// actuals are keyed by field name (see AP_BASE/actuals below), same as
+// fieldHistory already is, so this is purely to warn about name mismatches.
+const yr = new Date().getFullYear();
+const apFieldData = await dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null);
+const apFieldList = obj2arr(apFieldData || {}).filter(Boolean);
+const apNames = new Set(apFieldList.map(f => (f.common||"").trim().toLowerCase()));
+
+// Build export rows — one per AgriScale field with loads.
+// Bushels come from each load's own net weight + grainBushelLbs (the value
+// actually stored on the load at record time — not a separate grain-name
+// lookup, which can drift if that grain's lbs/bu setting changes later).
 const rows = safeFields.map(f => {
 const loads = (f.loads||[]).filter(Boolean);
 if (!loads.length) return null;
-const totalLbs = loads.reduce((s,l) => s + (parseFloat(l.lbs)||0), 0);
-const grain = safeGrains.find(g => g.name === (loads[0]?.grainName||f.loads?.[0]?.grainName)) || safeGrains[0];
-const lbsPerBu = parseFloat(grain?.lbsPerBu) || 60;
-const totalBu = totalLbs / lbsPerBu;
+const totalLbs = sumLoadsLbs(loads);
+const totalBu = sumLoadsBushels(loads);
 const acres = parseFloat(f.acres) || 0;
 const yieldPerAc = acres > 0 ? (totalBu / acres).toFixed(1) : "";
-const lastDate = loads.map(l=>l.date).filter(Boolean).sort().pop() || new Date().toISOString().slice(0,10);
+const lastDate = lastLoadDateISO(loads);
 const flMatch = flByName[f.name.trim().toLowerCase()];
 return {
 asFieldId: f.id,
@@ -1121,24 +1132,26 @@ acres,
 totalLbs: Math.round(totalLbs),
 totalBu: Math.round(totalBu),
 yieldPerAc,
-lbsPerBu,
-grainName: loads[0]?.grainName || grain?.name || "Unknown",
+grainName: loads[0]?.grainName || "Unknown",
 date: lastDate,
 flFieldId: flMatch?.id || null,
 flBase,
+apMatch: apNames.has(f.name.trim().toLowerCase()),
 };
 }).filter(Boolean);
 
 setFLExportData(rows);
-setFLExportSel(new Set(rows.filter(r => r.flFieldId).map(r => r.asFieldId)));
+setFLExportSel(new Set(rows.filter(r => r.flFieldId || r.apMatch).map(r => r.asFieldId)));
 } catch(e) { setFLExportData([]); }
 };
 
 const exportToFieldLog = async () => {
 setFLExporting(true);
 try {
-const toExport = flExportData.filter(r => flExportSel.has(r.asFieldId) && r.flFieldId);
-for (const r of toExport) {
+const selected = flExportData.filter(r => flExportSel.has(r.asFieldId));
+const toFieldLog = selected.filter(r => r.flFieldId);
+const toAgriPlan = sendActualsToAgriPlan ? selected.filter(r => r.apMatch) : [];
+for (const r of toFieldLog) {
 const actId = genId();
 const activity = {
 id: actId,
@@ -1149,7 +1162,6 @@ data: {
 crop: r.grainName,
 yieldPerAc: r.yieldPerAc,
 totalBushels: String(r.totalBu),
-testWeight: String(r.lbsPerBu),
 acres: String(r.acres),
 },
 notes: `Exported from AgriScale — ${r.totalLbs.toLocaleString()} lbs`,
@@ -1166,8 +1178,24 @@ body: JSON.stringify({ crop: r.grainName, yield: r.yieldPerAc, acres: String(r.a
 );
 } catch(_) {}
 }
+// Push actual bushels into AgriPlan's own actuals node — separate from the
+// fields list AgriPlan itself owns, so it can't be clobbered by AgriPlan's
+// own autosave. Keyed by field name + year, same convention as fieldHistory.
+for (const r of toAgriPlan) {
+try {
+const aYr = new Date(r.date).getFullYear();
+await fetch(
+`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/actuals/${encodeURIComponent(r.name)}/${aYr}.json?auth=${token}`,
+{ method: "PUT", headers: { "Content-Type": "application/json" },
+body: JSON.stringify({ bushels: r.totalBu, yieldPerAc: r.yieldPerAc, acres: r.acres, lastUpdated: new Date().toISOString(), source: "agriscale" }) }
+);
+} catch(_) {}
+}
 setFLExportModal(false);
-alert(`✅ ${toExport.length} harvest ${toExport.length===1?"activity":"activities"} added to FieldLog!`);
+const parts = [];
+if (toFieldLog.length) parts.push(`${toFieldLog.length} harvest ${toFieldLog.length===1?"activity":"activities"} added to FieldLog`);
+if (toAgriPlan.length) parts.push(`${toAgriPlan.length} field${toAgriPlan.length===1?"":"s"} sent to AgriPlan as actuals`);
+alert(`✅ ${parts.join(" · ")||"Nothing to export"}`);
 } catch(e) {
 alert("Export failed: " + e.message);
 } finally { setFLExporting(false); }
@@ -1488,7 +1516,7 @@ return(<div key={l.id} style={{display:"flex",gap:"7px",alignItems:"center",font
 {tab==="REPORT"&&perms.canReport&&(<>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px"}}>
 <div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>HARVEST REPORT</div>
-<button onClick={openFLExport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↑ EXPORT TO FIELDLOG</button>
+<button onClick={openFLExport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↑ EXPORT HARVEST</button>
 <button onClick={()=>setShowReport(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f0ede4",color:"#7a5a3a",border:"1px solid #c8b090",boxShadow:"0 2px 0 #a89070"}}>🖨 PRINT REPORT</button>
 </div>
 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
@@ -1584,19 +1612,23 @@ return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",b
 {flExportModal&&(
 <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
 <div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"480px",maxHeight:"85vh",display:"flex",flexDirection:"column",gap:"12px"}}>
-<div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>EXPORT HARVEST TO FIELDLOG</div>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>EXPORT HARVEST</div>
 {flExportData.length===0&&(
 <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>NO FIELDS WITH LOADS TO EXPORT</div>
 )}
 {flExportData.length>0&&(<>
 <div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em",lineHeight:1.6}}>
-SELECT FIELDS TO WRITE AS HARVEST ACTIVITIES IN FIELDLOG.
-FIELDS WITHOUT A NAME MATCH IN FIELDLOG ARE GREYED OUT.
+SELECT FIELDS TO WRITE AS HARVEST ACTIVITIES IN FIELDLOG AND/OR ACTUAL YIELD IN AGRIPLAN.
+FIELDS WITHOUT A NAME MATCH IN EITHER MODULE ARE GREYED OUT THERE.
 </div>
+<label style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 10px",borderRadius:"5px",background:"rgba(74,117,53,0.1)",border:"1px solid rgba(74,117,53,0.3)",cursor:"pointer"}}>
+<input type="checkbox" checked={sendActualsToAgriPlan} onChange={()=>setSendActualsToAgriPlan(v=>!v)} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#b0c8a0",letterSpacing:"0.06em"}}>ALSO SEND ACTUAL BUSHELS TO AGRIPLAN</span>
+</label>
 <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
 {flExportData.map(r=>{
 const sel = flExportSel.has(r.asFieldId);
-const canSel = !!r.flFieldId;
+const canSel = !!r.flFieldId || r.apMatch;
 return(
 <label key={r.asFieldId} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"10px 12px",borderRadius:"5px",cursor:canSel?"pointer":"not-allowed",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":canSel?"rgba(255,255,255,0.08)":"rgba(255,100,100,0.15)"}`,opacity:canSel?1:0.5,transition:"all .1s"}}>
 <input type="checkbox" checked={sel&&canSel} disabled={!canSel} onChange={()=>{const n=new Set(flExportSel);sel?n.delete(r.asFieldId):n.add(r.asFieldId);setFLExportSel(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0,marginTop:"2px"}}/>
@@ -1608,7 +1640,10 @@ return(
 {r.yieldPerAc&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.yieldPerAc} BU/AC</span>}
 <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalLbs.toLocaleString()} LBS</span>
 </div>
-{!canSel&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060",marginTop:"4px"}}>⚠ NO MATCHING FIELD IN FIELDLOG</div>}
+<div style={{display:"flex",gap:"10px",marginTop:"4px",flexWrap:"wrap"}}>
+{!r.flFieldId&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN FIELDLOG</span>}
+{sendActualsToAgriPlan&&!r.apMatch&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN AGRIPLAN</span>}
+</div>
 </div>
 </label>
 );
@@ -1616,7 +1651,7 @@ return(
 </div>
 <button onClick={exportToFieldLog} disabled={flExportSel.size===0||flExporting}
 style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:flExportSel.size>0?"#4a7535":"#2a3020",color:flExportSel.size>0?"#f0eeea":"#4a5548",boxShadow:flExportSel.size>0?"0 2px 0 #2a5020":"none",cursor:flExportSel.size>0?"pointer":"not-allowed"}}>
-{flExporting?"WRITING TO FIELDLOG...":`EXPORT ${flExportSel.size} FIELD${flExportSel.size!==1?"S":""} TO FIELDLOG`}
+{flExporting?"EXPORTING...":`EXPORT ${flExportSel.size} FIELD${flExportSel.size!==1?"S":""}`}
 </button>
 </>)}
 <button onClick={()=>setFLExportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#6a8060"}}>CANCEL</button>
