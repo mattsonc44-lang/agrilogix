@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import JSZip from "jszip";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
+import { degToCompass, fmtWeather } from "../../core/weather.js";
 
 // ── Google Fonts ──────────────────────────────────────────────────────
 if (!document.getElementById("fl-fonts")) {
@@ -134,21 +135,8 @@ const nowLocal = ()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d
 const fmtDate = (iso)=>{ try{return new Date(iso).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"2-digit",minute:"2-digit"})}catch{return iso||""} };
 // obj2arr imported from core/helpers
 
-// ── Weather capture (used by AddActivityModal) ─────────────────────────
-// 16-point compass from a wind-direction degree (0/360 = N, 90 = E, etc.)
-const degToCompass = (deg) => {
-if(deg==null || isNaN(deg)) return "";
-const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
-return dirs[Math.round((((deg%360)+360)%360) / 22.5) % 16];
-};
-const fmtWeather = (w) => {
-if(!w) return "";
-const parts = [];
-if(w.tempF!=null && w.tempF!=="") parts.push(`${w.tempF}°F`);
-if(w.windMph!=null && w.windMph!=="") parts.push(`Wind ${w.windDir?w.windDir+" ":""}${w.windMph}mph`);
-if(w.humidity!=null && w.humidity!=="") parts.push(`${w.humidity}% RH`);
-return parts.join(" · ");
-};
+// Weather capture helpers (degToCompass, fmtWeather) moved to core/weather.js
+// (shared, unit-tested) — imported at the top of this file.
 
 // ── GeoJSON / KML parsers for field import ────────────────────────────
 const parseShapefileZip = async (arrayBuffer) => {
