@@ -3246,7 +3246,7 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
 // the top of this file.
 
 // ── APH Import Modal ──────────────────────────────────────────────────────────
-function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, onCreateField, onUpdateField }) {
+export function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, onCreateField, onUpdateField }) {
   const [stage, setStage] = useState("upload"); // upload | converting | parsing | review | saving | done
   const [error, setError] = useState("");
   const [parsed, setParsed] = useState(null);   // merged Claude output across all batches
@@ -3756,7 +3756,10 @@ function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, 
     } catch (err) { setError(err.message); setStage("review"); }
   };
 
-  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:4000 };
+  // z-index high enough to sit above the onboarding wizard's own overlay
+  // (9000) when this modal is reused there — still the topmost thing within
+  // AgriPlan's own normal usage either way.
+  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9500 };
   const box = { background:"#fff", borderRadius:12, padding:28, width:720, maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)", border:"1px solid #ccdda0", fontFamily:"'Barlow',sans-serif" };
   const hdr = { fontFamily:"'Playfair Display',serif", fontSize:20, color:"#1a3010", marginBottom:4 };
   const sub = { fontSize:12, color:"#7a9260", marginBottom:20 };
