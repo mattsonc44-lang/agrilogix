@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
+import { getPerms, REDACTED } from "../../core/permissions.js";
 
 // ── CSS matching standalone exactly ───────────────────────────────
 const SL_CSS = `
@@ -217,7 +218,11 @@ const nextInvNum = invs=>{const ns=invs.map(i=>parseInt((i.num||"").replace("INV
 const safeLoads = f=>(f&&f.loads)||[];
 
 // ── Main ──────────────────────────────────────────────────────────
-export default function ServiceLogModule({ tenantId, token, persist }) {
+export default function ServiceLogModule({ tenantId, token, persist, userProfile }) {
+  // Owner/manager/operator tiering — same shared model as AgriPlan/AgriScale,
+  // see core/permissions.js. Standalone (no tenantId) mode predates accounts
+  // entirely, so it stays full-access.
+  const perms = tenantId ? getPerms(userProfile) : getPerms({ role: "owner" });
   const BASE = `tenants/${tenantId}/serviceLog`;
 
   const [D, setD] = useState({vehicles:[],records:[],customers:[],invoices:[],partsToOrder:[],partsInventory:[],vendors:[],orderHistory:[],settings:{features:{invoicing:true,partsInventory:true,orderParts:true}}});
@@ -427,10 +432,10 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     w.document.write(`<!DOCTYPE html><html><head><title>Service History — ${v.name}</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:800px;margin:0 auto;}h1{font-size:22px;margin-bottom:4px;}h2{font-size:14px;font-weight:normal;color:#666;margin:0 0 20px;}table{width:100%;border-collapse:collapse;margin-top:16px;}th{background:#f0f0f0;text-align:left;padding:8px 10px;font-size:12px;border-bottom:2px solid #ccc;}td{padding:8px 10px;border-bottom:1px solid #e0e0e0;font-size:13px;vertical-align:top;}.cost{text-align:right;color:#2a5e2a;font-weight:bold;}.total{font-weight:bold;background:#f8f8f8;}@media print{button{display:none;}}</style></head><body>`);
     w.document.write(`<button onclick="window.print()" style="float:right;padding:6px 14px;background:#c07010;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">🖨 Print</button>`);
     w.document.write(`<h1>${v.name}</h1><h2>${[v.year,v.make,v.model].filter(Boolean).join(" ")}${cust?" · "+cust.name:""}${biz?" — "+biz:""}</h2>`);
-    w.document.write(`<div style="display:flex;gap:24px;margin-bottom:16px;font-size:13px;"><span><b>Records:</b> ${recs.length}</span><span><b>Total Cost:</b> $${total.toLocaleString()}</span>${v.hours?`<span><b>Hours/Miles:</b> ${Number(v.hours).toLocaleString()}</span>`:""}</div>`);
-    w.document.write(`<table><thead><tr><th>Date</th><th>Service Type</th><th>Notes</th><th>Technician</th><th class="cost">Cost</th></tr></thead><tbody>`);
-    recs.forEach(r=>{w.document.write(`<tr><td>${r.date}</td><td>${r.type||""}</td><td>${r.notes||""}</td><td>${r.tech||""}</td><td class="cost">${r.cost?"$"+Number(r.cost).toLocaleString():""}</td></tr>`);});
-    w.document.write(`<tr class="total"><td colspan="4">Total</td><td class="cost">$${total.toLocaleString()}</td></tr>`);
+    w.document.write(`<div style="display:flex;gap:24px;margin-bottom:16px;font-size:13px;"><span><b>Records:</b> ${recs.length}</span>${perms.canViewCosts?`<span><b>Total Cost:</b> $${total.toLocaleString()}</span>`:""}${v.hours?`<span><b>Hours/Miles:</b> ${Number(v.hours).toLocaleString()}</span>`:""}</div>`);
+    w.document.write(`<table><thead><tr><th>Date</th><th>Service Type</th><th>Notes</th><th>Technician</th>${perms.canViewCosts?`<th class="cost">Cost</th>`:""}</tr></thead><tbody>`);
+    recs.forEach(r=>{w.document.write(`<tr><td>${r.date}</td><td>${r.type||""}</td><td>${r.notes||""}</td><td>${r.tech||""}</td>${perms.canViewCosts?`<td class="cost">${r.cost?"$"+Number(r.cost).toLocaleString():""}</td>`:""}</tr>`);});
+    if(perms.canViewCosts) w.document.write(`<tr class="total"><td colspan="4">Total</td><td class="cost">$${total.toLocaleString()}</td></tr>`);
     w.document.write(`</tbody></table></body></html>`);
     w.document.close();
   };
@@ -468,15 +473,15 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
   const tabs=[
     {id:"fleet",label:"🚜 Fleet"},
     {id:"report",label:"📋 Report"},
-    {id:"costs",label:"💰 Cost Analysis"},
-    ...(featOn("invoicing")?[{id:"invoices",label:"🧾 Invoices"}]:[]),
+    ...(perms.canViewCosts?[{id:"costs",label:"💰 Cost Analysis"}]:[]),
+    ...(perms.canViewCosts&&featOn("invoicing")?[{id:"invoices",label:"🧾 Invoices"}]:[]),
     ...(featOn("orderParts")?[{id:"order",label:"🔩 Order Parts",badge:neededCnt>0?neededCnt:null,badgeClass:""}]:[]),
     ...(featOn("partsInventory")?[{id:"parts",label:"📦 Parts"}]:[]),
     {id:"vendors",label:"🏪 Vendors"},
     {id:"orderhistory",label:"✅ Order History"},
     {id:"todos",label:"☑️ To-Do",badge:openTodos>0?openTodos:null},
     {id:"search",label:"🔍 Search"},
-    {id:"admin",label:"⚙️ Admin"},
+    ...(perms.canEditComm?[{id:"admin",label:"⚙️ Admin"}]:[]),
   ];
 
   if(loading) return <div style={{padding:"60px",textAlign:"center",color:"#6b7280",fontFamily:"'Share Tech Mono',monospace"}}>LOADING SERVICE LOG...</div>;
@@ -495,7 +500,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
           <div className="topbar-stats">
             <div><div className="ts-val">{D.vehicles.length}</div><div className="ts-lbl">Equipment</div></div>
             <div><div className="ts-val">{D.records.length}</div><div className="ts-lbl">Records</div></div>
-            <div><div className="ts-val">${sumCost(D.records).toLocaleString()}</div><div className="ts-lbl">Total Spent</div></div>
+            {perms.canViewCosts&&<div><div className="ts-val">${sumCost(D.records).toLocaleString()}</div><div className="ts-lbl">Total Spent</div></div>}
           </div>
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
             {sync==="queued"&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",letterSpacing:"1px",background:"#fff0f0",color:"#dc2626",border:"1px solid #e0c0c0",borderRadius:"3px",padding:"2px 6px"}}>⚠ QUEUED</span>}
@@ -552,17 +557,17 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
               <div aria-hidden="true" className="main-watermark"/>
 
               {/* ── FLEET ── */}
-              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory}/>}
-              {tab==="report"&&<ReportView D={D} reportFil={reportFil} setRepFil={setRepFil} custName={custName} vehName={vehName}/>}
-              {tab==="costs"&&<CostView D={D} custName={custName}/>}
-              {tab==="invoices"&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
-              {tab==="order"&&<OrderView D={D} filteredPO={filteredPO} poFilters={poFilters} setPOF={setPOF} poNew={poNew} setPoNew={setPoNew} quickAddPart={quickAddPart} toggleOrdered={toggleOrdered} toggleReceived={toggleReceived} deletePart={deletePart} archiveReceived={archiveReceived} consolidateDupes={consolidateDupes} selPoIds={selPoIds} setSelPoIds={setSelPoIds} setEdit={setEdit} setModal={setModal} vehName={vehName}/>}
-              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj}/>}
+              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory} perms={perms}/>}
+              {tab==="report"&&<ReportView D={D} reportFil={reportFil} setRepFil={setRepFil} custName={custName} vehName={vehName} perms={perms}/>}
+              {tab==="costs"&&perms.canViewCosts&&<CostView D={D} custName={custName}/>}
+              {tab==="invoices"&&perms.canViewCosts&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
+              {tab==="order"&&<OrderView D={D} filteredPO={filteredPO} poFilters={poFilters} setPOF={setPOF} poNew={poNew} setPoNew={setPoNew} quickAddPart={quickAddPart} toggleOrdered={toggleOrdered} toggleReceived={toggleReceived} deletePart={deletePart} archiveReceived={archiveReceived} consolidateDupes={consolidateDupes} selPoIds={selPoIds} setSelPoIds={setSelPoIds} setEdit={setEdit} setModal={setModal} vehName={vehName} perms={perms}/>}
+              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj} perms={perms}/>}
               {tab==="vendors"&&<VendorsView D={D} deleteVendor={deleteVendor} setEdit={setEdit} setModal={setModal}/>}
-              {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName}/>}
+              {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName} perms={perms}/>}
               {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal} setTab={setTab} setSelVeh={setSelVeh} setSelCust={setSelCust}/>}
               {tab==="search"&&<SearchView D={D} gsQuery={gsQuery} setGsQ={setGsQ} setSelVeh={setSelVeh} setSelCust={setSelCust} setTab={setTab}/>}
-              {tab==="admin"&&<AdminView D={D} toggleFeature={toggleFeature}/>}
+              {tab==="admin"&&perms.canEditComm&&<AdminView D={D} toggleFeature={toggleFeature}/>}
 
             </div>
           </div>
@@ -586,7 +591,8 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 }
 
 // ── Fleet View ────────────────────────────────────────────────────
-function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory}){
+function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory,perms}){
+  const canCost=perms?perms.canViewCosts:true;
   const [partsMenu, setPartsMenu] = useState(false);
 
   const partsSearchLinks = (v) => {
@@ -623,13 +629,13 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
         <div className="summary-stat"><div className="summary-stat-val">{D.customers.length}</div><div className="summary-stat-lbl">Customers</div></div>
         <div className="summary-stat"><div className="summary-stat-val">{D.vehicles.length}</div><div className="summary-stat-lbl">Equipment</div></div>
         <div className="summary-stat"><div className="summary-stat-val">{D.records.length}</div><div className="summary-stat-lbl">Records</div></div>
-        <div className="summary-stat"><div className="summary-stat-val">${sumCost(D.records).toLocaleString()}</div><div className="summary-stat-lbl">Total Spent</div></div>
+        {canCost&&<div className="summary-stat"><div className="summary-stat-val">${sumCost(D.records).toLocaleString()}</div><div className="summary-stat-lbl">Total Spent</div></div>}
       </div>
       <div className="fleet-grid">
         {[...D.customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const cvs=D.vehicles.filter(v=>v.customerId===c.id);const cr=D.records.filter(r=>cvs.some(v=>v.id===r.vehicleId));return(<div key={c.id} className="vehicle-card" onClick={()=>{setSelCust(c.id);setSelVeh(null);}}>
           <div className="vc-type">🏢 Customer</div><div className="vc-name">{c.name}</div>
           {c.notes&&<div className="vc-sub">{c.notes}</div>}
-          <div className="vc-meta"><div><div className="vc-stat-lbl">Equipment</div><div className="vc-stat-val">{cvs.length}</div></div><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{cr.length}</div></div><div><div className="vc-stat-lbl">Total Cost</div><div className="vc-stat-val">${sumCost(cr).toLocaleString()}</div></div></div>
+          <div className="vc-meta"><div><div className="vc-stat-lbl">Equipment</div><div className="vc-stat-val">{cvs.length}</div></div><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{cr.length}</div></div>{canCost&&<div><div className="vc-stat-lbl">Total Cost</div><div className="vc-stat-val">${sumCost(cr).toLocaleString()}</div></div>}</div>
         </div>);})}
       </div>
     </div>
@@ -657,7 +663,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
         {cvs.map(v=>{const recs=D.records.filter(r=>r.vehicleId===v.id);return(<div key={v.id} className="vehicle-card" onClick={()=>setSelVeh(v.id)}>
           <div className="vc-type">{ICONS[v.type]} {v.type}</div><div className="vc-name">{v.name}</div>
           <div className="vc-sub">{[v.year,v.make,v.model].filter(Boolean).join(" · ")}</div>
-          <div className="vc-meta"><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{recs.length}</div></div><div><div className="vc-stat-lbl">Cost</div><div className="vc-stat-val">${sumCost(recs).toLocaleString()}</div></div>{v.hours&&<div><div className="vc-stat-lbl">Hrs/Mi</div><div className="vc-stat-val">{Number(v.hours).toLocaleString()}</div></div>}</div>
+          <div className="vc-meta"><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{recs.length}</div></div>{canCost&&<div><div className="vc-stat-lbl">Cost</div><div className="vc-stat-val">${sumCost(recs).toLocaleString()}</div></div>}{v.hours&&<div><div className="vc-stat-lbl">Hrs/Mi</div><div className="vc-stat-val">{Number(v.hours).toLocaleString()}</div></div>}</div>
           {recs[0]&&<div className="vc-last">Last: {recs[0].type} — {recs[0].date}</div>}
         </div>);})}
       </div>
@@ -715,7 +721,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
           {selVeh.hours&&<div><div className="vic-spec-lbl">Hrs / Miles</div><div className="vic-spec-val">{Number(selVeh.hours).toLocaleString()}</div></div>}
           {selVeh.vin&&<div style={{gridColumn:"span 2"}}><div className="vic-spec-lbl">VIN / Serial</div><div className="vic-spec-val" style={{fontFamily:"'Share Tech Mono',monospace",letterSpacing:"0.08em",color:"var(--amber)"}}>{selVeh.vin}</div></div>}
           <div><div className="vic-spec-lbl">Records</div><div className="vic-spec-val">{vRecords.length}</div></div>
-          <div><div className="vic-spec-lbl">Total Cost</div><div className="vic-spec-val" style={{color:"var(--green)"}}>${sumCost(vRecords).toLocaleString()}</div></div>
+          {canCost&&<div><div className="vic-spec-lbl">Total Cost</div><div className="vic-spec-val" style={{color:"var(--green)"}}>${sumCost(vRecords).toLocaleString()}</div></div>}
         </div>
 
         {selVeh.notes&&<div className="vic-notes">📝 {selVeh.notes}</div>}
@@ -770,7 +776,7 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
               {parts.length>0&&<div style={{marginTop:"4px"}}>{parts.map((p,i)=><span key={i} className="sr-part">{[p.desc,p.num].filter(Boolean).join(" #")}{p.qty>1?` ×${p.qty}`:""}</span>)}</div>}
             </div>
             <div className="sr-right">
-              <div className="sr-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</div>
+              {canCost&&<div className="sr-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</div>}
               <button className="btn btn-ghost btn-sm" onClick={()=>{setEdit(r);setModal("record");}}>Edit</button>
               <button className="btn btn-danger btn-sm" onClick={()=>deleteRecord(r.id)}>✕</button>
             </div>
@@ -783,7 +789,8 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
 }
 
 // ── Report View ───────────────────────────────────────────────────
-function ReportView({D,reportFil,setRepFil,custName,vehName}){
+function ReportView({D,reportFil,setRepFil,custName,vehName,perms}){
+  const canCost=perms?perms.canViewCosts:true;
   const recs=D.records||[];
   const vehs=D.vehicles||[];
   let filtered=recs;
@@ -811,13 +818,13 @@ function ReportView({D,reportFil,setRepFil,custName,vehName}){
     <div className="summary-bar">
       <div className="summary-stat"><div className="summary-stat-val">{filtered.length}</div><div className="summary-stat-lbl">Records</div></div>
       <div className="summary-stat"><div className="summary-stat-val">{recent30}</div><div className="summary-stat-lbl">Last 30 Days</div></div>
-      <div className="summary-stat"><div className="summary-stat-val">${totalCost.toLocaleString()}</div><div className="summary-stat-lbl">Total Cost</div></div>
+      {canCost&&<div className="summary-stat"><div className="summary-stat-val">${totalCost.toLocaleString()}</div><div className="summary-stat-lbl">Total Cost</div></div>}
     </div>
     <div style={{background:"var(--panel)",border:"1px solid var(--border)",borderRadius:"6px",overflow:"hidden"}}>
       <table className="report-table">
-        <thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th>Notes</th><th style={{textAlign:"right"}}>Cost</th></tr></thead>
-        <tbody>{filtered.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).map(r=>{const v=vehs.find(vv=>vv.id===r.vehicleId);return(<tr key={r.id}><td className="td-date">{r.date}</td><td className="td-vehicle">{v?.name||"?"}</td><td className="td-type">{r.type}</td><td className="td-notes">{r.notes?.slice(0,80)}</td><td className="td-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</td></tr>);})}
-        {filtered.length===0&&<tr><td colSpan={5} style={{textAlign:"center",padding:"30px",color:"var(--text-dim)"}}>No records match the filters</td></tr>}</tbody>
+        <thead><tr><th>Date</th><th>Vehicle</th><th>Type</th><th>Notes</th>{canCost&&<th style={{textAlign:"right"}}>Cost</th>}</tr></thead>
+        <tbody>{filtered.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).map(r=>{const v=vehs.find(vv=>vv.id===r.vehicleId);return(<tr key={r.id}><td className="td-date">{r.date}</td><td className="td-vehicle">{v?.name||"?"}</td><td className="td-type">{r.type}</td><td className="td-notes">{r.notes?.slice(0,80)}</td>{canCost&&<td className="td-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</td>}</tr>);})}
+        {filtered.length===0&&<tr><td colSpan={canCost?5:4} style={{textAlign:"center",padding:"30px",color:"var(--text-dim)"}}>No records match the filters</td></tr>}</tbody>
       </table>
     </div>
   </div>);
@@ -882,7 +889,8 @@ function InvoicesView({D,updateInvStatus,deleteInvoice,custName}){
 }
 
 // ── Order Parts View (TABLE layout matching standalone) ────────────
-function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,toggleOrdered,toggleReceived,deletePart,archiveReceived,consolidateDupes,selPoIds,setSelPoIds,setEdit,setModal,vehName}){
+function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,toggleOrdered,toggleReceived,deletePart,archiveReceived,consolidateDupes,selPoIds,setSelPoIds,setEdit,setModal,vehName,perms}){
+  const canCost=perms?perms.canViewCosts:true;
   const needed=D.partsToOrder.filter(p=>!p.ordered&&!p.received).length;
   const ordered=D.partsToOrder.filter(p=>p.ordered&&!p.received).length;
   const received=D.partsToOrder.filter(p=>p.received).length;
@@ -944,7 +952,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
           <thead><tr>
             <th style={{width:24}}></th>
             <th style={{width:32}}><input type="checkbox" checked={allSelected} onChange={toggleAll} style={{accentColor:"var(--amber)",cursor:"pointer"}}/></th>
-            <th>Description</th><th>Part #</th><th>Vendor</th><th>Qty</th><th>Unit Cost</th><th>Vehicle</th><th>Status</th><th></th>
+            <th>Description</th><th>Part #</th><th>Vendor</th><th>Qty</th>{canCost&&<th>Unit Cost</th>}<th>Vehicle</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>{filteredPO.map(p=>{
             const status=pStatus(p);
@@ -956,7 +964,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
               <td className="po-partnum">{p.num||""}</td>
               <td>{p.vendor||""}</td>
               <td>{p.qty||"1"}</td>
-              <td>{p.unitCost?`$${Number(p.unitCost).toFixed(2)}`:""}</td>
+              {canCost&&<td>{p.unitCost?`$${Number(p.unitCost).toFixed(2)}`:""}</td>}
               <td style={{fontSize:"12px"}}>{vn}</td>
               <td>
                 <div style={{display:"flex",gap:"5px",alignItems:"center",whiteSpace:"nowrap"}}>
@@ -978,7 +986,8 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
 }
 
 // ── Parts Inventory ────────────────────────────────────────────────
-function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj}){
+function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj,perms}){
+  const canCost=perms?perms.canViewCosts:true;
   const inv=D.partsInventory||[];
   const filtered=inv.filter(p=>{if(invFilters.q&&!(p.name+(p.notes||"")+(p.partNumbers||[]).map(n=>n.num+(n.vendor||"")).join("")).toLowerCase().includes(invFilters.q.toLowerCase()))return false;if(invFilters.location&&(p.location||"").toLowerCase()!==invFilters.location.toLowerCase())return false;return true;}).sort((a,b)=>a.name.localeCompare(b.name));
   const lowStock=inv.filter(p=>p.qty!==""&&p.minQty!==""&&Number(p.qty)<=Number(p.minQty));
@@ -996,7 +1005,7 @@ function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAd
         <div style={{flex:1}}>
           <div className="inv-name">{p.name}{isLow&&<span className="inv-low" style={{marginLeft:"8px"}}>⚠ Low</span>}</div>
           <div className="inv-meta">{p.qty!==""&&<span style={{display:"flex",alignItems:"center",gap:"4px"}}>Qty: <button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,-1)}>−</button><strong>{p.qty}</strong><button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,1)}>+</button></span>}{p.minQty!==""&&<span>Min: {p.minQty}</span>}{p.location&&<span>📍 {p.location}</span>}</div>
-          {(p.partNumbers||[]).map((n,i)=><div key={i} style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{n.unitCost&&` · $${n.unitCost}`}</div>)}
+          {(p.partNumbers||[]).map((n,i)=><div key={i} style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{canCost&&n.unitCost&&` · $${n.unitCost}`}</div>)}
           {p.notes&&<div style={{fontSize:"12px",color:"var(--text-dim)",fontStyle:"italic",marginTop:"4px"}}>{p.notes}</div>}
         </div>
         <div style={{display:"flex",gap:"5px"}}>
@@ -1037,7 +1046,8 @@ function VendorsView({D,deleteVendor,setEdit,setModal}){
 }
 
 // ── Order History ──────────────────────────────────────────────────
-function HistoryView({D,vehName}){
+function HistoryView({D,vehName,perms}){
+  const canCost=perms?perms.canViewCosts:true;
   const hist=[...D.orderHistory].sort((a,b)=>(b.receivedDate||"").localeCompare(a.receivedDate||""));
   return(<div>
     <div className="overview-title">Order History</div><div className="overview-sub">{hist.length} received item{hist.length!==1?"s":""}</div>
@@ -1045,7 +1055,7 @@ function HistoryView({D,vehName}){
     {hist.map(h=>(
       <div key={h.id} className="hist-row">
         <div><div style={{fontWeight:600,fontSize:"14px"}}>{h.desc||h.num||"Part"}</div><div style={{fontSize:"12px",color:"var(--text-dim)"}}>{[h.vendor,h.num?"#"+h.num:""].filter(Boolean).join(" · ")}{h.qty?` · Qty: ${h.qty}`:""}</div>{h.vehicleId&&<div style={{fontSize:"12px",color:"var(--text-dim)"}}>For: {vehName(h.vehicleId)}</div>}</div>
-        <div style={{textAlign:"right"}}>{h.unitCost&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontWeight:700,color:"var(--green)",fontSize:"13px"}}>${(parseFloat(h.unitCost)*(parseFloat(h.qty)||1)).toLocaleString()}</div>}<div style={{fontSize:"12px",color:"var(--text-dim)"}}>{h.receivedDate}</div></div>
+        <div style={{textAlign:"right"}}>{canCost&&h.unitCost&&<div style={{fontFamily:"'Share Tech Mono',monospace",fontWeight:700,color:"var(--green)",fontSize:"13px"}}>${(parseFloat(h.unitCost)*(parseFloat(h.qty)||1)).toLocaleString()}</div>}<div style={{fontSize:"12px",color:"var(--text-dim)"}}>{h.receivedDate}</div></div>
       </div>
     ))}
   </div>);
