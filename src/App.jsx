@@ -18,6 +18,7 @@ import FieldLogModule   from "./modules/fieldlog/index.jsx";
 import ServiceLogModule from "./modules/serviceLog/index.jsx";
 import AgriScaleModule  from "./modules/agriScale/index.jsx";
 import AgriPlanModule  from "./modules/agriPlan/index.jsx";
+import HomeModule from "./modules/home/index.jsx";
 
 // ── Farm colors ───────────────────────────────────────────────────
 const FARM_COLORS = [
@@ -177,8 +178,10 @@ export default function App() {
       const allowlist = profile?.modules;
       const available = (allowlist != null && allowlist.length > 0) ? mods.filter(m => allowlist.includes(m)) : mods;
       if (available.length > 0) {
+        const homeOn = profile?.homeScreenEnabled !== false;
         const hash = window.location.hash.slice(1);
-        const target = hash && available.includes(hash) ? hash : available[0];
+        const validHash = hash && (hash === "home" || available.includes(hash));
+        const target = validHash ? hash : (homeOn ? "home" : available[0]);
         window.location.hash = target;
         setModule(target);
       }
@@ -245,8 +248,13 @@ export default function App() {
         setProfile(userProfile);
         setTenant({ profile: tenantProfile });
         if (mods.length) {
+          // Each user can turn the Home screen off for themselves (default on) —
+          // see toggleHomeScreen. When it's on, it's the landing page unless the
+          // URL hash already points somewhere specific.
+          const homeOn = userProfile.homeScreenEnabled !== false;
           const hash = window.location.hash.slice(1);
-          const target = hash && mods.includes(hash) ? hash : mods[0];
+          const validHash = hash && (hash === "home" || mods.includes(hash));
+          const target = validHash ? hash : (homeOn ? "home" : mods[0]);
           window.location.hash = target;
           setModule(target);
         }
@@ -257,6 +265,26 @@ export default function App() {
       setAuthErr("Could not load your account. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Home screen preference — a personal choice, not an admin setting.
+  // Any user can turn their own landing page between the cross-module Home
+  // dashboard and jumping straight into their first module. Mirrors the
+  // dual-write pattern OrgPanel uses for role changes (users/{uid} plus the
+  // tenant-scoped mirror), so it survives however the profile gets reloaded.
+  const toggleHomeScreen = async () => {
+    const next = !(profile?.homeScreenEnabled !== false);
+    setProfile(p => ({ ...p, homeScreenEnabled: next }));
+    try {
+      await dbWrite(`users/${session.localId}/homeScreenEnabled`, next, session.idToken);
+      if (profile?.tenantId) await dbWrite(`tenants/${profile.tenantId}/users/${session.localId}/homeScreenEnabled`, next, session.idToken);
+    } catch (_) {}
+    if (!next && module === "home") {
+      const target = enabledModules[0];
+      if (target) { window.location.hash = target; setModule(target); }
+    } else if (next) {
+      window.location.hash = "home"; setModule("home");
     }
   };
 
@@ -318,7 +346,8 @@ export default function App() {
   const enabledModules = (userAllowlist != null && userAllowlist.length > 0)
     ? tenantModules.filter(m => userAllowlist.includes(m)) : tenantModules;
   const syncDot = { idle:"#D8CEBC", saving:T.gold, saved:T.green, error:T.danger }[syncStatus];
-  const showFarmPicker = ["fieldlog","agriScale","agriPlan"].includes(module);
+  const homeScreenEnabled = profile?.homeScreenEnabled !== false;
+  const showFarmPicker = ["fieldlog","agriScale","agriPlan","home"].includes(module);
   const customDefaultFarm = farms.find(f => f.id === "default");
   const effectiveDefaultFarm = customDefaultFarm || { ...DEFAULT_FARM, name: tenantProfile.name || DEFAULT_FARM.name };
   const allFarms = [effectiveDefaultFarm, ...farms.filter(f => f.id !== "default")];
@@ -362,6 +391,19 @@ export default function App() {
           <div style={{ fontFamily:"'Playfair Display',serif", fontSize:"17px", color:"#FFFFFF", fontWeight:700, whiteSpace:"nowrap" }}>{tenantProfile.name || "Agri Logix"}</div>
         </div>
         <div style={{ display:"flex", flex:1, overflowX:"auto" }}>
+          {homeScreenEnabled && (
+            <button onClick={()=>{ window.location.hash = "home"; setModule("home"); }} style={{
+              display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
+              border:"none", cursor:"pointer",
+              background: module==="home" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: module==="home" ? "#FFFFFF" : "rgba(255,255,255,0.65)",
+              fontSize:"13px", fontWeight: module==="home" ? 700 : 400,
+              borderBottom: module==="home" ? "2px solid #FFFFFF" : "2px solid transparent",
+              fontFamily:"'Barlow',sans-serif", whiteSpace:"nowrap", transition:"all .15s",
+            }}>
+              <span>🏠</span><span>Home</span>
+            </button>
+          )}
           {enabledModules.map(mid => {
             const m = MODULES[mid]; if (!m) return null;
             const active = module === mid;
@@ -391,6 +433,10 @@ export default function App() {
           {(profile?.role==="owner"||profile?.role==="manager") && (
             <button style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={()=>setShowOrg(true)}>⚙️ Org</button>
           )}
+          <button
+            title={homeScreenEnabled ? "Home screen: on — click to make your first module the landing page instead" : "Home screen: off — click to make Home your landing page again"}
+            style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color: homeScreenEnabled ? "#FFE080" : "rgba(255,255,255,0.5)" }}
+            onClick={toggleHomeScreen}>🏠 {homeScreenEnabled ? "On" : "Off"}</button>
           <button style={{ ...mkBtn("ghost"), padding:"4px 10px", fontSize:"12px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={signOut}>Sign out</button>
         </div>
       </div>
@@ -477,6 +523,7 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
+        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={profile} enabledModules={enabledModules} onNavigate={mid=>{ window.location.hash=mid; setModule(mid); }} onHideHome={toggleHomeScreen}/>}
         {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
         {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
         {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
