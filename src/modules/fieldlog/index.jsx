@@ -3059,6 +3059,45 @@ color:m.color, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
 );
 }
 
+// ── Persistent left-hand field list (mirrors AgriPlan/ServiceLog sidebars) ──
+function FieldSidebar({fields,activeFieldId,onSelect,onAdd}){
+const [q,setQ]=useState("");
+const sorted=[...fields]
+.filter(f=>f.name.toLowerCase().includes(q.toLowerCase()))
+.sort((a,b)=>a.name.localeCompare(b.name));
+return(
+<div style={{width:"220px",flexShrink:0,background:T.panel,border:`1px solid ${T.border}`,borderRadius:"10px",display:"flex",flexDirection:"column",position:"sticky",top:"78px",maxHeight:"calc(100vh - 100px)",overflow:"hidden"}}>
+<div style={{padding:"12px 14px 8px"}}>
+<div style={{fontSize:"10px",fontWeight:700,letterSpacing:"1.2px",textTransform:"uppercase",color:T.muted}}>Fields</div>
+<div style={{fontSize:"11px",color:T.faint,marginTop:"1px"}}>{fields.length} total</div>
+</div>
+{fields.length>4&&(
+<div style={{padding:"0 10px 8px"}}>
+<input style={{...S.input,fontSize:"12px",padding:"5px 8px"}} type="search" placeholder="Search…" value={q} onChange={e=>setQ(e.target.value)}/>
+</div>
+)}
+<div style={{borderTop:`1px solid ${T.border}`,overflowY:"auto",flex:1,padding:"6px 0"}}>
+{sorted.length===0&&<div style={{padding:"14px",fontSize:"12px",color:T.faint,textAlign:"center"}}>No fields found</div>}
+{sorted.map(f=>{
+const active=f.id===activeFieldId;
+return(
+<div key={f.id} onClick={()=>onSelect(f)}
+style={{padding:"7px 14px",cursor:"pointer",borderLeft:`3px solid ${active?T.gold:"transparent"}`,background:active?`${T.gold}14`:"transparent",transition:"background .12s"}}
+onMouseEnter={e=>{if(!active)e.currentTarget.style.background=T.cardHov;}}
+onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
+<div style={{fontSize:"13px",fontWeight:active?700:500,color:active?T.gold:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.name}</div>
+{f.acres&&<div style={{fontSize:"10px",color:T.faint,marginTop:"1px"}}>{f.acres} ac</div>}
+</div>
+);
+})}
+</div>
+<button onClick={onAdd} style={{margin:"8px 10px 10px",padding:"7px",border:`1px dashed ${T.borderHi}`,borderRadius:"6px",background:"none",color:T.muted,fontSize:"12px",fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:"5px"}}>
+＋ Add Field
+</button>
+</div>
+);
+}
+
 // ╔═══════════════════════════════════════════════════════════╗
 // ║ ROOT APP — Firebase sync wired in here ║
 // ╚═══════════════════════════════════════════════════════════╝
@@ -4144,13 +4183,16 @@ return(
 <div><strong>Offline mode</strong> — showing cached data. Any new activities will sync automatically when connection returns.</div>
 </div>
 )}
-<div style={{...S.content,position:"relative",overflow:"hidden"}}>
+<div style={{display:"flex",alignItems:"flex-start",gap:"20px",padding:"20px"}}>
+<FieldSidebar fields={fields} activeFieldId={curField?.id} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")}/>
+<div style={{...S.content,flex:1,padding:0,margin:0,maxWidth:"1100px",position:"relative",overflow:"hidden"}}>
 <div aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
 {view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId}/>}
 {view==="rotation" &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
 {view==="addField" &&<AddFieldView onBack={()=>setView("home")} onSave={addField}/>}
 {view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onEditActivity={editActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}}/>}
+</div>
 </div>
 
 {showAdd&&curField&&<AddActivityModal
