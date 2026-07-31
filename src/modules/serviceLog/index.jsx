@@ -6,7 +6,8 @@ import { obj2arr, genId } from "../../core/helpers.js";
 const SL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&display=swap');
   .sl *,.sl *::before,.sl *::after{box-sizing:border-box;}
-  .sl{--bg:#f0f2f5;--bg2:#ffffff;--bg3:#e8eaed;--panel:#ffffff;--border:#d1d5db;--border2:#b8bec8;--amber:#d97706;--amber-dim:#b45309;--red:#dc2626;--green:#16a34a;--text:#374151;--text-dim:#6b7280;--text-bright:#111827;background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font-size:14px;display:flex;flex-direction:column;min-height:calc(100vh - 50px);}
+  .sl{--bg:linear-gradient(160deg, #182420 0%, #101815 55%, #0B120F 100%);--bg2:#ffffff;--bg3:#e8eaed;--panel:#ffffff;--border:#d1d5db;--border2:#b8bec8;--amber:#d97706;--amber-dim:#b45309;--red:#dc2626;--green:#16a34a;--text:#374151;--text-dim:#6b7280;--text-bright:#111827;--text-on-dark:#F2F0E8;--text-on-dark-dim:#9BA79C;background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font-size:14px;display:flex;flex-direction:column;min-height:calc(100vh - 50px);}
+  .sl .accent-bar{height:4px;flex-shrink:0;background:linear-gradient(90deg, #4FA95C, #C9A227);}
   .sl .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);flex-shrink:0;gap:12px;background:#fff;}
   .sl .topbar-brand{display:flex;align-items:baseline;gap:10px;}
   .sl .topbar-eyebrow{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--amber);text-transform:uppercase;}
@@ -45,9 +46,10 @@ const SL_CSS = `
   .sl .tab-badge{display:inline-block;background:var(--amber);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px;vertical-align:middle;}
   .sl .tab-badge.red{background:var(--red);}
   .sl .tab-badge.green{background:var(--green);}
-  .sl .main-content{flex:1;overflow-y:auto;padding:22px;}
-  .sl .overview-title{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:var(--text-bright);margin-bottom:4px;}
-  .sl .overview-sub{font-size:13px;color:var(--text-dim);margin-bottom:16px;}
+  .sl .main-content{flex:1;overflow-y:auto;padding:22px;position:relative;}
+  .sl .main-watermark{position:absolute;right:-70px;bottom:-70px;width:320px;height:320px;background-image:url(/icons/icon-512.png);background-size:contain;background-repeat:no-repeat;opacity:0.06;pointer-events:none;}
+  .sl .overview-title{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:var(--text-on-dark);margin-bottom:4px;position:relative;}
+  .sl .overview-sub{font-size:13px;color:var(--text-on-dark-dim);margin-bottom:16px;position:relative;}
   .sl .summary-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
   .sl .summary-stat{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:10px 14px;flex:1;min-width:80px;}
   .sl .summary-stat-val{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--amber);line-height:1;}
@@ -483,6 +485,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
     <>
       <style>{SL_CSS}</style>
       <div className="sl">
+        <div className="accent-bar"/>
         {/* Topbar */}
         <div className="topbar">
           <div className="topbar-brand">
@@ -546,6 +549,7 @@ export default function ServiceLogModule({ tenantId, token, persist }) {
 
           <div className="main">
             <div className="main-content">
+              <div aria-hidden="true" className="main-watermark"/>
 
               {/* ── FLEET ── */}
               {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory}/>}
