@@ -4,10 +4,12 @@
   "description": "Agri Logix — Farm Management Platform",
   "scripts": {
     "build": "esbuild src/index.jsx --bundle --outfile=public/bundle.js --loader:.jsx=jsx --jsx=automatic --define:process.env.NODE_ENV='\"production\"'",
-    "dev":   "esbuild src/index.jsx --bundle --outfile=public/bundle.js --loader:.jsx=jsx --jsx=automatic --watch"
+    "dev":   "esbuild src/index.jsx --bundle --outfile=public/bundle.js --loader:.jsx=jsx --jsx=automatic --watch",
+    "test":  "vitest run"
   },
   "devDependencies": {
-    "esbuild": "^0.21.0"
+    "esbuild": "^0.21.0",
+    "vitest":  "^2.1.0"
   },
   "dependencies": {
     "react":       "^18.3.0",
