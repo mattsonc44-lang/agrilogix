@@ -52,6 +52,7 @@ export default function App() {
   const [farmModal,  setFarmModal]  = useState(null); // null | "new" | {id,name,color}
   const [adminViewTenantId,   setAdminViewTenantId]   = useState(null); // admin impersonation
   const [adminViewTenantName, setAdminViewTenantName] = useState("");
+  const [adminViewRole,       setAdminViewRole]       = useState("owner"); // which role to see the impersonated tenant as
   const refreshTimer = useRef(null);
   const isAdmin = session?.localId === ADMIN_UID;
   // When admin is viewing a tenant, use that tenantId instead of their own
@@ -339,7 +340,13 @@ export default function App() {
   );
   if (!session) return <AuthScreen onAuth={handleAuth}/>;
 
-  if (showAdmin && isAdmin) return <AdminPanel user={session} token={session.idToken} onBack={()=>setShowAdmin(false)} onViewTenant={(id, name)=>{setAdminViewTenantId(id);setAdminViewTenantName(name||id);setShowAdmin(false);}} adminViewTenantId={adminViewTenantId}/>;
+  if (showAdmin && isAdmin) return <AdminPanel user={session} token={session.idToken} onBack={()=>setShowAdmin(false)} onViewTenant={(id, name)=>{setAdminViewTenantId(id);setAdminViewTenantName(name||id);setAdminViewRole("owner");setShowAdmin(false);}} adminViewTenantId={adminViewTenantId}/>;
+
+  // While Admin View is impersonating a tenant, every module should see the
+  // role picked in the banner (owner/manager/operator) — not the admin's own
+  // real role, and not any of the admin's own per-module overrides (those are
+  // specific to the admin's personal account and would be misleading here).
+  const impersonatedProfile = adminViewTenantId ? { ...profile, role: adminViewRole, moduleRoles: {} } : profile;
 
   const tenantProfile  = tenant?.profile || {};
   const tenantModules  = tenantProfile.modules || [];
@@ -512,23 +519,33 @@ export default function App() {
       {/* ── Admin view banner ── */}
       {adminViewTenantId && (
         <div style={{ background:"#C05000", color:"#fff", padding:"8px 20px", fontSize:13,
-          display:"flex", alignItems:"center", justifyContent:"space-between", fontFamily:"'Barlow',sans-serif" }}>
+          display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:"8px", fontFamily:"'Barlow',sans-serif" }}>
           <span>👁 <strong>Admin View: {adminViewTenantName}</strong> — you are seeing their data. Your own data is not affected.</span>
-          <button onClick={()=>setAdminViewTenantId(null)}
-            style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.4)",
-              borderRadius:5, color:"#fff", padding:"3px 14px", cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>
-            ✕ Exit Admin View
-          </button>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+            <label style={{ display:"flex", alignItems:"center", gap:"6px", fontSize:12 }}>
+              See as:
+              <select value={adminViewRole} onChange={e=>setAdminViewRole(e.target.value)}
+                style={{ background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.4)",
+                  borderRadius:5, color:"#fff", padding:"3px 8px", fontSize:12, fontFamily:"inherit", cursor:"pointer" }}>
+                {Object.entries(ROLES).map(([id,r])=><option key={id} value={id} style={{ color:"#000" }}>{r.label}</option>)}
+              </select>
+            </label>
+            <button onClick={()=>{setAdminViewTenantId(null);setAdminViewRole("owner");}}
+              style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.4)",
+                borderRadius:5, color:"#fff", padding:"3px 14px", cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>
+              ✕ Exit Admin View
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── Modules ── */}
       <div>
-        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={profile} enabledModules={enabledModules} onNavigate={(mid,tab)=>{ window.location.hash=mid; setModule(mid); setPendingTab(tab||null); }} onHideHome={toggleHomeScreen}/>}
-        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
-        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist} initialTab={pendingTab}/>}
-        {module === "agriPlan"   && <AgriPlanModule  key={`ap-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
+        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} enabledModules={enabledModules} onNavigate={(mid,tab)=>{ window.location.hash=mid; setModule(mid); setPendingTab(tab||null); }} onHideHome={toggleHomeScreen}/>}
+        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.fieldlog   || impersonatedProfile.role}} persist={persist}/>}
+        {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.agriScale   || impersonatedProfile.role}} persist={persist}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.serviceLog  || impersonatedProfile.role}} persist={persist} initialTab={pendingTab}/>}
+        {module === "agriPlan"   && <AgriPlanModule  key={`ap-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.agriPlan   || impersonatedProfile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
             <div style={{ fontSize:"48px", marginBottom:"16px" }}>🌾</div>
