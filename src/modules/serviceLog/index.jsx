@@ -218,7 +218,7 @@ const nextInvNum = invs=>{const ns=invs.map(i=>parseInt((i.num||"").replace("INV
 const safeLoads = f=>(f&&f.loads)||[];
 
 // ── Main ──────────────────────────────────────────────────────────
-export default function ServiceLogModule({ tenantId, token, persist, userProfile }) {
+export default function ServiceLogModule({ tenantId, token, persist, userProfile, initialTab }) {
   // Owner/manager/operator tiering — same shared model as AgriPlan/AgriScale,
   // see core/permissions.js. Standalone (no tenantId) mode predates accounts
   // entirely, so it stays full-access.
@@ -229,7 +229,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const [loading, setLoading] = useState(true);
   const [sync, setSync] = useState("idle");
 
-  const [tab,      setTab]      = useState("fleet");
+  const [tab,      setTab]      = useState(initialTab || "fleet");
   const [selCustId,setSelCust]  = useState(null);
   const [selVehId, setSelVeh]   = useState(null);
   const [sbSearch, setSbSearch] = useState("");
