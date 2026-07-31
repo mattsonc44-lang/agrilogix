@@ -2643,17 +2643,17 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={}}){
       <tbody>
         {sorted.map((f,i)=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
           return(<tr key={f.id} onClick={()=>onSelect(f)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
-            <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
-            <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #141e14"}}>{f.farm}</td>
-            <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #141e14",minWidth:160}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
-            <td style={{padding:"7px 10px",borderBottom:"1px solid #141e14"}}>
+            <td style={{padding:"7px 10px",borderBottom:"1px solid #d8e2c8"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
+            <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #d8e2c8"}}>{f.farm}</td>
+            <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #d8e2c8",minWidth:160}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
+            <td style={{padding:"7px 10px",borderBottom:"1px solid #d8e2c8"}}>
               <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",background:inelig?"#fff0f0":"#dce8c6",borderRadius:3,fontSize:11,color:inelig?"#c02020":"#2a7010"}}><span style={{width:5,height:5,borderRadius:"50%",background:inelig?"#c02020":"#3a9020"}}/>{f.crop}</span>
               {(seedLogs[f.common]||[]).length>0&&<span style={{marginLeft:4,fontSize:9,background:"#c8f0a8",color:"#1a5010",padding:"1px 5px",borderRadius:2,fontWeight:700,verticalAlign:"middle"}}>🌱</span>}
             </td>
-            <td style={{padding:"7px 10px",color:"#3a6028",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f.acres.toFixed(1)}</td>
-            <td style={{padding:"7px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f$(c.revenue)}</td>
-            <td style={{padding:"7px 10px",color:"#c05010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f$(c.expenses)}</td>
-            <td style={{padding:"7px 10px",color:c.net>=0?"#1a7010":"#c02020",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #141e14"}}>{f$(c.net,true)}</td>
+            <td style={{padding:"7px 10px",color:"#3a6028",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f.acres.toFixed(1)}</td>
+            <td style={{padding:"7px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f$(c.revenue)}</td>
+            <td style={{padding:"7px 10px",color:"#c05010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f$(c.expenses)}</td>
+            <td style={{padding:"7px 10px",color:c.net>=0?"#1a7010":"#c02020",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f$(c.net,true)}</td>
           </tr>);
         })}
       </tbody>
@@ -4514,6 +4514,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   const selectField=f=>{setSelectedField(typeof f==="object"?f:fields.find(x=>x.id===f)||null);setMainView("detail");setAddMode(false);};
 
   return(<div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#f1f5eb",color:"#1a3010",fontFamily:"'Barlow',sans-serif",overflow:"hidden"}}>
+    <div style={{height:"4px",flexShrink:0,background:"linear-gradient(90deg, #4FA95C, #C9A227)"}}/>
     {showRulesEditor&&<RotationRulesEditor onClose={()=>setShowRulesEditor(false)}/>}
     {!dbLoaded&&<div style={{position:"fixed",inset:0,background:"rgba(241,245,235,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
       <div style={{fontSize:28}}>🌾</div>
@@ -4594,11 +4595,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
 
     <div style={{display:"flex",flex:1,overflow:"hidden"}}>
       {/* Sidebar */}
-      <div style={{width:235,background:"#e6eed8",borderRight:"1px solid #162016",overflowY:"auto",flexShrink:0,display:"flex",flexDirection:"column"}}>
-        <div style={{display:"flex",gap:4,padding:"8px 10px",borderBottom:"1px solid #162016"}}>
+      <div style={{width:235,background:"#e6eed8",borderRight:"1px solid #c8d4b8",overflowY:"auto",flexShrink:0,display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",gap:4,padding:"8px 10px",borderBottom:"1px solid #c8d4b8"}}>
           {[["all","All"],...([...new Set(fields.map(f=>f.entity))].filter(Boolean).map(e=>[e,e.length>8?e.slice(0,7)+"…":e]))].map(([v,l])=>(<button key={v} onClick={()=>setEntityFilter(v)} style={{flex:1,fontSize:10,padding:"4px 0",borderRadius:3,border:"none",cursor:"pointer",background:entityFilter===v?"#2a7a18":"#eef4e6",color:entityFilter===v?"#ffffff":"#6a8a50",fontWeight:entityFilter===v?700:400,fontFamily:"'Barlow',sans-serif"}}>{l}</button>))}
         </div>
-        <div style={{padding:"6px 10px",borderBottom:"1px solid #162016"}}>
+        <div style={{padding:"6px 10px",borderBottom:"1px solid #c8d4b8"}}>
           <input placeholder="🔍 search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"4px 8px",color:"#1a7010",fontFamily:"'Barlow',sans-serif",fontSize:11,width:"100%",outline:"none"}}/>
         </div>
         <div style={{overflowY:"auto",flex:1}}>
@@ -4606,7 +4607,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
             const k=`${g.entity}::${g.farm}`;const open=expanded.has(k);
             const acres=g.fields.reduce((s,f)=>s+f.acres,0);const hasOv=g.fields.some(f=>Object.keys(f.expenseOverrides||{}).length>0);
             return(<div key={k}>
-              <div onClick={()=>setExpanded(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;})} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",cursor:"pointer",fontSize:10,color:"#1a4010",fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,background:"#e4f0d0",borderBottom:"1px solid #162016"}}>
+              <div onClick={()=>setExpanded(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;})} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",cursor:"pointer",fontSize:10,color:"#1a4010",fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,background:"#e4f0d0",borderBottom:"1px solid #c8d4b8"}}>
                 <span style={{fontSize:8}}>{open?"▾":"▸"}</span>
                 <span style={{flex:1}}>{g.farm}</span>
                 {hasOv&&<span title="One or more fields have custom expense overrides" style={{color:"#8a6010",fontSize:9}}>★</span>}
@@ -4624,14 +4625,15 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
           })}
         </div>
         {/* Crop breakdown */}
-        <div style={{borderTop:"1px solid #162016",padding:"8px 10px"}}>
+        <div style={{borderTop:"1px solid #c8d4b8",padding:"8px 10px"}}>
           <div style={{fontSize:9,color:"#3a7028",textTransform:"uppercase",letterSpacing:0.8,marginBottom:5}}>Crop Acres (filtered)</div>
           {(()=>{const cm={};filtered.forEach(f=>{cm[f.crop]=(cm[f.crop]||0)+f.acres;});return Object.entries(cm).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([c,ac])=>(<div key={c} style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#527a38",padding:"1px 0"}}><span>{c}</span><span style={{color:"#7a9260"}}>{ac.toFixed(0)}</span></div>));})()}
         </div>
       </div>
 
       {/* Main content */}
-      <div style={{flex:1,overflowY:"auto",padding:20,background:"#f1f5eb"}}>
+      <div style={{flex:1,overflowY:"auto",padding:20,background:"#f1f5eb",position:"relative"}}>
+        <div aria-hidden="true" style={{position:"absolute",right:"-70px",bottom:"-70px",width:"320px",height:"320px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.045,pointerEvents:"none"}}/>
         {/* Summary strip */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
           <SCard label="Acres" val={totals.acres.toFixed(0)+" ac"} color="#2a7010" sub={`${filtered.length} field units`}/>
