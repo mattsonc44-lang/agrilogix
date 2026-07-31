@@ -83,3 +83,19 @@ export function fbWatchFields(year, callback) {
   sse.onerror = () => { try { callback([]); } catch(_) {} };
   return () => sse.close();
 }
+
+// fieldHistory used to be fetch-once, so a write from another module (e.g.
+// AgriScale pushing actual harvest data in) never showed up here without a
+// manual page reload. Same live-update pattern as fbWatchFields above.
+export function fbWatchFieldHistory(callback) {
+  const url = `${baseUrl()}/${path("fieldHistory")}.json${authSuffix()}`;
+  const sse = new EventSource(url);
+  sse.addEventListener("put", (e) => {
+    try {
+      const { data } = JSON.parse(e.data);
+      callback(data && typeof data === "object" ? data : {});
+    } catch (_) {}
+  });
+  sse.onerror = () => {};
+  return () => sse.close();
+}

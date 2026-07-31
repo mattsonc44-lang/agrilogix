@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
+import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbWatchFieldHistory, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
 import { csvEscape, csvParseLine, parseCSV, downloadTextFile } from "../../core/csv.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -4232,6 +4232,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   // On mount: load once then subscribe to real-time updates
   useEffect(()=>{
     let unsubFields = null;
+    let unsubFieldHistory = null;
     let firstLoad = true;
 
     // Load years + hist revenue + rotation rules once
@@ -4303,9 +4304,10 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       // pushes actual harvested bushels (a `bushels`/`lastUpdated`/`source` on
       // top of the usual crop/yield/acres entry), so actuals ride along with
       // the same crop-rotation/APH-suggestion data AgriPlan already reads
-      // here, rather than living in a second parallel node.
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
+      // here, rather than living in a second parallel node. Live-subscribed
+      // (not fetch-once) so a harvest export from AgriScale shows up here
+      // without needing to reload this tab — same reasoning as fbWatchFields.
+      unsubFieldHistory = fbWatchFieldHistory(d => setFieldHistory(d));
       // Load tenant crop price elections from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{
@@ -4368,7 +4370,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       }
     }, 8000);
 
-    return ()=>{ if(unsubFields) unsubFields(); clearTimeout(fallbackTimer); };
+    return ()=>{ if(unsubFields) unsubFields(); if(unsubFieldHistory) unsubFieldHistory(); clearTimeout(fallbackTimer); };
   },[activeYear]);
 
   const isSavingRef = useRef(false);
