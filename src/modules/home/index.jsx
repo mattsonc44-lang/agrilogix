@@ -126,10 +126,19 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
   const showServiceLog = enabledModules.includes("serviceLog");
   const firstName = (userProfile?.displayName || userProfile?.name || userProfile?.email || "").split(/[\s@]/)[0];
 
-  const Stat = ({ icon, label, val, sub, color }) => (
-    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "10px", padding: "14px 16px", flex: "1 1 140px", minWidth: "140px" }}>
+  const Stat = ({ icon, label, val, sub, color, onClick }) => (
+    <div
+      onClick={onClick}
+      onMouseEnter={onClick ? (e => { e.currentTarget.style.borderColor = T.borderHi; e.currentTarget.style.background = T.cardHov; }) : undefined}
+      onMouseLeave={onClick ? (e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.card; }) : undefined}
+      style={{
+        background: T.card, border: `1px solid ${T.border}`, borderRadius: "10px", padding: "14px 16px",
+        flex: "1 1 140px", minWidth: "140px", cursor: onClick ? "pointer" : "default", transition: "all .12s",
+        position: "relative",
+      }}>
       <div style={{ fontSize: "11px", color: T.muted, textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 700, display: "flex", alignItems: "center", gap: "5px", marginBottom: "4px" }}>
         <span>{icon}</span>{label}
+        {onClick && <span style={{ marginLeft: "auto", color: T.faint, fontSize: "10px" }}>→</span>}
       </div>
       <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "22px", fontWeight: 700, color: color || T.text }}>{val}</div>
       {sub && <div style={{ fontSize: "11px", color: T.faint, marginTop: "2px" }}>{sub}</div>}
@@ -150,15 +159,15 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
 
       {/* Stat cards — only what's naturally already tracked, nothing implying daily upkeep */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "22px" }}>
-        {(showAgriPlan || showFieldLog) && <Stat icon="🌾" label="Acres" val={acres ? acres.toLocaleString() : "—"} sub={`${(apFieldsArr.length || flFields.length)} fields`} />}
-        {showAgriPlan && perms.canViewCosts && <Stat icon="💵" label="Projected Revenue" val={fmtMoney(revenueProjected)} color={T.green} sub={fieldsWithActuals > 0 ? `${fmtMoney(actualRevenue)} actual so far` : "based on current plan"} />}
-        {showAgriPlan && perms.canViewInsurance && <Stat icon="🛡" label="Ins. Guarantee" val={fmtMoney(guarantee)} color={T.gold} />}
+        {(showAgriPlan || showFieldLog) && <Stat icon="🌾" label="Acres" val={acres ? acres.toLocaleString() : "—"} sub={`${(apFieldsArr.length || flFields.length)} fields`} onClick={() => onNavigate(showAgriPlan ? "agriPlan" : "fieldlog")} />}
+        {showAgriPlan && perms.canViewCosts && <Stat icon="💵" label="Projected Revenue" val={fmtMoney(revenueProjected)} color={T.green} sub={fieldsWithActuals > 0 ? `${fmtMoney(actualRevenue)} actual so far` : "based on current plan"} onClick={() => onNavigate("agriPlan")} />}
+        {showAgriPlan && perms.canViewInsurance && <Stat icon="🛡" label="Ins. Guarantee" val={fmtMoney(guarantee)} color={T.gold} onClick={() => onNavigate("agriPlan")} />}
         {(showAgriPlan && fieldsWithActuals > 0) || (showAgriScale && seasonBushels > 0) ? (
-          <Stat icon="⚖️" label="Bushels Harvested" val={Math.round(actualBushels || seasonBushels).toLocaleString()} sub={showAgriScale && loadsThisWeek > 0 ? `${loadsThisWeek} loads this week` : (fieldsWithActuals ? `${fieldsWithActuals} field${fieldsWithActuals !== 1 ? "s" : ""} reported` : "")} />
+          <Stat icon="⚖️" label="Bushels Harvested" val={Math.round(actualBushels || seasonBushels).toLocaleString()} sub={showAgriScale && loadsThisWeek > 0 ? `${loadsThisWeek} loads this week` : (fieldsWithActuals ? `${fieldsWithActuals} field${fieldsWithActuals !== 1 ? "s" : ""} reported` : "")} onClick={() => onNavigate(showAgriScale ? "agriScale" : "agriPlan")} />
         ) : null}
-        {showFieldLog && <Stat icon="📋" label="Activity This Week" val={activitiesThisWeek} sub={`${flActivities.length} logged total`} />}
-        {showServiceLog && <Stat icon="☑️" label="Open To-Dos" val={openTodos.length} color={openTodos.length > 0 ? T.warning : T.text} />}
-        {showServiceLog && partsNeeded > 0 && <Stat icon="🔩" label="Parts Needed" val={partsNeeded} color={T.warning} />}
+        {showFieldLog && <Stat icon="📋" label="Activity This Week" val={activitiesThisWeek} sub={`${flActivities.length} logged total`} onClick={() => onNavigate("fieldlog")} />}
+        {showServiceLog && <Stat icon="☑️" label="Open To-Dos" val={openTodos.length} color={openTodos.length > 0 ? T.warning : T.text} sub={openTodos.length > 0 ? "click to view" : undefined} onClick={() => onNavigate("serviceLog", "todos")} />}
+        {showServiceLog && partsNeeded > 0 && <Stat icon="🔩" label="Parts Needed" val={partsNeeded} color={T.warning} sub="click to view" onClick={() => onNavigate("serviceLog", "order")} />}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "16px", alignItems: "start" }}>
@@ -173,7 +182,10 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
           {showFieldLog && recentActs.map(a => {
             const meta = ACT_META[a.type] || ACT_META.other;
             return (
-              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 0", borderBottom: `1px solid ${T.border}` }}>
+              <div key={a.id} onClick={() => onNavigate("fieldlog")}
+                onMouseEnter={e => e.currentTarget.style.background = T.cardHov}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                style={{ display: "flex", alignItems: "center", gap: "10px", padding: "7px 4px", margin: "0 -4px", borderRadius: "6px", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
                 <span style={{ fontSize: "16px", flexShrink: 0 }}>{meta.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "13px", fontWeight: 600, color: T.text }}>{meta.label} — {flFieldName(a.fieldId)}</div>
@@ -189,12 +201,15 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "10px", padding: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "16px", color: T.gold }}>Needs Attention</div>
-            {showServiceLog && <button onClick={() => onNavigate("serviceLog")} style={{ ...mkBtn("ghost"), padding: "3px 10px", fontSize: "11px" }}>Open Service →</button>}
+            {showServiceLog && <button onClick={() => onNavigate("serviceLog", "todos")} style={{ ...mkBtn("ghost"), padding: "3px 10px", fontSize: "11px" }}>Open Service →</button>}
           </div>
           {!showServiceLog && <div style={{ fontSize: "12px", color: T.faint, fontStyle: "italic" }}>AgriService isn't enabled for your account.</div>}
           {showServiceLog && openTodos.length === 0 && <div style={{ fontSize: "12px", color: T.faint, fontStyle: "italic" }}>Nothing pending — all caught up.</div>}
           {showServiceLog && openTodos.slice(0, 6).map((t, i) => (
-            <div key={t.id || i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 0", borderBottom: `1px solid ${T.border}` }}>
+            <div key={t.id || i} onClick={() => onNavigate("serviceLog", "todos")}
+              onMouseEnter={e => e.currentTarget.style.background = T.cardHov}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 4px", margin: "0 -4px", borderRadius: "6px", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
               <span style={{ width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0, background: t.priority === "high" ? T.danger : t.priority === "low" ? T.faint : T.warning }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: "13px", fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.text}</div>
