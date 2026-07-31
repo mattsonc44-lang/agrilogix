@@ -1167,34 +1167,32 @@ acres: String(r.acres),
 notes: `Exported from AgriScale — ${r.totalLbs.toLocaleString()} lbs`,
 };
 await dbWrite(`${r.flBase}/activities/${actId}`, activity, token);
-// Also push the harvested yield into AgriPlan's field history so it shows up
-// in that field's crop history / APH suggestions for this year.
-try {
-const hYr = new Date(r.date).getFullYear();
-await fetch(
-`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.name)}/${hYr}.json?auth=${token}`,
-{ method: "PUT", headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres) }) }
-);
-} catch(_) {}
 }
-// Push actual bushels into AgriPlan's own actuals node — separate from the
-// fields list AgriPlan itself owns, so it can't be clobbered by AgriPlan's
-// own autosave. Keyed by field name + year, same convention as fieldHistory.
+// Push actual production into AgriPlan's own field-history record — the
+// same place its History tab and APH/rotation suggestions already read
+// from (crop/yield/acres), just with bushels/lastUpdated/source added on
+// top. That's real production data showing up where AgriPlan already
+// tracks production, not a second parallel node only this badge reads.
+// Separate from the `fields` list AgriPlan owns outright (which it
+// overwrites wholesale on every autosave), so this write can't get
+// clobbered by an open AgriPlan tab.
 for (const r of toAgriPlan) {
 try {
 const aYr = new Date(r.date).getFullYear();
 await fetch(
-`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/actuals/${encodeURIComponent(r.name)}/${aYr}.json?auth=${token}`,
+`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.name)}/${aYr}.json?auth=${token}`,
 { method: "PUT", headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ bushels: r.totalBu, yieldPerAc: r.yieldPerAc, acres: r.acres, lastUpdated: new Date().toISOString(), source: "agriscale" }) }
+body: JSON.stringify({
+crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres),
+bushels: r.totalBu, lastUpdated: new Date().toISOString(), source: "agriscale",
+}) }
 );
 } catch(_) {}
 }
 setFLExportModal(false);
 const parts = [];
 if (toFieldLog.length) parts.push(`${toFieldLog.length} harvest ${toFieldLog.length===1?"activity":"activities"} added to FieldLog`);
-if (toAgriPlan.length) parts.push(`${toAgriPlan.length} field${toAgriPlan.length===1?"":"s"} sent to AgriPlan as actuals`);
+if (toAgriPlan.length) parts.push(`${toAgriPlan.length} field${toAgriPlan.length===1?"":"s"} sent to AgriPlan as actual production`);
 alert(`✅ ${parts.join(" · ")||"Nothing to export"}`);
 } catch(e) {
 alert("Export failed: " + e.message);
