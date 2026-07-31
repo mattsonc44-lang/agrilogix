@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ImportAPHModal } from "../modules/agriPlan/index.jsx";
 
 const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
 
@@ -93,6 +94,9 @@ function StepWelcome({ tenantName, profile, onChange }) {
         <input style={S.input} value={tenantName}
           onChange={e=>onChange("tenantName",e.target.value)}
           placeholder="Agri Logix"/>
+        <div style={{fontSize:11,color:"#8aaa60",marginTop:4}}>
+          This is what you entered when you signed up — just confirm it, or update it here if you'd like.
+        </div>
       </div>
       <div style={S.row}>
         <div>
@@ -109,6 +113,10 @@ function StepWelcome({ tenantName, profile, onChange }) {
       <div style={{background:"#f2f8ec",border:"1px solid #b8d898",borderRadius:8,
         padding:"14px 16px",fontSize:12,color:"#3a6020",marginTop:8}}>
         💡 You're the account owner. You can invite team members after setup and grant them access to specific modules.
+      </div>
+      <div style={{background:"#f0f6fc",border:"1px solid #a8c8e0",borderRadius:8,
+        padding:"14px 16px",fontSize:12,color:"#1a4a6a",marginTop:10}}>
+        🚜 <strong>Operate more than one farm or entity?</strong> This wizard sets up your first farm ("{tenantName.trim()||"your operation name"}"). You can add separate farms anytime with the <strong>+ Farm</strong> switcher at the top of the app — each one keeps its own fields, activities, and plans.
       </div>
     </div>
   );
@@ -310,8 +318,9 @@ function StepFields({ fields, onAdd, onRemove }) {
 }
 
 // ── Step: Done ─────────────────────────────────────────────────────────────────
-function StepDone({ crops, fields, prices }) {
+function StepDone({ crops, fields, aphFieldCount=0, prices }) {
   const priceCount = Object.values(prices).filter(p=>p.priceGuar>0||p.projPrice>0).length;
+  const totalFields = fields.length + aphFieldCount;
   return (
     <div style={{textAlign:"center",padding:"20px 0"}}>
       <div style={{fontSize:56,marginBottom:12}}>🎉</div>
@@ -321,7 +330,7 @@ function StepDone({ crops, fields, prices }) {
         {[
           {icon:"🌾",label:"Crops configured",val:crops.length},
           {icon:"💲",label:"Price benchmarks",val:priceCount},
-          {icon:"📍",label:"Fields added",val:fields.length},
+          {icon:"📍",label:"Fields added",val:totalFields},
         ].map(({icon,label,val})=>(
           <div key={label} style={{background:"#f2f8ec",border:"1px solid #b8d898",borderRadius:10,
             padding:"18px 24px",minWidth:130,textAlign:"center"}}>
@@ -335,10 +344,11 @@ function StepDone({ crops, fields, prices }) {
         padding:"14px 20px",fontSize:12,color:"#5a7a40",textAlign:"left"}}>
         <strong>Next steps:</strong>
         <ul style={{margin:"8px 0 0 16px",lineHeight:2}}>
-          {fields.length===0&&<li>Add your fields in <strong>AgriPlan</strong> or <strong>AgriField</strong></li>}
+          {totalFields===0&&<li>Add your fields in <strong>AgriPlan</strong> or <strong>AgriField</strong></li>}
           {priceCount===0&&<li>Set price benchmarks under <strong>💲 Prices</strong> in AgriPlan</li>}
-          <li>Import your APH history in <strong>AgriPlan → Import APH</strong></li>
+          {aphFieldCount===0&&<li>Import your APH history in <strong>AgriPlan → Import APH</strong></li>}
           <li>Draw field boundaries in <strong>AgriField</strong></li>
+          <li>Operate multiple farms? Add them with <strong>+ Farm</strong> in the top navigation</li>
         </ul>
       </div>
     </div>
@@ -352,8 +362,18 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
   const [crops, setCrops]       = useState([]);
   const [prices, setPrices]     = useState({});
   const [fields, setFields]     = useState([]);
+  const [aphFields, setAphFields] = useState([]); // AgriPlan-native-shaped fields created via APH PDF import
+  const [showAphImport, setShowAphImport] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [err, setErr]           = useState("");
+
+  // Don't ask for the operation name twice — signup already collected it
+  // (tenant.name, written from the "Farm / organization name" field on the
+  // signup form). Pre-fill it here so this step is just a quick confirm/edit
+  // instead of a blank re-ask.
+  useEffect(() => {
+    if (tenant?.name) setTenantName(prev => prev || tenant.name);
+  }, [tenant?.name]);
 
   const atLast = step === STEPS.length - 1;
 
@@ -393,17 +413,16 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
           await fb(`tenants/${tenantId}/agriPlan/cropPrices`, token, "PUT", arr);
         }
       } else if(stepIdx === 3) {
-        // Save fields to canonical store — skip if none added, so we never
-        // PUT an empty object over a tenant's real field list.
-        if(fields.length > 0) {
-          const obj = {};
-          fields.forEach((f,i) => { obj[i] = f; });
-          await fb(`tenants/${tenantId}/fields`, token, "PUT", obj);
-          // Also sync to AgriPlan for current year
+        // Save fields — skip entirely if none added (manually or via APH import),
+        // so we never PUT an empty object over a tenant's real field list.
+        if(fields.length > 0 || aphFields.length > 0) {
+          // AgriPlan (per-year) — manual fields get translated into AgriPlan's
+          // native shape; APH-imported fields already arrive in that shape.
           const yr = new Date().getFullYear();
           const apFields = {};
-          fields.forEach((f,i) => {
-            apFields[i] = {
+          let i = 0;
+          fields.forEach((f) => {
+            apFields[i++] = {
               id: f.id, common: f.name, farm: f.farm||"", entity: f.entity||"",
               legal: f.legal||"", fieldNum: "", acres: f.acres||0, crop: "",
               eligibleCrops: crops.length>0?[...crops]:[],
@@ -415,7 +434,22 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
               insuredAcres: f.insuredAcres||0,
             };
           });
+          aphFields.forEach((f) => { apFields[i++] = f; });
           await fb(`tenants/${tenantId}/agriPlan/fields/${yr}`, token, "PUT", apFields);
+
+          // FieldLog / AgriScale's real shared field list (this is what those
+          // modules actually read — a previous version of this wizard wrote to
+          // tenants/{tenantId}/fields instead, a path nothing else ever reads,
+          // so onboarding-entered fields silently never showed up outside
+          // AgriPlan until someone touched them there first).
+          const flObj = {};
+          fields.forEach((f) => {
+            flObj[f.id] = { id: f.id, name: f.name, acres: f.acres||0, legalDesc: f.legal||"", boundary: [] };
+          });
+          aphFields.forEach((f) => {
+            flObj[f.id] = { id: f.id, name: f.common, acres: f.acres||0, legalDesc: f.legal||"", boundary: [] };
+          });
+          await fb(`tenants/${tenantId}/fieldlog/fields`, token, "PUT", flObj);
         }
       } else if(stepIdx === 4) {
         // Mark setup complete
@@ -447,6 +481,18 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
   const updPrice   = (c,k,v) => setPrices(p=>({...p,[c]:{...(p[c]||{}), [k]:v}}));
   const addField   = (f) => setFields(p=>[...p,f]);
   const removeField = (id) => setFields(p=>p.filter(f=>f.id!==id));
+  const removeAphField = (id) => setAphFields(p=>p.filter(f=>f.id!==id));
+
+  // Bridges ImportAPHModal (borrowed from AgriPlan) into the wizard's own local
+  // state, mirroring what AgriPlanModule's real addField/updateField do —
+  // ImportAPHModal expects onCreateField to assign an id and return the field
+  // synchronously so it can resolve matches within the same import run.
+  const handleAphCreateField = (nf) => {
+    const field = { ...nf, id: `f${Date.now()}${Math.floor(Math.random()*9999)}` };
+    setAphFields(p => [...p, field]);
+    return field;
+  };
+  const handleAphUpdateField = (id, upd) => setAphFields(p => p.map(f => f.id===id ? {...f, ...upd} : f));
 
   const canSkip = step > 0 && step < STEPS.length-1;
   const isRequired = step === 0;
@@ -505,8 +551,50 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
           {step===1&&<StepCrops selected={crops} onToggle={toggleCrop}
             onSelectAll={()=>setCrops([...ALL_CROPS])} onClearAll={()=>setCrops([])}/>}
           {step===2&&<StepPrices crops={crops} prices={prices} onChange={updPrice}/>}
-          {step===3&&<StepFields fields={fields} onAdd={addField} onRemove={removeField}/>}
-          {step===4&&<StepDone crops={crops} fields={fields} prices={prices}/>}
+          {step===3&&(
+            <div>
+              <div style={{background:"#eef6fb",border:"1px solid #a8c8e0",borderRadius:8,
+                padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{fontSize:22}}>📄</div>
+                <div style={{flex:1,minWidth:220}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#1a4a6a"}}>Have your APH history handy?</div>
+                  <div style={{fontSize:12,color:"#3a6a8a"}}>Import your fields — and their yield history — straight from your APH PDF instead of typing them in one by one.</div>
+                </div>
+                <button onClick={()=>setShowAphImport(true)}
+                  style={{...S.btnSecondary,borderColor:"#a8c8e0",color:"#1a4a6a",fontWeight:700}}>
+                  📥 Import from APH PDF
+                </button>
+              </div>
+
+              {aphFields.length>0&&(
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
+                    color:"#5a7a40",marginBottom:6}}>Imported from APH PDF</div>
+                  {aphFields.map(f=>(
+                    <div key={f.id} style={S.fieldCard}>
+                      <div>
+                        <strong style={{color:"#1a4010"}}>{f.common}</strong>
+                        <span style={{color:"#7a9260",fontSize:11,marginLeft:8}}>{f.acres} ac</span>
+                      </div>
+                      <button onClick={()=>removeAphField(f.id)} style={{background:"none",border:"none",
+                        color:"#c04040",cursor:"pointer",fontSize:14,padding:"0 4px"}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <StepFields fields={fields} onAdd={addField} onRemove={removeField}/>
+
+              {showAphImport&&<ImportAPHModal
+                tenantId={tenantId} token={token} farmId="default"
+                fields={aphFields}
+                onCreateField={handleAphCreateField}
+                onUpdateField={handleAphUpdateField}
+                onClose={()=>setShowAphImport(false)}
+                onImported={()=>setShowAphImport(false)}/>}
+            </div>
+          )}
+          {step===4&&<StepDone crops={crops} fields={fields} aphFieldCount={aphFields.length} prices={prices}/>}
         </div>
 
         {/* Footer */}
