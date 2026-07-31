@@ -1114,7 +1114,7 @@ flFieldList.forEach(f => { flByName[f.name.trim().toLowerCase()] = f; });
 const yr = new Date().getFullYear();
 const apFieldData = await dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null);
 const apFieldList = obj2arr(apFieldData || {}).filter(Boolean);
-const apByName = new Map(apFieldList.map(f => [(f.common||"").trim().toLowerCase(), f.common]));
+const apByName = new Map(apFieldList.map(f => [(f.common||"").trim().toLowerCase(), { common: f.common, acres: parseFloat(f.acres)||0 }]));
 
 // Build export rows — one per AgriScale field with loads.
 // Bushels come from each load's own net weight + grainBushelLbs (the value
@@ -1125,7 +1125,13 @@ const loads = (f.loads||[]).filter(Boolean);
 if (!loads.length) return null;
 const totalLbs = sumLoadsLbs(loads);
 const totalBu = sumLoadsBushels(loads);
-const acres = parseFloat(f.acres) || 0;
+const apMatch = apByName.get(f.name.trim().toLowerCase()) || null;
+// AgriScale's own acres is often left blank — it mostly cares about
+// weight, not acreage — so fall back to AgriPlan's acres (a required
+// field there) whenever AgriScale doesn't have a usable value. Without
+// this, yield/ac silently comes out blank even though bushels are real.
+const ownAcres = parseFloat(f.acres) || 0;
+const acres = ownAcres > 0 ? ownAcres : (apMatch?.acres || 0);
 const yieldPerAc = acres > 0 ? (totalBu / acres).toFixed(1) : "";
 const lastDate = lastLoadDateISO(loads);
 const flMatch = flByName[f.name.trim().toLowerCase()];
@@ -1140,7 +1146,7 @@ grainName: loads[0]?.grainName || "Unknown",
 date: lastDate,
 flFieldId: flMatch?.id || null,
 flBase,
-apCommon: apByName.get(f.name.trim().toLowerCase()) || null,
+apCommon: apMatch?.common || null,
 };
 }).filter(Boolean);
 
