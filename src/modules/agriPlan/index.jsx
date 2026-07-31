@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
+import { csvEscape, csvParseLine, parseCSV, downloadTextFile } from "../../core/csv.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
 // Plain <input type="number"> is a native browser control whose typing behavior
@@ -3241,46 +3242,8 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
 // fields (insurance groups by legal description, farmers think in terms of "the home quarter").
 // Instead of forcing every mismatch through the in-browser dropdown, ImportAPHModal can export
 // the parsed units to a CSV, let the user fix the mapping in a spreadsheet, and read it back.
-const csvEscape = (v) => {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-const csvParseLine = (line) => {
-  // Minimal RFC4180 field splitter — handles quoted fields with embedded commas/quotes.
-  const out = []; let cur = ""; let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (inQuotes) {
-      if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; } }
-      else cur += c;
-    } else {
-      if (c === '"') inQuotes = true;
-      else if (c === ",") { out.push(cur); cur = ""; }
-      else cur += c;
-    }
-  }
-  out.push(cur);
-  return out;
-};
-const parseCSV = (text) => {
-  const lines = text.replace(/\r\n/g, "\n").split("\n").filter(l => l.length > 0);
-  if (!lines.length) return [];
-  const headers = csvParseLine(lines[0]);
-  return lines.slice(1).map(line => {
-    const cells = csvParseLine(line);
-    const row = {};
-    headers.forEach((h, i) => { row[h] = cells[i] ?? ""; });
-    return row;
-  });
-};
-const downloadTextFile = (filename, text, mime = "text/csv") => {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+// CSV encode/decode moved to core/csv.js (shared, unit-tested) — imported at
+// the top of this file.
 
 // ── APH Import Modal ──────────────────────────────────────────────────────────
 function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, onCreateField, onUpdateField }) {
