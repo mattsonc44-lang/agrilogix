@@ -1104,13 +1104,17 @@ const flFieldList = obj2arr(flFieldData || {}).filter(Boolean);
 const flByName = {};
 flFieldList.forEach(f => { flByName[f.name.trim().toLowerCase()] = f; });
 
-// AgriPlan match, for the optional "also send actuals to AgriPlan" path —
-// actuals are keyed by field name (see AP_BASE/actuals below), same as
-// fieldHistory already is, so this is purely to warn about name mismatches.
+// AgriPlan match, for the optional "also send actuals to AgriPlan" path.
+// fieldHistory is keyed by AgriPlan's own field.common string, and Firebase
+// paths are case-sensitive — so the write below has to use AgriPlan's exact
+// common value, not AgriScale's own field name, even though the match here
+// is case/whitespace-insensitive. A Set of matched-or-not would silently
+// write to the wrong (never-read) key whenever the two names differ only in
+// case or spacing.
 const yr = new Date().getFullYear();
 const apFieldData = await dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null);
 const apFieldList = obj2arr(apFieldData || {}).filter(Boolean);
-const apNames = new Set(apFieldList.map(f => (f.common||"").trim().toLowerCase()));
+const apByName = new Map(apFieldList.map(f => [(f.common||"").trim().toLowerCase(), f.common]));
 
 // Build export rows — one per AgriScale field with loads.
 // Bushels come from each load's own net weight + grainBushelLbs (the value
@@ -1136,12 +1140,12 @@ grainName: loads[0]?.grainName || "Unknown",
 date: lastDate,
 flFieldId: flMatch?.id || null,
 flBase,
-apMatch: apNames.has(f.name.trim().toLowerCase()),
+apCommon: apByName.get(f.name.trim().toLowerCase()) || null,
 };
 }).filter(Boolean);
 
 setFLExportData(rows);
-setFLExportSel(new Set(rows.filter(r => r.flFieldId || r.apMatch).map(r => r.asFieldId)));
+setFLExportSel(new Set(rows.filter(r => r.flFieldId || r.apCommon).map(r => r.asFieldId)));
 } catch(e) { setFLExportData([]); }
 };
 
@@ -1150,7 +1154,7 @@ setFLExporting(true);
 try {
 const selected = flExportData.filter(r => flExportSel.has(r.asFieldId));
 const toFieldLog = selected.filter(r => r.flFieldId);
-const toAgriPlan = sendActualsToAgriPlan ? selected.filter(r => r.apMatch) : [];
+const toAgriPlan = sendActualsToAgriPlan ? selected.filter(r => r.apCommon) : [];
 for (const r of toFieldLog) {
 const actId = genId();
 const activity = {
@@ -1180,7 +1184,7 @@ for (const r of toAgriPlan) {
 try {
 const aYr = new Date(r.date).getFullYear();
 await fetch(
-`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.name)}/${aYr}.json?auth=${token}`,
+`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.apCommon)}/${aYr}.json?auth=${token}`,
 { method: "PUT", headers: { "Content-Type": "application/json" },
 body: JSON.stringify({
 crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres),
@@ -1626,7 +1630,7 @@ FIELDS WITHOUT A NAME MATCH IN EITHER MODULE ARE GREYED OUT THERE.
 <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
 {flExportData.map(r=>{
 const sel = flExportSel.has(r.asFieldId);
-const canSel = !!r.flFieldId || r.apMatch;
+const canSel = !!r.flFieldId || r.apCommon;
 return(
 <label key={r.asFieldId} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"10px 12px",borderRadius:"5px",cursor:canSel?"pointer":"not-allowed",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":canSel?"rgba(255,255,255,0.08)":"rgba(255,100,100,0.15)"}`,opacity:canSel?1:0.5,transition:"all .1s"}}>
 <input type="checkbox" checked={sel&&canSel} disabled={!canSel} onChange={()=>{const n=new Set(flExportSel);sel?n.delete(r.asFieldId):n.add(r.asFieldId);setFLExportSel(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0,marginTop:"2px"}}/>
@@ -1640,7 +1644,7 @@ return(
 </div>
 <div style={{display:"flex",gap:"10px",marginTop:"4px",flexWrap:"wrap"}}>
 {!r.flFieldId&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN FIELDLOG</span>}
-{sendActualsToAgriPlan&&!r.apMatch&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN AGRIPLAN</span>}
+{sendActualsToAgriPlan&&!r.apCommon&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN AGRIPLAN</span>}
 </div>
 </div>
 </label>
