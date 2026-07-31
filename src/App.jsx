@@ -41,6 +41,7 @@ export default function App() {
   const [profile,    setProfile]    = useState(null);
   const [tenant,     setTenant]     = useState(null);
   const [module,     setModule]     = useState(()=>window.location.hash.slice(1)||null);
+  const [pendingTab, setPendingTab] = useState(null); // deep-link a module to a specific sub-tab (e.g. Home's "Parts Needed" card -> ServiceLog's Order Parts tab)
   const [loading,    setLoading]    = useState(true);
   const [authErr,    setAuthErr]    = useState("");
   const [showAdmin,  setShowAdmin]  = useState(false);
@@ -392,7 +393,7 @@ export default function App() {
         </div>
         <div style={{ display:"flex", flex:1, overflowX:"auto" }}>
           {homeScreenEnabled && (
-            <button onClick={()=>{ window.location.hash = "home"; setModule("home"); }} style={{
+            <button onClick={()=>{ window.location.hash = "home"; setModule("home"); setPendingTab(null); }} style={{
               display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
               border:"none", cursor:"pointer",
               background: module==="home" ? "rgba(255,255,255,0.15)" : "transparent",
@@ -408,7 +409,7 @@ export default function App() {
             const m = MODULES[mid]; if (!m) return null;
             const active = module === mid;
             return (
-              <button key={mid} onClick={()=>{ window.location.hash = mid; setModule(mid); }} style={{
+              <button key={mid} onClick={()=>{ window.location.hash = mid; setModule(mid); setPendingTab(null); }} style={{
                 display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
                 border:"none", cursor:"pointer",
                 background: active ? "rgba(255,255,255,0.15)" : "transparent",
@@ -523,10 +524,10 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
-        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={profile} enabledModules={enabledModules} onNavigate={mid=>{ window.location.hash=mid; setModule(mid); }} onHideHome={toggleHomeScreen}/>}
+        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={profile} enabledModules={enabledModules} onNavigate={(mid,tab)=>{ window.location.hash=mid; setModule(mid); setPendingTab(tab||null); }} onHideHome={toggleHomeScreen}/>}
         {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.fieldlog   || profile.role}} persist={persist}/>}
         {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriScale   || profile.role}} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.serviceLog  || profile.role}} persist={persist} initialTab={pendingTab}/>}
         {module === "agriPlan"   && <AgriPlanModule  key={`ap-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...profile, role: profile.moduleRoles?.agriPlan   || profile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
