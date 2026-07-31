@@ -1180,24 +1180,32 @@ await dbWrite(`${r.flBase}/activities/${actId}`, activity, token);
 // Separate from the `fields` list AgriPlan owns outright (which it
 // overwrites wholesale on every autosave), so this write can't get
 // clobbered by an open AgriPlan tab.
+const apFailures = [];
 for (const r of toAgriPlan) {
 try {
 const aYr = new Date(r.date).getFullYear();
-await fetch(
-`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.apCommon)}/${aYr}.json?auth=${token}`,
-{ method: "PUT", headers: { "Content-Type": "application/json" },
+const url = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.apCommon)}/${aYr}.json?auth=${token}`;
+const res = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
 body: JSON.stringify({
 crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres),
 bushels: r.totalBu, lastUpdated: new Date().toISOString(), source: "agriscale",
-}) }
-);
-} catch(_) {}
+}) });
+// fetch() only rejects on a real network failure — a 401/403/400 from
+// Firebase still resolves normally, so this has to be checked explicitly
+// or a permission/auth problem here would silently look like success.
+if (!res.ok) {
+const body = await res.text().catch(() => "");
+apFailures.push(`${r.name}: HTTP ${res.status} ${body}`.trim());
+}
+} catch(e) { apFailures.push(`${r.name}: ${e.message}`); }
 }
 setFLExportModal(false);
 const parts = [];
+const apSent = toAgriPlan.length - apFailures.length;
 if (toFieldLog.length) parts.push(`${toFieldLog.length} harvest ${toFieldLog.length===1?"activity":"activities"} added to FieldLog`);
-if (toAgriPlan.length) parts.push(`${toAgriPlan.length} field${toAgriPlan.length===1?"":"s"} sent to AgriPlan as actual production`);
-alert(`✅ ${parts.join(" · ")||"Nothing to export"}`);
+if (apSent) parts.push(`${apSent} field${apSent===1?"":"s"} sent to AgriPlan as actual production`);
+if (apFailures.length) parts.push(`⚠ AgriPlan write failed for: ${apFailures.join("; ")}`);
+alert(`${apFailures.length ? "⚠️" : "✅"} ${parts.join(" · ")||"Nothing to export"}`);
 } catch(e) {
 alert("Export failed: " + e.message);
 } finally { setFLExporting(false); }
