@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
 import { degToCompass, fmtWeather } from "../../core/weather.js";
+import { getPerms, REDACTED } from "../../core/permissions.js";
 
 // ── Google Fonts ──────────────────────────────────────────────────────
 if (!document.getElementById("fl-fonts")) {
@@ -1074,7 +1075,8 @@ return(
 // ── Harvest Form ──────────────────────────────────────────────────────
 const DELIVERY_LOCATIONS = ["Local Elevator","Co-op","Farm Storage — Bin 1","Farm Storage — Bin 2","Farm Storage — Bin 3","Direct to Buyer","Other"];
 
-function HarvestForm({v,set,cropList=CROPS}){
+function HarvestForm({v,set,cropList=CROPS,perms}){
+const canCost=perms?perms.canViewCosts:true;
 const totalBu = v.yieldPerAc && v.acres
 ? (parseFloat(v.yieldPerAc)*parseFloat(v.acres)).toFixed(0)
 : v.totalBushels||"";
@@ -1141,13 +1143,16 @@ return(
 </select>
 {v.deliveredTo==="Other"&&<input style={{...S.input,marginTop:"6px"}} type="text" placeholder="Location name" value={v.deliveredToCustom||""} onChange={e=>set({...v,deliveredToCustom:e.target.value})}/>}
 </div>
-<div style={S.row}>
+{canCost?(<div style={S.row}>
 <label style={S.label}>Price ($/bu)</label>
 <input style={S.input} type="number" step="0.01" placeholder="e.g. 7.25" value={v.price||""} onChange={e=>set({...v,price:e.target.value})}/>
-</div>
+</div>):(<div style={S.row}>
+<label style={S.label}>Price ($/bu)</label>
+<div style={{...S.input,display:"flex",alignItems:"center",color:T.faint,background:"#F0EEE6"}}>🔒 Restricted</div>
+</div>)}
 </div>
 {/* Revenue calc */}
-{v.price&&(v.totalBushels||totalBu)&&(
+{canCost&&v.price&&(v.totalBushels||totalBu)&&(
 <div style={{background:"#FFFFFF",border:`1px solid #A8C4D8`,borderRadius:"6px",padding:"10px 12px",display:"flex",gap:"20px",flexWrap:"wrap"}}>
 <div><span style={{fontSize:"11px",color:T.muted}}>Est. Revenue</span><div style={{fontWeight:700,fontSize:"17px",color:T.blue}}>${(parseFloat(v.price)*(parseFloat(v.totalBushels||totalBu))).toLocaleString("en-US",{maximumFractionDigits:0})}</div></div>
 <div><span style={{fontSize:"11px",color:T.muted}}>@ {v.price}/bu</span><div style={{fontSize:"13px",color:T.muted}}>{Number(v.totalBushels||totalBu).toLocaleString()} bu</div></div>
@@ -1298,7 +1303,8 @@ setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
 }
 
 // ── Activity Card ─────────────────────────────────────────────────────
-function ActivityCard({activity,onDelete,onEdit}){
+function ActivityCard({activity,onDelete,onEdit,perms}){
+const canCost=perms?perms.canViewCosts:true;
 const[open,setOpen]=useState(false);
 const meta=ACTIVITY_META[activity.type]||ACTIVITY_META.other;
 const d=activity.data||{};
@@ -1390,9 +1396,9 @@ if(activity.type==="harvest") return(
 {d.dockage&&<span><span style={{color:T.muted}}>Dockage:</span> {d.dockage}%</span>}
 {d.grade&&<span><span style={{color:T.muted}}>Grade:</span> {d.grade}</span>}
 {d.deliveredTo&&<span><span style={{color:T.muted}}>Delivered:</span> {d.deliveredTo==="Other"?d.deliveredToCustom:d.deliveredTo}</span>}
-{d.price&&<span><span style={{color:T.muted}}>Price:</span> ${d.price}/bu</span>}
+{canCost&&d.price&&<span><span style={{color:T.muted}}>Price:</span> ${d.price}/bu</span>}
 {d.equipment&&<span><span style={{color:T.muted}}>Equipment:</span> {d.equipment}</span>}
-{d.price&&d.totalBushels&&<span style={{gridColumn:"span 2",fontWeight:700,color:T.blue}}>Revenue: ${(parseFloat(d.price)*parseFloat(d.totalBushels)).toLocaleString("en-US",{maximumFractionDigits:0})}</span>}
+{canCost&&d.price&&d.totalBushels&&<span style={{gridColumn:"span 2",fontWeight:700,color:T.blue}}>Revenue: ${(parseFloat(d.price)*parseFloat(d.totalBushels)).toLocaleString("en-US",{maximumFractionDigits:0})}</span>}
 </div>
 );
 return d.details?<p style={{marginTop:"8px",fontSize:"13px"}}>{d.details}</p>:null;
@@ -1513,7 +1519,7 @@ const stop = () => { recRef.current?.stop(); setListening(false); };
 return { listening, toggle, stop };
 }
 
-function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[],tenantId="",token="",cropList=null}){
+function AddActivityModal({field,onClose,onSave,initial,products={},onAddChemical,onAddProduct,fieldActivities=[],tenantId="",token="",cropList=null,perms}){
 const[type,setType]=useState(initial?.type||"");
 const[date,setDate]=useState(initial?.date||nowLocal());
 const[data,setData]=useState(initial?.data||{});
@@ -1825,7 +1831,7 @@ Dismiss
 )}
 </>}
 {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
-{type==="harvest" &&<HarvestForm v={data} set={setData} cropList={_flCrops||CROPS}/>}
+{type==="harvest" &&<HarvestForm v={data} set={setData} cropList={_flCrops||CROPS} perms={perms}/>}
 {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
 {type&&(
 <div style={S.row}>
@@ -1863,7 +1869,7 @@ onChange={e=>setNotes(e.target.value)}
 
 // ── Field Detail ──────────────────────────────────────────────────────
 
-function FieldDetailView({field,activities,onBack,onAddActivity,onDeleteActivity,onEditActivity,onUpdateField,onDeleteField,onReport}){
+function FieldDetailView({field,activities,onBack,onAddActivity,onDeleteActivity,onEditActivity,onUpdateField,onDeleteField,onReport,perms}){
 const[tab,setTab] =useState("activities");
 const[editName,setEditName]=useState(false);
 const[nameVal,setNameVal] =useState(field.name);
@@ -1957,8 +1963,8 @@ height={380}
 </select>
 </div>
 {shown.length===0&&<div style={{...S.card,textAlign:"center",padding:"36px",color:T.faint}}>{all.length===0?"No activities logged yet. Click \"+ Log Activity\" to get started.":"No activities match this filter."}</div>}
-{shown.map(a=><ActivityCard key={a.id} activity={a} onDelete={onDeleteActivity} onEdit={a=>setEditingActivity(a)}/>)}
-{editingActivity&&<AddActivityModal field={field} initial={editingActivity} cropList={_flCrops||CROPS} onClose={()=>setEditingActivity(null)} onSave={a=>{onEditActivity(a);setEditingActivity(null);}}/>}
+{shown.map(a=><ActivityCard key={a.id} activity={a} onDelete={onDeleteActivity} onEdit={a=>setEditingActivity(a)} perms={perms}/>)}
+{editingActivity&&<AddActivityModal field={field} initial={editingActivity} cropList={_flCrops||CROPS} onClose={()=>setEditingActivity(null)} onSave={a=>{onEditActivity(a);setEditingActivity(null);}} perms={perms}/>}
 </>
 )}
 </div>
@@ -2360,7 +2366,8 @@ Analyzing map image…
 }
 
 // ── Reports View ──────────────────────────────────────────────────────
-function ReportsView({fields,activities,onBack,filterFieldId=null}){
+function ReportsView({fields,activities,onBack,filterFieldId=null,perms}){
+const canCost=perms?perms.canViewCosts:true;
 const[type,setType] =useState("all");
 const[fieldFilter,setFField]=useState(filterFieldId||"all");
 const[sortBy,setSortBy] =useState("field");
@@ -2486,7 +2493,7 @@ return(
 {d.moisture&&<span><span style={{color:T.muted}}>Moisture:</span> {d.moisture}%</span>}
 {d.grade&&<span><span style={{color:T.muted}}>Grade:</span> {d.grade}</span>}
 {d.deliveredTo&&<span><span style={{color:T.muted}}>Delivered:</span> {d.deliveredTo==="Other"?d.deliveredToCustom:d.deliveredTo}</span>}
-{d.price&&d.totalBushels&&<span style={{fontWeight:700,color:T.blue}}>Revenue: ${(parseFloat(d.price)*parseFloat(d.totalBushels)).toLocaleString("en-US",{maximumFractionDigits:0})}</span>}
+{canCost&&d.price&&d.totalBushels&&<span style={{fontWeight:700,color:T.blue}}>Revenue: ${(parseFloat(d.price)*parseFloat(d.totalBushels)).toLocaleString("en-US",{maximumFractionDigits:0})}</span>}
 </div>
 );
 }
@@ -3741,6 +3748,11 @@ disabled={bulkLoading||!s.agriScaleUrl}>
 }
 
 export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriFieldix, farmId }){
+  // Owner/manager/operator tiering — same shared model as AgriPlan/AgriScale/
+  // ServiceLog, see core/permissions.js. Standalone (no tenantId) mode predates
+  // accounts entirely, so it stays full-access. The only real $ figures logged
+  // in FieldLog are the harvest sale price and its calculated revenue.
+  const perms = tenantId ? getPerms(userProfile) : getPerms({ role: "owner" });
 const BASE = (!farmId || farmId === "default")
 ? `tenants/${tenantId}/fieldlog`
 : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
@@ -4188,10 +4200,10 @@ return(
 <div style={{...S.content,flex:1,padding:0,margin:0,maxWidth:"1100px",position:"relative",overflow:"hidden"}}>
 <div aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
-{view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId}/>}
+{view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId} perms={perms}/>}
 {view==="rotation" &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
 {view==="addField" &&<AddFieldView onBack={()=>setView("home")} onSave={addField}/>}
-{view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onEditActivity={editActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}}/>}
+{view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onEditActivity={editActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}} perms={perms}/>}
 </div>
 </div>
 
@@ -4209,6 +4221,7 @@ saveProducts({...products,[cat]:[...(products[cat]||[]),{id:genId(),...clean}]})
 }}
 onClose={()=>setShowAdd(false)}
 onSave={addActivity}
+perms={perms}
 />}
 {showImport&&<ImportFieldsModal onClose={()=>setShowImport(false)} onImport={importFields} token={token}/>}
 {showSettings&&<SettingsModal settings={settings} onSave={setSettings} onClose={()=>setShowSettings(false)} onBulkImport={bulkImportAgriScale} bulkLoading={bulkLoading}/>}
