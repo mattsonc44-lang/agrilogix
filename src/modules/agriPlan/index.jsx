@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbWatchFieldHistory, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
 import { csvEscape, csvParseLine, parseCSV, downloadTextFile } from "../../core/csv.js";
+import { getPerms, PERMS, REDACTED } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
 // Plain <input type="number"> is a native browser control whose typing behavior
@@ -2280,7 +2281,10 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
+  // Operators/managers without the right flag never see raw dollar figures —
+  // same PERMS model AgriScale already enforces, see core/permissions.js.
+  const p=perms||PERMS.owner;
   // ── Chemical plantback warnings ────────────────────────────────────────────
   const chemWarnings = useMemo(() => {
     if(!field.crop || !fieldRestrictions) return [];
@@ -2413,11 +2417,21 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     )}
     {/* Summary */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
-      <SCard label="Ins. Guarantee" val={f$(c.guarantee)} color="#7a6010" sub={`$${f2(c.valAcre)}/ac`}/>
-      <SCard label="Projected Revenue" val={f$(c.revenue)} color="#1a7010" sub={`${f2(field.income.bushelProjection)} bu × $${f2(field.income.currentPrice)}`}/>
-      <SCard label="Upside / Risk" val={f$(c.risk,true)} color={c.risk>=0?"#1a7010":"#c02020"} sub="vs. guarantee"/>
-      <SCard label="Total Expenses" val={f$(c.expenses)} color="#c05010" sub={`$${f2(c.expRate)}/ac`}/>
-      <SCard label="Net Income" val={f$(c.net,true)} color={c.net>=0?"#1a7010":"#c02020"} sub="rev − expenses"/>
+      {p.canViewInsurance
+        ? <SCard label="Ins. Guarantee" val={f$(c.guarantee)} color="#7a6010" sub={`$${f2(c.valAcre)}/ac`}/>
+        : <SCard label="Ins. Guarantee" val={REDACTED} color="#7a6010" sub="restricted"/>}
+      {p.canViewCosts
+        ? <SCard label="Projected Revenue" val={f$(c.revenue)} color="#1a7010" sub={`${f2(field.income.bushelProjection)} bu × $${f2(field.income.currentPrice)}`}/>
+        : <SCard label="Projected Revenue" val={REDACTED} color="#1a7010" sub="restricted"/>}
+      {p.canViewCosts
+        ? <SCard label="Upside / Risk" val={f$(c.risk,true)} color={c.risk>=0?"#1a7010":"#c02020"} sub="vs. guarantee"/>
+        : <SCard label="Upside / Risk" val={REDACTED} color="#6a8a50" sub="restricted"/>}
+      {p.canViewCosts
+        ? <SCard label="Total Expenses" val={f$(c.expenses)} color="#c05010" sub={`$${f2(c.expRate)}/ac`}/>
+        : <SCard label="Total Expenses" val={REDACTED} color="#c05010" sub="restricted"/>}
+      {p.canViewCosts
+        ? <SCard label="Net Income" val={f$(c.net,true)} color={c.net>=0?"#1a7010":"#c02020"} sub="rev − expenses"/>
+        : <SCard label="Net Income" val={REDACTED} color="#6a8a50" sub="restricted"/>}
     </div>
     {/* Chemical plantback warnings */}
     {chemWarnings.length > 0 && (
@@ -2466,7 +2480,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
                 {diff!=null&&<span style={{color:diff>=0?"#2a8010":"#c05010",marginLeft:8}}>{diff>=0?"+":""}{diff}% vs. projected</span>}
               </div>
               <div style={{fontSize:11,color:"#5a7a48",marginTop:2}}>
-                From AgriScale weigh tickets{act.lastUpdated?` · updated ${new Date(act.lastUpdated).toLocaleDateString()}`:""} · est. {f$(estRevenue)} at ${f2(field.income?.currentPrice||0)}/bu
+                From AgriScale weigh tickets{act.lastUpdated?` · updated ${new Date(act.lastUpdated).toLocaleDateString()}`:""}{p.canViewCosts?` · est. ${f$(estRevenue)} at $${f2(field.income?.currentPrice||0)}/bu`:""}
               </div>
             </div>
           </div>
@@ -2475,25 +2489,36 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       <div style={{display:"grid",gridTemplateColumns:"200px 140px 1fr 140px",gap:12,padding:"6px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
         {["","Per Acre","Calculation","Total"].map((h,i)=>(<div key={i} style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,textAlign:i>1?"right":"left"}}>{h}</div>))}
       </div>
-      {[["Bushel Guarantee","bushelGuarantee","bu",field.income.bushelGuarantee,v=>`${v} bu × $${f2(field.income.priceGuarantee)} = $${f2(v*field.income.priceGuarantee)}/ac`,f$(c.guarantee)],
-        ["Price Guarantee","priceGuarantee","$",field.income.priceGuarantee,v=>`Guarantee: $${f2(field.income.bushelGuarantee*v)}/ac`,""],
-        ["Bushel Projection","bushelProjection","bu",field.income.bushelProjection,v=>`${v} bu × $${f2(field.income.currentPrice)} = $${f2(v*field.income.currentPrice)}/ac`,f$(c.revenue)],
-        ["Projected Price","currentPrice","$",field.income.currentPrice,v=>`Revenue: $${f2(field.income.bushelProjection*v)}/ac`,""],
-      ].map(([label,key,unit,val,desc,total])=>(<div key={key} style={{display:"grid",gridTemplateColumns:"200px 140px 1fr 140px",gap:12,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #121e12"}}>
+      {[["Bushel Guarantee","bushelGuarantee","bu",field.income.bushelGuarantee,v=>`${v} bu × $${f2(field.income.priceGuarantee)} = $${f2(v*field.income.priceGuarantee)}/ac`,f$(c.guarantee),p.canViewInsurance],
+        ["Price Guarantee","priceGuarantee","$",field.income.priceGuarantee,v=>`Guarantee: $${f2(field.income.bushelGuarantee*v)}/ac`,"",p.canViewInsurance],
+        ["Bushel Projection","bushelProjection","bu",field.income.bushelProjection,v=>`${v} bu × $${f2(field.income.currentPrice)} = $${f2(v*field.income.currentPrice)}/ac`,f$(c.revenue),p.canViewCosts],
+        ["Projected Price","currentPrice","$",field.income.currentPrice,v=>`Revenue: $${f2(field.income.bushelProjection*v)}/ac`,"",p.canViewCosts],
+      ].map(([label,key,unit,val,desc,total,visible])=>(<div key={key} style={{display:"grid",gridTemplateColumns:"200px 140px 1fr 140px",gap:12,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #121e12"}}>
         <div style={{fontSize:12,color:"#5a7a48"}}>{label}</div>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          {unit==="$"&&<span style={{color:"#4a8a30",fontSize:12}}>$</span>}
-          <input type="number" value={val} step="0.01" onChange={e=>onUpdateIncome(field.id,key,e.target.value)}
-            style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"5px 8px",color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,width:unit==="$"?90:80,outline:"none"}}/>
-          {unit==="bu"&&<span style={{color:"#4a8a30",fontSize:12}}>bu</span>}
-        </div>
-        <div style={{fontSize:11,color:"#7a9260",fontFamily:"'IBM Plex Mono',monospace"}}>{desc(val)}</div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#1a7010",textAlign:"right"}}>{total}</div>
+        {visible?(<>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            {unit==="$"&&<span style={{color:"#4a8a30",fontSize:12}}>$</span>}
+            <input type="number" value={val} step="0.01" onChange={e=>onUpdateIncome(field.id,key,e.target.value)}
+              style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"5px 8px",color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,width:unit==="$"?90:80,outline:"none"}}/>
+            {unit==="bu"&&<span style={{color:"#4a8a30",fontSize:12}}>bu</span>}
+          </div>
+          <div style={{fontSize:11,color:"#7a9260",fontFamily:"'IBM Plex Mono',monospace"}}>{desc(val)}</div>
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#1a7010",textAlign:"right"}}>{total}</div>
+        </>):(<>
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a9a7a"}}>{REDACTED}</div>
+          <div style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>restricted</div>
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a9a7a",textAlign:"right"}}>{REDACTED}</div>
+        </>)}
       </div>))}
     </div>)}
 
     {/* Expenses Tab */}
-    {tab==="expenses"&&(<div>
+    {tab==="expenses"&&!p.canViewCosts&&(
+      <div style={{padding:"24px 16px",textAlign:"center",color:"#8a9a7a",fontSize:12,fontStyle:"italic"}}>
+        🔒 Expense figures are restricted for your role. Ask an owner or manager if you need this data.
+      </div>
+    )}
+    {tab==="expenses"&&p.canViewCosts&&(<div>
       {/* Prior year toggle */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"8px 12px",background:"#ffffff",borderRadius:6,border:"1px solid #1e3020"}}>
         <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Compare to:</span>
@@ -2634,7 +2659,8 @@ function AddFieldForm({onSave,onCancel}){
 }
 
 // ── Fields Table ──────────────────────────────────────────────────────────────
-function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHistory={},activeYear}){
+function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHistory={},activeYear,perms}){
+  const p=perms||PERMS.owner;
   const[sortKey,setSortKey]=useState("farm");const[sortDir,setSortDir]=useState(1);
   const sorted=useMemo(()=>[...fields].sort((a,b)=>{
     let av,bv;
@@ -2651,10 +2677,10 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHisto
     <div style={{display:"flex",alignItems:"center",marginBottom:16,gap:10}}>
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"#1a4010"}}>All Fields</div>
       <div style={{fontSize:12,color:"#7a9260"}}>— {fields.length} units · {totAc.toFixed(0)} ac</div>
-      <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+      {p.canReport&&<div style={{marginLeft:"auto",display:"flex",gap:8}}>
         <button onClick={onExportCSV} style={{background:"#1a3a20",border:"1px solid #2a5030",borderRadius:4,padding:"6px 14px",color:"#2a7010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ Export CSV</button>
         <button onClick={onPrint} style={{background:"#d4e4f4",border:"1px solid #2a3a5a",borderRadius:4,padding:"6px 14px",color:"#70a0c0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Print / PDF</button>
-      </div>
+      </div>}
     </div>
     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
       <thead><tr>
@@ -2673,9 +2699,9 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHisto
               {(seedLogs[f.common]||[]).length>0&&<span style={{marginLeft:4,fontSize:9,background:"#c8f0a8",color:"#1a5010",padding:"1px 5px",borderRadius:2,fontWeight:700,verticalAlign:"middle"}}>🌱</span>}
             </td>
             <td style={{padding:"7px 10px",color:"#3a6028",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f.acres.toFixed(1)}</td>
-            <td style={{padding:"7px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>
-              {f$(c.revenue)}
-              {(()=>{
+            <td style={{padding:"7px 10px",color:p.canViewCosts?"#1a7010":"#8a9a7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>
+              {p.canViewCosts?f$(c.revenue):REDACTED}
+              {p.canViewCosts&&(()=>{
                 const act=fieldHistory?.[f.common]?.[activeYear];
                 if(!act||!act.bushels) return null;
                 const projBu=(f.income?.bushelProjection||0)*f.acres;
@@ -2688,17 +2714,17 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHisto
                 );
               })()}
             </td>
-            <td style={{padding:"7px 10px",color:"#c05010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f$(c.expenses)}</td>
-            <td style={{padding:"7px 10px",color:c.net>=0?"#1a7010":"#c02020",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f$(c.net,true)}</td>
+            <td style={{padding:"7px 10px",color:p.canViewCosts?"#c05010":"#8a9a7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{p.canViewCosts?f$(c.expenses):REDACTED}</td>
+            <td style={{padding:"7px 10px",color:p.canViewCosts?(c.net>=0?"#1a7010":"#c02020"):"#8a9a7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{p.canViewCosts?f$(c.net,true):REDACTED}</td>
           </tr>);
         })}
       </tbody>
       <tfoot><tr style={{background:"#e4f0d0"}}>
         <td colSpan={4} style={{padding:"9px 10px",fontSize:12,color:"#7aaa60",fontWeight:600}}>TOTALS — {fields.length} field units</td>
         <td style={{padding:"9px 10px",color:"#9aaa7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{totAc.toFixed(0)} ac</td>
-        <td style={{padding:"9px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{f$(totRev)}</td>
-        <td style={{padding:"9px 10px",color:"#c05010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{f$(totExp)}</td>
-        <td style={{padding:"9px 10px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600,color:totNet>=0?"#1a7010":"#c02020"}}>{f$(totNet,true)}</td>
+        <td style={{padding:"9px 10px",color:p.canViewCosts?"#1a7010":"#9aaa7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{p.canViewCosts?f$(totRev):REDACTED}</td>
+        <td style={{padding:"9px 10px",color:p.canViewCosts?"#c05010":"#9aaa7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{p.canViewCosts?f$(totExp):REDACTED}</td>
+        <td style={{padding:"9px 10px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600,color:p.canViewCosts?(totNet>=0?"#1a7010":"#c02020"):"#9aaa7a"}}>{p.canViewCosts?f$(totNet,true):REDACTED}</td>
       </tr></tfoot>
     </table>
   </div>);
@@ -4188,6 +4214,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
  _isAgriLogixTenant = !!tenantId;
   _tenantIdCache = tenantId || null;
   initAgriPlan(tenantId, token, farmId);
+  // Standalone (no tenantId) mode is the original single-user AgriPlan with
+  // no accounts at all — always full access there. Inside Agri Logix, this
+  // is the same owner/manager/operator tiering AgriScale already enforces;
+  // AgriPlan just never read the role it was handed until now.
+  const perms = _isAgriLogixTenant ? getPerms(userProfile) : getPerms({ role: "owner" });
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
   const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026")||[]):loadFields(loadYears().slice(-1)[0]));
@@ -4626,15 +4657,15 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {saveStatus==='error'&&<span style={{fontSize:11,color:"#ff6050",background:"rgba(255,80,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ff6050",cursor:"pointer"}} title="Click to retry" onClick={()=>saveFields(activeYear,fields,(s)=>setSaveStatus(s))}>⚠ Save failed — tap to retry</span>}
         <button onClick={()=>{setMainView("table");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
         {(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)&&<button onClick={()=>{setMainView("history");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
-        <button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>
+        {perms.canViewCosts&&<button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>}
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
         {isFlatAcreTenant(tenantId)&&<button onClick={()=>setShowImportWorkbook(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import Workbook</button>}
-        {tenantId&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
+        {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
-        {tenantId&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
-        <button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>
-        <button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>
+        {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
+        {perms.canReport&&<button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>}
+        {perms.canReport&&<button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>}
       </div>
     </div>
 
@@ -4682,20 +4713,28 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {/* Summary strip */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
           <SCard label="Acres" val={totals.acres.toFixed(0)+" ac"} color="#2a7010" sub={`${filtered.length} field units`}/>
-          <SCard label="Projected Revenue" val={f$(totals.revenue)} color="#1a7010" sub={`$${f2(totals.revenue/(totals.acres||1))}/ac avg`}/>
-          <SCard label="Ins. Guarantee" val={f$(totals.guarantee)} color="#7a6010" sub={`$${f2(totals.guarantee/(totals.acres||1))}/ac avg`}/>
-          <SCard label="Total Expenses" val={f$(totals.expenses)} color="#c05010" sub={`$${f2(totals.expenses/(totals.acres||1))}/ac avg`}/>
-          <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
+          {perms.canViewCosts
+            ? <SCard label="Projected Revenue" val={f$(totals.revenue)} color="#1a7010" sub={`$${f2(totals.revenue/(totals.acres||1))}/ac avg`}/>
+            : <SCard label="Projected Revenue" val={REDACTED} color="#1a7010" sub="restricted"/>}
+          {perms.canViewInsurance
+            ? <SCard label="Ins. Guarantee" val={f$(totals.guarantee)} color="#7a6010" sub={`$${f2(totals.guarantee/(totals.acres||1))}/ac avg`}/>
+            : <SCard label="Ins. Guarantee" val={REDACTED} color="#7a6010" sub="restricted"/>}
+          {perms.canViewCosts
+            ? <SCard label="Total Expenses" val={f$(totals.expenses)} color="#c05010" sub={`$${f2(totals.expenses/(totals.acres||1))}/ac avg`}/>
+            : <SCard label="Total Expenses" val={REDACTED} color="#c05010" sub="restricted"/>}
+          {perms.canViewCosts
+            ? <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
+            : <SCard label="Net Income" val={REDACTED} color="#6a8a50" sub="restricted"/>}
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} />)
-          :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
           }}/>)
-          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear}/>)}
+          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear} perms={perms}/>)}
       </div>
     </div>
   </div>);
