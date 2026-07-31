@@ -2280,7 +2280,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,actuals={}}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory}){
   // ── Chemical plantback warnings ────────────────────────────────────────────
   const chemWarnings = useMemo(() => {
     if(!field.crop || !fieldRestrictions) return [];
@@ -2451,7 +2451,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     {/* Income Tab */}
     {tab==="income"&&(<div>
       {(()=>{
-        const act=actuals?.[field.common]?.[activeYear];
+        const act=fieldHistory?.[field.common]?.[activeYear];
         if(!act||!act.bushels) return null;
         const projBu=(field.income?.bushelProjection||0)*field.acres;
         const diff=projBu>0?Math.round((act.bushels-projBu)/projBu*100):null;
@@ -2634,7 +2634,7 @@ function AddFieldForm({onSave,onCancel}){
 }
 
 // ── Fields Table ──────────────────────────────────────────────────────────────
-function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},actuals={},activeYear}){
+function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHistory={},activeYear}){
   const[sortKey,setSortKey]=useState("farm");const[sortDir,setSortDir]=useState(1);
   const sorted=useMemo(()=>[...fields].sort((a,b)=>{
     let av,bv;
@@ -2676,7 +2676,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},actuals={}
             <td style={{padding:"7px 10px",color:"#1a7010",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>
               {f$(c.revenue)}
               {(()=>{
-                const act=actuals?.[f.common]?.[activeYear];
+                const act=fieldHistory?.[f.common]?.[activeYear];
                 if(!act||!act.bushels) return null;
                 const projBu=(f.income?.bushelProjection||0)*f.acres;
                 const diff=projBu>0?Math.round((act.bushels-projBu)/projBu*100):null;
@@ -4204,8 +4204,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   const [showImportAPH,   setShowImportAPH]   = useState(false);
   const [showImportWorkbook, setShowImportWorkbook] = useState(false);
   const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
-  const [fieldHistory,    setFieldHistory]    = useState({}); // manual crop history per field
-  const [actuals,         setActuals]         = useState({}); // {fieldCommon: {year: {bushels, yieldPerAc, acres, lastUpdated, source}}} — pushed in from AgriScale weigh tickets
+  const [fieldHistory,    setFieldHistory]    = useState({}); // manual crop history per field — also where AgriScale pushes actual production (bushels/lastUpdated/source alongside crop/yield/acres)
   const [tenantCrops,     setTenantCrops]     = useState([]);   // per-tenant crop list
   const [showCropsMgr,   setShowCropsMgr]   = useState(false);
   const [expenseDefaults, setExpenseDefaults] = useState(_isAgriLogixTenant?{}:{...DEFAULT_RATES});
@@ -4300,16 +4299,13 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
           setFlSeedLogs(logs);
         } catch(e) { console.warn("FieldLog seed log load failed:", e.message); }
       })();
-      // Load manual field history from Firebase
+      // Load manual field history from Firebase — this is also where AgriScale
+      // pushes actual harvested bushels (a `bushels`/`lastUpdated`/`source` on
+      // top of the usual crop/yield/acres entry), so actuals ride along with
+      // the same crop-rotation/APH-suggestion data AgriPlan already reads
+      // here, rather than living in a second parallel node.
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setFieldHistory(d); }).catch(()=>{});
-      // Load actual harvested bushels pushed in from AgriScale weigh tickets —
-      // a separate node from the fields list itself (never merged into it),
-      // since AgriPlan treats `fields` as its own to overwrite wholesale on
-      // every autosave and a targeted external write there would just get
-      // clobbered by the next save from an open AgriPlan tab.
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/actuals.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setActuals(d); }).catch(()=>{});
       // Load tenant crop price elections from Firebase
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{
@@ -4692,12 +4688,12 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} />)
           :mainView==="expenses"?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} actuals={actuals} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
           }}/>)
-          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs} actuals={actuals} activeYear={activeYear}/>)}
+          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear}/>)}
       </div>
     </div>
   </div>);
