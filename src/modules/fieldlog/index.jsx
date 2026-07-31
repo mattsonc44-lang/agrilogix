@@ -2384,7 +2384,7 @@ const results=activities
 .filter(a=>!dateFrom||a.date>=dateFrom)
 .filter(a=>!dateTo ||a.date<=dateTo+"T23:59")
 .sort((a,b)=>sortBy==="field"
-? fieldName(a.fieldId).localeCompare(fieldName(b.fieldId)) || new Date(b.date)-new Date(a.date)
+? fieldName(a.fieldId).localeCompare(fieldName(b.fieldId),undefined,{numeric:true,sensitivity:"base"}) || new Date(b.date)-new Date(a.date)
 : new Date(b.date)-new Date(a.date));
 
 const meta = type==="all"
@@ -2395,7 +2395,7 @@ const meta = type==="all"
 const groupedByField = [...new Set(results.map(a=>a.fieldId))].map(fid=>({
 fid, name:fieldName(fid),
 acts:results.filter(a=>a.fieldId===fid),
-})).sort((a,b)=>a.name.localeCompare(b.name));
+})).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 
 const print=()=>{
 const style=document.createElement("style");
@@ -2533,7 +2533,7 @@ background:fieldFilter==="all"?T.gold:"transparent",
 color:fieldFilter==="all"?"#FFFFFF":T.muted,
 border:`1px solid ${fieldFilter==="all"?T.gold:T.border}`,
 }} onClick={()=>setFField("all")}>🌾 All Fields</button>
-{[...fields].sort((a,b)=>a.name.localeCompare(b.name)).map(f=>(
+{[...fields].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"})).map(f=>(
 <button key={f.id} style={{
 ...mkBtn("ghost"),padding:"6px 14px",fontSize:"12px",
 background:fieldFilter===f.id?"#2A5A8A":"transparent",
@@ -2709,7 +2709,7 @@ else if(d.crop) crops.push(d.crop);
 return [...new Set(crops)];
 };
 
-const sortedFields = [...fields].sort((a,b)=>a.name.localeCompare(b.name));
+const sortedFields = [...fields].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 
 // Detail panel for selected field
 const detailField = selectedField ? fields.find(f=>f.id===selectedField) : null;
@@ -2932,7 +2932,7 @@ function HomeView({fields,activities,onSelect,onAdd,onImport,onReport,onRotation
 const [q, setQ] = useState("");
 const filtered = [...fields]
 .filter(f => f.name.toLowerCase().includes(q.toLowerCase()) || (f.legalDesc||"").toLowerCase().includes(q.toLowerCase()))
-.sort((a,b) => a.name.localeCompare(b.name));
+.sort((a,b) => a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 
 const totalLogs = activities.length;
 
@@ -3064,7 +3064,7 @@ function FieldSidebar({fields,activeFieldId,onSelect,onAdd}){
 const [q,setQ]=useState("");
 const sorted=[...fields]
 .filter(f=>f.name.toLowerCase().includes(q.toLowerCase()))
-.sort((a,b)=>a.name.localeCompare(b.name));
+.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 return(
 <div style={{width:"220px",flexShrink:0,background:T.panel,border:`1px solid ${T.border}`,borderRadius:"10px",display:"flex",flexDirection:"column",position:"sticky",top:"78px",maxHeight:"calc(100vh - 100px)",overflow:"hidden"}}>
 <div style={{padding:"12px 14px 8px"}}>
@@ -3155,7 +3155,7 @@ background:assigns[g._agriFieldName]?"#F0F8F0":"#FDF0EE"}}
 value={assigns[g._agriFieldName]||""}
 onChange={e=>setAssigns(a=>({...a,[g._agriFieldName]:e.target.value}))}>
 <option value="">⚠️ Select FieldLog field…</option>
-{[...fields].sort((a,b)=>a.name.localeCompare(b.name)).map(f=><option key={f.id} value={f.id}>{f.name}{f.acres?` (${f.acres}ac)`:""}</option>)}
+{[...fields].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"})).map(f=><option key={f.id} value={f.id}>{f.name}{f.acres?` (${f.acres}ac)`:""}</option>)}
 </select>
 </div>
 </div>
