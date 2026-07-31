@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO } from "../../core/agriscale.js";
+import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
 // Plain <input type="number"> is a native browser control whose typing behavior
@@ -17,12 +18,8 @@ if (parts.length > 2) x = parts[0] + "." + parts.slice(1).join("");
 return x;
 }
 
-// ── Permission mapping from Agri Logix roles ──────────────────────
-const PERMS = {
-owner: { canViewInsurance:true, canViewCropShare:true, canEditFields:true, canEditBins:true, canViewCosts:true, canReport:true, canEditComm:true },
-manager: { canViewInsurance:false, canViewCropShare:false, canEditFields:true, canEditBins:true, canViewCosts:true, canReport:true, canEditComm:true },
-operator: { canViewInsurance:false, canViewCropShare:false, canEditFields:false, canEditBins:false, canViewCosts:false, canReport:false, canEditComm:false },
-};
+// ── Permission mapping from Agri Logix roles — now shared across modules,
+// see core/permissions.js (was previously local to just this file).
 
 // ── Constants ─────────────────────────────────────────────────────
 const FALLBACK_GRAIN = { name:"WHEAT", bushel_lbs:60, color:"#c0b8ac" };
@@ -526,8 +523,7 @@ const FIELD_BASE = (!farmId || farmId === "default")
 const AP_BASE = (!farmId || farmId === "default")
 ? `tenants/${tenantId}/agriPlan`
 : `tenants/${tenantId}/farms/${farmId}/agriPlan`;
-const role = userProfile?.role || "operator";
-const perms = PERMS[role] || PERMS.operator;
+const perms = getPerms(userProfile);
 const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
 
 // Data
