@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import JSZip from "jszip";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
-import { degToCompass, fmtWeather } from "../../core/weather.js";
+import { degToCompass, fmtWeather, evaluateSprayWindow, HIGH_WIND_MPH, LOW_WIND_MPH, RAIN_PROB_PCT } from "../../core/weather.js";
 import { getPerms, REDACTED } from "../../core/permissions.js";
 
 // ── Google Fonts ──────────────────────────────────────────────────────
@@ -1553,6 +1553,46 @@ setWeatherLoading(false);
 { enableHighAccuracy:false, timeout:10000 }
 );
 };
+// ── Spray-window forecast — a short-term hourly outlook shown only for the
+// spraying activity type, separate from the "current weather" snapshot
+// above (which records what it actually was at application time). This is
+// forward-looking: check it BEFORE you go spray, not after. See
+// core/weather.js's evaluateSprayWindow for the caution-flag logic — this
+// only fetches the raw hourly numbers and hands them off to that.
+const[sprayForecast,setSprayForecast]=useState(null); // [{time,windMph,precipProb,precipIn}, ...] next few hours
+const[forecastLoading,setForecastLoading]=useState(false);
+const[forecastErr,setForecastErr]=useState("");
+const getSprayForecast=()=>{
+if(!navigator.geolocation){ setForecastErr("Location isn't available in this browser."); return; }
+setForecastErr(""); setForecastLoading(true);
+navigator.geolocation.getCurrentPosition(
+async(pos)=>{
+try{
+const{latitude,longitude}=pos.coords;
+const res=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=wind_speed_10m,precipitation_probability,precipitation&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto`);
+const j=await res.json();
+const h=j.hourly;
+if(!h?.time?.length) throw new Error("No forecast data returned");
+const now=Date.now();
+let start=h.time.findIndex(t=>new Date(t).getTime()>=now);
+if(start===-1) start=0;
+const hours=h.time.slice(start,start+6).map((t,i)=>{
+const idx=start+i;
+return{
+time:t,
+windMph: h.wind_speed_10m ? Math.round(h.wind_speed_10m[idx]) : null,
+precipProb: h.precipitation_probability ? h.precipitation_probability[idx] : null,
+precipIn: h.precipitation ? h.precipitation[idx] : null,
+};
+});
+setSprayForecast(hours);
+}catch(e){ setForecastErr("Couldn't fetch the forecast — try again."); }
+setForecastLoading(false);
+},
+()=>{ setForecastErr("Location permission denied."); setForecastLoading(false); },
+{ enableHighAccuracy:false, timeout:10000 }
+);
+};
 const{listening:voiceListening,toggle:voiceToggle,stop:voiceStop}=useVoiceInput();
 const activityType=type;
 const isEdit = !!initial;
@@ -1821,6 +1861,36 @@ Dismiss
 </>}
 {type==="spraying" &&<>
 <SprayingForm v={data} set={setData} products={products} onAddChemical={onAddChemical}/>
+<div style={{background:"#F0F6FF",border:"2px solid #6090C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+<div style={{fontWeight:700,color:"#1A3A5C",fontSize:"12px"}}>🌬️ SPRAY CONDITIONS</div>
+<button type="button" onClick={getSprayForecast} disabled={forecastLoading} style={{fontSize:"11px",padding:"4px 10px",borderRadius:"5px",border:"1px solid #6090C0",background:"#fff",color:"#1A3A5C",fontWeight:600,cursor:forecastLoading?"default":"pointer"}}>
+{forecastLoading ? "Checking…" : sprayForecast ? "🔄 Refresh" : "📍 Check forecast"}
+</button>
+</div>
+{forecastErr && <div style={{fontSize:"12px",color:"#7A0808"}}>{forecastErr}</div>}
+{sprayForecast && sprayForecast.length>0 && <>
+<div style={{display:"flex",gap:"6px",overflowX:"auto",padding:"2px 0 6px"}}>
+{sprayForecast.map((h,i)=>{
+const hot = h.windMph!=null && h.windMph>HIGH_WIND_MPH;
+const calm = h.windMph!=null && h.windMph<LOW_WIND_MPH;
+const wet = (h.precipProb!=null && h.precipProb>=RAIN_PROB_PCT) || (h.precipIn!=null && h.precipIn>0);
+return (
+<div key={i} style={{flex:"0 0 auto",minWidth:"64px",textAlign:"center",background:"#fff",border:`1px solid ${hot||calm?"#D09020":"#BCD4EA"}`,borderRadius:"5px",padding:"5px 6px"}}>
+<div style={{fontSize:"10px",color:"#4A6A8A",fontWeight:600}}>{new Date(h.time).toLocaleTimeString([], {hour:"numeric"})}</div>
+<div style={{fontSize:"12px",fontWeight:700,color:hot||calm?"#B06000":"#1A3A5C"}}>{h.windMph!=null?`${h.windMph}mph`:"—"}</div>
+<div style={{fontSize:"10px",color:wet?"#2060A0":"#7A8FA0"}}>{h.precipProb!=null?`${h.precipProb}% rain`:""}</div>
+</div>
+);
+})}
+</div>
+{evaluateSprayWindow(sprayForecast).map((f,i)=>(
+<div key={i} style={{fontSize:"12px",color:"#7A4A08",lineHeight:"1.6",borderLeft:"3px solid #D09020",paddingLeft:"8px",marginBottom:"4px",background:"#FFF8E8",padding:"4px 8px",borderRadius:"3px"}}>⚠️ {f.msg}</div>
+))}
+<div style={{fontSize:"11px",color:"#4A6A8A",fontStyle:"italic",marginTop:"4px"}}>General guidance only, not a substitute for your product's actual label — always confirm wind and rainfast requirements against the label before spraying.</div>
+</>}
+{!sprayForecast && !forecastErr && !forecastLoading && <div style={{fontSize:"11px",color:"#4A6A8A"}}>Check the upcoming wind and rain outlook before you spray.</div>}
+</div>
 {complianceWarnings.filter(w=>w.type==="label").length > 0 && (
 <div style={{background:"#FFF8E8",border:"2px solid #D09020",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
 <div style={{fontWeight:700,color:"#7A4A08",fontSize:"12px",marginBottom:"5px"}}>⚠️ COMPLIANCE NOTICE</div>
