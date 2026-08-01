@@ -1531,10 +1531,10 @@ function exportCSV(fields,tenantId,farmName,fieldHistory={},activeYear){
   rows.push(["Entity","Farm","Legal","Common","Field #","Acres","Crop","Bu Guarantee","Price Guarantee","Value/Ac","Ins. Guarantee","Bu Projection","Curr Price","Proj Revenue","Risk",...EXP.map(([,l])=>l),"Total Exp $/Ac","Total Expenses","Net Income","Actual Revenue","Actual Expenses","Actual Net"].map(q).join(sep));
   fieldActuals.forEach(({f,a})=>{const c=calc(f);rows.push([q(f.entity),q(f.farm),q(f.legal),q(f.common),q(f.fieldNum),f.acres.toFixed(2),q(f.crop),f.income.bushelGuarantee,f.income.priceGuarantee,c.valAcre.toFixed(2),c.guarantee.toFixed(2),f.income.bushelProjection,f.income.currentPrice,c.revenue.toFixed(2),c.risk.toFixed(2),...EXP.map(([k])=>getRate(f,k).toFixed(2)),c.expRate.toFixed(2),c.expenses.toFixed(2),c.net.toFixed(2),a.hasRevenue?a.actualRevenue.toFixed(2):"",a.hasExpenses?a.actualExpenses.toFixed(2):"",a.hasAny?a.actualNet.toFixed(2):""].join(sep));});
   rows.push("");
-  rows.push(q("=== CROP SUMMARY (Projected) ==="));
-  rows.push(["Crop","Acres","% of Total","Proj Revenue","Rev $/Ac","Ins Guarantee","Total Expenses","Exp $/Ac","Net Income","Net $/Ac"].map(q).join(sep));
-  const cm={};fields.forEach(f=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;});
-  Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).forEach(([crop,d])=>{const net=d.revenue-d.expenses;rows.push([q(crop),d.acres.toFixed(1),(d.acres/totalAcres*100).toFixed(1)+"%",d.revenue.toFixed(2),(d.revenue/d.acres).toFixed(2),d.guarantee.toFixed(2),d.expenses.toFixed(2),(d.expenses/d.acres).toFixed(2),net.toFixed(2),(net/d.acres).toFixed(2)].join(sep));});
+  rows.push(q("=== CROP SUMMARY — PROJECTED VS ACTUAL ==="));
+  rows.push(["Crop","Acres","% of Total","Proj Revenue","Rev $/Ac","Ins Guarantee","Proj Expenses","Exp $/Ac","Proj Net","Net $/Ac","Actual Revenue","Actual Expenses","Actual Net"].map(q).join(sep));
+  const cm={};fieldActuals.forEach(({f,a})=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0,actRevenue:0,actExpenses:0,anyActual:false};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;if(a.hasRevenue)cm[f.crop].actRevenue+=a.actualRevenue;if(a.hasExpenses)cm[f.crop].actExpenses+=a.actualExpenses;if(a.hasAny)cm[f.crop].anyActual=true;});
+  Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).forEach(([crop,d])=>{const net=d.revenue-d.expenses;const actNet=d.anyActual?(d.actRevenue-d.actExpenses):null;rows.push([q(crop),d.acres.toFixed(1),(d.acres/totalAcres*100).toFixed(1)+"%",d.revenue.toFixed(2),(d.revenue/d.acres).toFixed(2),d.guarantee.toFixed(2),d.expenses.toFixed(2),(d.expenses/d.acres).toFixed(2),net.toFixed(2),(net/d.acres).toFixed(2),d.anyActual?d.actRevenue.toFixed(2):"",d.anyActual?d.actExpenses.toFixed(2):"",actNet!=null?actNet.toFixed(2):""].join(sep));});
   rows.push("");
   rows.push(q("=== EXPENSE CATEGORY — PROJECTED VS ACTUAL ==="));
   rows.push(["Category","Projected Total $","Projected $/Ac","Actual Total $","Actual $/Ac","Variance $","% of Rev (Proj)"].map(q).join(sep));
@@ -1562,15 +1562,18 @@ function openPrint(fields,entityFilter,tenantId,farmName,fieldHistory={},activeY
   const fmtN=n=>n<0?"("+fmt(n)+")":fmt(n);
   const fmtR=n=>"$"+n.toFixed(2);
   const pct=(a,b)=>b>0?(a/b*100).toFixed(1)+"%":"—";
-  const cm={};fields.forEach(f=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;});
-  const expTots={};EXP.forEach(([k])=>{expTots[k]=fields.reduce((s,f)=>s+getRate(f,k)*f.acres,0);});
-  const actualCatTots={};EXP.forEach(([k])=>{actualCatTots[k]=fields.reduce((s,f)=>s+(parseFloat(f.actualExpenses?.[k])||0),0);});
-  const entMap={};fields.forEach(f=>{if(!entMap[f.entity])entMap[f.entity]={acres:0,revenue:0,guarantee:0,expenses:0};const c=calc(f);entMap[f.entity].acres+=f.acres;entMap[f.entity].revenue+=c.revenue;entMap[f.entity].guarantee+=c.guarantee;entMap[f.entity].expenses+=c.expenses;});
   const fieldActuals=fields.map(f=>({f,a:calcFieldActuals(f,fieldHistory,activeYear)}));
   const totActualRev=fieldActuals.reduce((s,{a})=>s+a.actualRevenue,0);
   const totActualExp=fieldActuals.reduce((s,{a})=>s+a.actualExpenses,0);
   const totActualNet=totActualRev-totActualExp;
   const anyActual=fieldActuals.some(({a})=>a.hasAny);
+  // Crop/entity rollups carry the same actual figures as the field detail
+  // table and farm totals above, instead of stopping at projected — so
+  // "Actual" isn't only visible per-field, it rolls up everywhere else too.
+  const cm={};fieldActuals.forEach(({f,a})=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0,actRevenue:0,actExpenses:0,anyActual:false};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;if(a.hasRevenue)cm[f.crop].actRevenue+=a.actualRevenue;if(a.hasExpenses)cm[f.crop].actExpenses+=a.actualExpenses;if(a.hasAny)cm[f.crop].anyActual=true;});
+  const expTots={};EXP.forEach(([k])=>{expTots[k]=fields.reduce((s,f)=>s+getRate(f,k)*f.acres,0);});
+  const actualCatTots={};EXP.forEach(([k])=>{actualCatTots[k]=fields.reduce((s,f)=>s+(parseFloat(f.actualExpenses?.[k])||0),0);});
+  const entMap={};fieldActuals.forEach(({f,a})=>{if(!entMap[f.entity])entMap[f.entity]={acres:0,revenue:0,guarantee:0,expenses:0,actRevenue:0,actExpenses:0,anyActual:false};const c=calc(f);entMap[f.entity].acres+=f.acres;entMap[f.entity].revenue+=c.revenue;entMap[f.entity].guarantee+=c.guarantee;entMap[f.entity].expenses+=c.expenses;if(a.hasRevenue)entMap[f.entity].actRevenue+=a.actualRevenue;if(a.hasExpenses)entMap[f.entity].actExpenses+=a.actualExpenses;if(a.hasAny)entMap[f.entity].anyActual=true;});
 
   const css=`
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Barlow+Condensed:wght@400;500;600;700&display=swap');
@@ -1635,16 +1638,18 @@ ${anyActual?`<h2>Actual — Season to Date</h2>
   <th>Crop</th><th class="r">Acres</th><th class="r">% Total</th>
   <th class="r">Ins. Guarantee</th><th class="r">Guar $/Ac</th>
   <th class="r">Proj. Revenue</th><th class="r">Rev $/Ac</th>
-  <th class="r">Total Expenses</th><th class="r">Exp $/Ac</th>
-  <th class="r">Net Income</th><th class="r">Net $/Ac</th>
+  <th class="r">Proj. Expenses</th><th class="r">Exp $/Ac</th>
+  <th class="r">Proj. Net</th><th class="r">Net $/Ac</th>
+  ${anyActual?`<th class="r">Actual Revenue</th><th class="r">Actual Expenses</th><th class="r">Actual Net</th>`:""}
 </tr></thead><tbody>
-${Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).map(([crop,d])=>{const net=d.revenue-d.expenses;const ni=net>=0?"pos":"neg";return`<tr>
+${Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).map(([crop,d])=>{const net=d.revenue-d.expenses;const ni=net>=0?"pos":"neg";const actNet=d.anyActual?(d.actRevenue-d.actExpenses):null;return`<tr>
   <td><strong>${crop}</strong></td>
   <td class="r">${d.acres.toFixed(1)}</td><td class="r">${pct(d.acres,totAc)}</td>
   <td class="r">${fmt(d.guarantee)}</td><td class="r">${fmtR(d.guarantee/d.acres)}</td>
   <td class="r">${fmt(d.revenue)}</td><td class="r">${fmtR(d.revenue/d.acres)}</td>
   <td class="r">${fmt(d.expenses)}</td><td class="r">${fmtR(d.expenses/d.acres)}</td>
   <td class="r ${ni}">${fmtN(net)}</td><td class="r ${ni}">${fmtR(net/d.acres)}</td>
+  ${anyActual?`<td class="r">${d.anyActual?fmt(d.actRevenue):"—"}</td><td class="r">${d.anyActual?fmt(d.actExpenses):"—"}</td><td class="r ${actNet==null?"":actNet>=0?"pos":"neg"}">${actNet!=null?fmtN(actNet):"—"}</td>`:""}
 </tr>`;}).join("")}
 </tbody><tfoot><tr>
   <td><strong>TOTAL</strong></td><td class="r"><strong>${totAc.toFixed(1)}</strong></td><td class="r">100%</td>
@@ -1652,6 +1657,7 @@ ${Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).map(([crop,d])=>{const n
   <td class="r"><strong>${fmt(totRev)}</strong></td><td class="r">${fmtR(totRev/totAc)}</td>
   <td class="r"><strong>${fmt(totExp)}</strong></td><td class="r">${fmtR(totExp/totAc)}</td>
   <td class="r ${totNet>=0?"pos":"neg"}"><strong>${fmtN(totNet)}</strong></td><td class="r ${totNet>=0?"pos":"neg"}">${fmtR(totNet/totAc)}</td>
+  ${anyActual?`<td class="r"><strong>${fmt(totActualRev)}</strong></td><td class="r"><strong>${fmt(totActualExp)}</strong></td><td class="r ${totActualNet>=0?"pos":"neg"}"><strong>${fmtN(totActualNet)}</strong></td>`:""}
 </tr></tfoot></table>
 
 <h2>Expense Category — Projected vs Actual</h2>
@@ -1681,8 +1687,8 @@ ${EXP.map(([key,label])=>{
 </tr></tfoot></table>
 
 ${Object.keys(entMap).length>1?`<h2>Entity Summary</h2>
-<table><thead><tr><th>Entity</th><th class="r">Acres</th><th class="r">Revenue</th><th class="r">Rev $/Ac</th><th class="r">Ins. Guarantee</th><th class="r">Expenses</th><th class="r">Exp $/Ac</th><th class="r">Net Income</th><th class="r">Net $/Ac</th></tr></thead><tbody>
-${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;return`<tr><td><strong>${ent}</strong></td><td class="r">${d.acres.toFixed(1)}</td><td class="r">${fmt(d.revenue)}</td><td class="r">${fmtR(d.revenue/d.acres)}</td><td class="r">${fmt(d.guarantee)}</td><td class="r">${fmt(d.expenses)}</td><td class="r">${fmtR(d.expenses/d.acres)}</td><td class="r ${net>=0?"pos":"neg"}">${fmtN(net)}</td><td class="r ${net>=0?"pos":"neg"}">${fmtR(net/d.acres)}</td></tr>`;}).join("")}
+<table><thead><tr><th>Entity</th><th class="r">Acres</th><th class="r">Proj. Revenue</th><th class="r">Rev $/Ac</th><th class="r">Ins. Guarantee</th><th class="r">Proj. Expenses</th><th class="r">Exp $/Ac</th><th class="r">Proj. Net</th><th class="r">Net $/Ac</th>${anyActual?`<th class="r">Actual Revenue</th><th class="r">Actual Expenses</th><th class="r">Actual Net</th>`:""}</tr></thead><tbody>
+${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;const actNet=d.anyActual?(d.actRevenue-d.actExpenses):null;return`<tr><td><strong>${ent}</strong></td><td class="r">${d.acres.toFixed(1)}</td><td class="r">${fmt(d.revenue)}</td><td class="r">${fmtR(d.revenue/d.acres)}</td><td class="r">${fmt(d.guarantee)}</td><td class="r">${fmt(d.expenses)}</td><td class="r">${fmtR(d.expenses/d.acres)}</td><td class="r ${net>=0?"pos":"neg"}">${fmtN(net)}</td><td class="r ${net>=0?"pos":"neg"}">${fmtR(net/d.acres)}</td>${anyActual?`<td class="r">${d.anyActual?fmt(d.actRevenue):"—"}</td><td class="r">${d.anyActual?fmt(d.actExpenses):"—"}</td><td class="r ${actNet==null?"":actNet>=0?"pos":"neg"}">${actNet!=null?fmtN(actNet):"—"}</td>`:""}</tr>`;}).join("")}
 </tbody></table>`:""}
 
 <div class="pb"></div>
