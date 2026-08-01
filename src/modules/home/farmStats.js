@@ -49,6 +49,20 @@ export function computeFarmStats(d, year) {
     }
   });
 
+  // Real $ actually spent this year, by field (field.actualExpenses — see
+  // agriPlan/index.jsx calcActual). Lets Home show actual NET (not just
+  // projected) once both sides have real numbers entered.
+  let actualExpensesTotal = 0, fieldsWithActualExpenses = 0;
+  apFieldsArr.forEach(f => {
+    const ae = f.actualExpenses;
+    if (!ae || typeof ae !== "object") return;
+    const entries = Object.values(ae).filter(v => v !== undefined && v !== null && v !== "" && !isNaN(v));
+    if (entries.length === 0) return;
+    actualExpensesTotal += entries.reduce((s, v) => s + (+v || 0), 0);
+    fieldsWithActualExpenses++;
+  });
+  const actualNet = (fieldsWithActuals > 0 && fieldsWithActualExpenses > 0) ? (actualRevenue - actualExpensesTotal) : null;
+
   const flFields = obj2arr(d.flData?.fields);
   const flActivities = obj2arr(d.flData?.activities).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   const recentActs = flActivities.slice(0, 6);
@@ -67,6 +81,7 @@ export function computeFarmStats(d, year) {
 
   return {
     apFieldsArr, apAcres, revenueProjected, guarantee, actualBushels, actualRevenue, fieldsWithActuals,
+    actualExpensesTotal, fieldsWithActualExpenses, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek, flAcres,
     asFieldsArr, seasonBushels, loadsThisWeek,
     slVehicles, openTodos, partsNeeded,
