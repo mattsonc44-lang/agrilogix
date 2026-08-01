@@ -18,19 +18,46 @@ const INV_MODS = [
   { id:"agrilog",     name:"AgriField",     desc:"Field activity tracking & mapping",  price:150 },
   { id:"agriscale",   name:"AgriScale",   desc:"Grain cart & harvest management",     price:150 },
   { id:"agriservice", name:"AgriService", desc:"Fleet & equipment maintenance",       price:150 },
+  { id:"agriplan",    name:"AgriPlan",    desc:"Crop planning & budgeting",           price:150 },
 ];
+// Bundle = 20% off the sum of all modules — recalculated automatically so
+// adding/removing a module here doesn't require touching the price by hand.
+const BUNDLE_FULL_PRICE = INV_MODS.reduce((s,m)=>s+m.price,0);
+const BUNDLE_PRICE = Math.round(BUNDLE_FULL_PRICE * 0.8);
+const BUNDLE_SAVING = BUNDLE_FULL_PRICE - BUNDLE_PRICE;
 
-function InvoiceBuilder({ client,setClient,sel,setSel,extras,setExtras,date,setDate,due,setDue,notes,setNotes,invNum }) {
+function InvoiceBuilder({ client,setClient,sel,setSel,extras,setExtras,date,setDate,due,setDue,notes,setNotes,invNum,orgs,onRecordPayment }) {
+  const [paidFlash, setPaidFlash] = useState(false);
   const toggleMod = id => setSel(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const allThree = INV_MODS.every(m=>sel.has(m.id));
   const setBundle = () => setSel(allThree ? new Set() : new Set(INV_MODS.map(m=>m.id)));
   const addExtra = () => setExtras(e=>[...e,{id:Date.now(),desc:"",qty:1,price:""}]);
   const updExtra = (id,k,v) => setExtras(e=>e.map(x=>x.id===id?{...x,[k]:v}:x));
   const delExtra = id => setExtras(e=>e.filter(x=>x.id!==id));
-  const modTotal = allThree ? 360 : [...sel].reduce((s,id)=>s+(INV_MODS.find(m=>m.id===id)?.price||0),0);
+  const modTotal = allThree ? BUNDLE_PRICE : [...sel].reduce((s,id)=>s+(INV_MODS.find(m=>m.id===id)?.price||0),0);
   const extTotal = extras.reduce((s,l)=>s+(+l.price||0)*(+l.qty||0),0);
   const total = modTotal + extTotal;
-  const saving = allThree ? 90 : 0;
+  const saving = allThree ? BUNDLE_SAVING : 0;
+
+  const selectOrg = orgId => {
+    if (!orgId) { setClient(c=>({...c, orgId:""})); return; }
+    const org = (orgs||[]).find(o=>o.id===orgId);
+    setClient(c=>({...c, orgId, name:org?.name||c.name, email:org?.email||c.email}));
+  };
+
+  const markPaid = () => {
+    if (!client.orgId || !onRecordPayment) return;
+    onRecordPayment({
+      tenantId: client.orgId,
+      date,
+      amount: total,
+      year: new Date(date).getFullYear(),
+      modules: allThree ? ["Full Bundle"] : [...sel].map(id=>INV_MODS.find(m=>m.id===id)?.name).filter(Boolean),
+      note: `Invoice ${invNum}${notes ? " — " + notes : ""}`,
+    });
+    setPaidFlash(true);
+    setTimeout(()=>setPaidFlash(false), 3000);
+  };
 
   const IC = { green:"#1A3A1A", amber:"#C07010", cream:"#FDFAF4", border:"#D8C8A8", muted:"#7A6A58", light:"#E8DEC8" };
   const iInp = { width:"100%", padding:"8px 10px", border:`1px solid ${IC.border}`, borderRadius:5, fontSize:13, background:"#F8F4EE", color:"#2A1A0A", marginBottom:7, outline:"none", fontFamily:"inherit" };
@@ -58,19 +85,24 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
         {/* Bill To */}
         <div style={{ background:"#FDFAF4", borderRadius:8, padding:14, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,.07)" }}>
           <div style={{ fontSize:10, fontWeight:700, color:IC.green, letterSpacing:".12em", textTransform:"uppercase", marginBottom:10 }}>Bill To</div>
+          <select value={client.orgId||""} onChange={e=>selectOrg(e.target.value)} style={{...iInp, fontWeight:600, cursor:"pointer"}}>
+            <option value="">— Select organization —</option>
+            {(orgs||[]).map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
           {[["name","Company / Farm Name"],["address","Street Address"],["city","City, State, ZIP"],["email","Email"]].map(([k,ph])=>(
             <input key={k} placeholder={ph} value={client[k]} onChange={e=>setClient(c=>({...c,[k]:e.target.value}))} style={iInp}/>
           ))}
+          <div style={{ fontSize:10, color:IC.muted, marginTop:-3 }}>Pick an org to auto-fill, or leave blank and type a one-off client below.</div>
         </div>
         {/* Modules */}
         <div style={{ background:"#FDFAF4", borderRadius:8, padding:14, marginBottom:12, boxShadow:"0 1px 4px rgba(0,0,0,.07)" }}>
           <div style={{ fontSize:10, fontWeight:700, color:IC.green, letterSpacing:".12em", textTransform:"uppercase", marginBottom:10 }}>Modules (USD)</div>
           <button onClick={setBundle} style={{ width:"100%", padding:"9px 12px", marginBottom:8, borderRadius:6, border:`2px solid ${allThree?"#4A8A4A":IC.border}`, background:allThree?"#EBF5EB":"#F4EFE6", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"inherit" }}>
             <div style={{ textAlign:"left" }}>
-              <div style={{ fontWeight:700, fontSize:12, color:allThree?"#2A6A2A":"#3A2A1A" }}>Full Bundle — All 3</div>
-              <div style={{ fontSize:11, color:allThree?"#4A8A4A":IC.muted }}>Save $90 vs individual</div>
+              <div style={{ fontWeight:700, fontSize:12, color:allThree?"#2A6A2A":"#3A2A1A" }}>Full Bundle — All {INV_MODS.length}</div>
+              <div style={{ fontSize:11, color:allThree?"#4A8A4A":IC.muted }}>Save ${BUNDLE_SAVING} vs individual</div>
             </div>
-            <div style={{ fontWeight:700, color:allThree?"#2A6A2A":IC.amber }}>$360/yr</div>
+            <div style={{ fontWeight:700, color:allThree?"#2A6A2A":IC.amber }}>${BUNDLE_PRICE}/yr</div>
           </button>
           {INV_MODS.map(m=>(
             <label key={m.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 9px", borderRadius:5, border:`1px solid ${sel.has(m.id)?"#A8CCA8":IC.border}`, background:sel.has(m.id)?"#F0F7F0":"transparent", marginBottom:5, cursor:"pointer" }}>
@@ -104,6 +136,11 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
           <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} style={{...iInp,resize:"vertical"}}/>
         </div>
         <button onClick={print} style={{ width:"100%", background:IC.amber, color:"#fff", border:"none", borderRadius:6, padding:"11px", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:"inherit", letterSpacing:".04em" }}>🖨 Print / Save PDF</button>
+        {client.orgId && (
+          <button onClick={markPaid} style={{ width:"100%", marginTop:8, background:paidFlash?"#2A6A2A":"#EBF5EB", color:paidFlash?"#fff":"#2A6A2A", border:`1px solid ${paidFlash?"#2A6A2A":"#A8CCA8"}`, borderRadius:6, padding:"10px", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            {paidFlash ? "✓ Saved to payment history" : "💰 Mark as Paid & Save to History"}
+          </button>
+        )}
       </div>
 
       {/* Preview */}
@@ -152,10 +189,10 @@ td{padding:11px 0;border-bottom:1px solid #EDE3D3;font-size:14px;color:#2A1A0A;v
             <tbody>
               {allThree
                 ? <tr>
-                    <td><div style={{ fontWeight:600 }}>Agri Logix — Full Suite Bundle</div><div style={{ fontSize:12, color:IC.muted }}>AgriField · AgriScale · AgriService — Annual</div></td>
+                    <td><div style={{ fontWeight:600 }}>Agri Logix — Full Suite Bundle</div><div style={{ fontSize:12, color:IC.muted }}>{INV_MODS.map(m=>m.name).join(" · ")} — Annual</div></td>
                     <td style={{ textAlign:"center" }}>1</td>
-                    <td style={{ textAlign:"right", paddingRight:16 }}>{invMoney(360)}</td>
-                    <td style={{ textAlign:"right", fontWeight:600 }}>{invMoney(360)}</td>
+                    <td style={{ textAlign:"right", paddingRight:16 }}>{invMoney(BUNDLE_PRICE)}</td>
+                    <td style={{ textAlign:"right", fontWeight:600 }}>{invMoney(BUNDLE_PRICE)}</td>
                   </tr>
                 : [...sel].map(id=>{const m=INV_MODS.find(x=>x.id===id);return m?(
                     <tr key={id}>
@@ -297,6 +334,41 @@ function CleanDuplicatesBtn({ tenantId, token, T }) {
   );
 }
 
+// ── Add Payment mini-form ─────────────────────────────────────────────────
+function AddPaymentRow({ onAdd, T }) {
+  const [open, setOpen] = React.useState(false);
+  const [date, setDate] = React.useState(invToday());
+  const [amount, setAmount] = React.useState("");
+  const [method, setMethod] = React.useState("");
+  const [note, setNote] = React.useState("");
+
+  const submit = () => {
+    if (!amount || parseFloat(amount) <= 0) return;
+    onAdd({ date, amount, year: new Date(date).getFullYear(), method, note });
+    setAmount(""); setMethod(""); setNote(""); setDate(invToday()); setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button onClick={()=>setOpen(true)} style={{ background:"none", border:`1px dashed ${T.border}`, borderRadius:5, padding:"7px 12px", color:T.brand, fontSize:12, cursor:"pointer", fontFamily:"inherit", width:"100%", marginBottom:10 }}>
+        + Record a Payment
+      </button>
+    );
+  }
+  return (
+    <div style={{ background:"#F0F8F0", border:"1px solid #A0C8A0", borderRadius:6, padding:10, marginBottom:10, display:"grid", gridTemplateColumns:"120px 100px 120px 1fr auto", gap:6, alignItems:"center" }}>
+      <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{ ...S.input, padding:"6px 8px", fontSize:12 }}/>
+      <input type="number" placeholder="Amount $" value={amount} onChange={e=>setAmount(e.target.value)} style={{ ...S.input, padding:"6px 8px", fontSize:12 }}/>
+      <input placeholder="Method (check, card…)" value={method} onChange={e=>setMethod(e.target.value)} style={{ ...S.input, padding:"6px 8px", fontSize:12 }}/>
+      <input placeholder="Note (optional)" value={note} onChange={e=>setNote(e.target.value)} style={{ ...S.input, padding:"6px 8px", fontSize:12 }}/>
+      <div style={{ display:"flex", gap:4 }}>
+        <button onClick={submit} style={{ ...mkBtn("primary", T.brand), padding:"6px 10px", fontSize:12 }}>Save</button>
+        <button onClick={()=>setOpen(false)} style={{ ...mkBtn("ghost"), padding:"6px 10px", fontSize:12 }}>✕</button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPanel({ user, token, onBack, onViewTenant, adminViewTenantId }) {
   const [loading,      setLoading]      = useState(true);
   const [showNew,      setShowNew]      = useState(false);
@@ -342,6 +414,9 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
   const [invDue,     setInvDue]     = useState(invAddDays(invToday(),30));
   const [invNotes,   setInvNotes]   = useState("Payment due within 30 days. Thank you for your business!");
   const [invNum]                    = useState(invNextNum());
+  const [orgPayments,     setOrgPayments]     = useState({});  // {tenantId: [payment,...]}
+  const [paymentsLoading, setPaymentsLoading] = useState({});
+  const [expandedPayments,setExpandedPayments]= useState(null);
 
   useEffect(() => {
     dbRead("tenants", token)
@@ -380,6 +455,58 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
     if (expandedOrg === tenantId) { setExpandedOrg(null); return; }
     setExpandedOrg(tenantId);
     await loadUsers(tenantId);
+  };
+
+  // ── Payment history ──────────────────────────────────────────────
+  const loadPayments = async (tenantId) => {
+    if (orgPayments[tenantId]) return;
+    setPaymentsLoading(p => ({ ...p, [tenantId]: true }));
+    try {
+      const data = await dbRead(`tenants/${tenantId}/payments`, token).catch(() => ({}));
+      const list = obj2arr(data || {}).filter(Boolean).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      setOrgPayments(p => ({ ...p, [tenantId]: list }));
+    } catch (e) {
+      setOrgPayments(p => ({ ...p, [tenantId]: [] }));
+    } finally {
+      setPaymentsLoading(p => ({ ...p, [tenantId]: false }));
+    }
+  };
+
+  const togglePayments = async (tenantId) => {
+    if (expandedPayments === tenantId) { setExpandedPayments(null); return; }
+    setExpandedPayments(tenantId);
+    await loadPayments(tenantId);
+  };
+
+  const addPayment = async (tenantId, payment) => {
+    if (!tenantId) return;
+    const id = genId();
+    const rec = {
+      id,
+      date: payment.date || invToday(),
+      amount: parseFloat(payment.amount) || 0,
+      year: payment.year || new Date(payment.date || invToday()).getFullYear(),
+      modules: payment.modules || [],
+      method: payment.method || "",
+      note: payment.note || "",
+      recordedBy: user.email,
+      recordedAt: new Date().toISOString(),
+    };
+    try {
+      await dbWrite(`tenants/${tenantId}/payments/${id}`, rec, token);
+      setOrgPayments(p => ({
+        ...p,
+        [tenantId]: [rec, ...(p[tenantId] || [])].sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+      }));
+    } catch (e) { setErr(e.message); }
+  };
+
+  const deletePayment = async (tenantId, paymentId) => {
+    if (!confirm("Delete this payment record? This cannot be undone.")) return;
+    try {
+      await dbWrite(`tenants/${tenantId}/payments/${paymentId}`, null, token);
+      setOrgPayments(p => ({ ...p, [tenantId]: (p[tenantId] || []).filter(pm => pm.id !== paymentId) }));
+    } catch (e) { setErr(e.message); }
   };
 
   const changeUserRole = async (tenantId, uid, newRole) => {
@@ -494,6 +621,10 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
     return true;
   }).sort((a,b) => (a.profile.name||"").localeCompare(b.profile.name||""));
 
+  const orgOptions = Object.entries(tenants)
+    .map(([id, t]) => ({ id, name: t.profile?.name || id, email: t.profile?.ownerEmail || "" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const Switch = ({ on, onChange }) => (
     <div onClick={onChange} style={{ width:"40px", height:"22px", borderRadius:"11px", cursor:"pointer", background:on?T.brand:"#C8C0B8", position:"relative", transition:"background .2s", flexShrink:0 }}>
       <div style={{ position:"absolute", top:"3px", left:on?"21px":"3px", width:"16px", height:"16px", borderRadius:"50%", background:"#FFFFFF", transition:"left .2s" }}/>
@@ -593,7 +724,7 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
             }
           </div>
         : adminTab==="invoice"
-        ? <div style={S.content}><InvoiceBuilder client={invClient} setClient={setInvClient} sel={invSel} setSel={setInvSel} extras={invExtras} setExtras={setInvExtras} date={invDate} setDate={setInvDate} due={invDue} setDue={setInvDue} notes={invNotes} setNotes={setInvNotes} invNum={invNum}/></div>
+        ? <div style={S.content}><InvoiceBuilder client={invClient} setClient={setInvClient} sel={invSel} setSel={setInvSel} extras={invExtras} setExtras={setInvExtras} date={invDate} setDate={setInvDate} due={invDue} setDue={setInvDue} notes={invNotes} setNotes={setInvNotes} invNum={invNum} orgs={orgOptions} onRecordPayment={payment=>addPayment(payment.tenantId, payment)}/></div>
         : <div style={S.content}>
         {/* Stats */}
         <div style={{ display:"flex", gap:"12px", marginBottom:"20px", flexWrap:"wrap" }}>
@@ -679,6 +810,11 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
           const users = orgUsers[p.id] || [];
           const isLoadingUsers = usersLoading[p.id];
           const tenantModules = p.modules || [];
+          const isPaymentsExpanded = expandedPayments === p.id;
+          const payments = orgPayments[p.id] || [];
+          const isLoadingPayments = paymentsLoading[p.id];
+          const currentYear = new Date().getFullYear();
+          const paidThisYear = payments.some(pm => pm.year === currentYear);
 
           return (
             <div key={p.id} style={{ ...S.card, opacity:p.active?1:0.65, marginBottom:"12px", padding:0, overflow:"hidden" }}>
@@ -725,6 +861,10 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
                   <button onClick={()=>toggleExpand(p.id)}
                     style={{ ...mkBtn("ghost"), padding:"6px 12px", fontSize:"12px", color:isExpanded?"#2563EB":T.muted, borderColor:isExpanded?"rgba(37,99,235,.4)":T.border, background:isExpanded?"rgba(37,99,235,.06)":"transparent" }}>
                     👥 Users {isExpanded?"▲":"▼"}
+                  </button>
+                  <button onClick={()=>togglePayments(p.id)}
+                    style={{ ...mkBtn("ghost"), padding:"6px 12px", fontSize:"12px", color:isPaymentsExpanded?"#2A6A2A":T.muted, borderColor:isPaymentsExpanded?"rgba(42,106,42,.4)":T.border, background:isPaymentsExpanded?"rgba(42,106,42,.06)":"transparent" }}>
+                    💰 Payments {isPaymentsExpanded?"▲":"▼"}
                   </button>
                   <button onClick={()=>setInviteTarget({tenantId:p.id,tenantName:p.name})}
                     style={{ ...mkBtn("ghost"), padding:"6px 12px", fontSize:"12px", color:T.brand, borderColor:T.brand+"40" }}>
@@ -818,6 +958,36 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Payments panel */}
+              {isPaymentsExpanded && (
+                <div style={{ borderTop:`1px solid ${T.border}`, background:"#FDFAF4", padding:"14px 20px" }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+                    <span style={{ fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:T.muted }}>Payment History</span>
+                    {!isLoadingPayments && (
+                      <span style={{ fontSize:11, padding:"2px 9px", borderRadius:10, fontWeight:700, background:paidThisYear?"#E8F5E8":"#FDF0EE", color:paidThisYear?"#2A6A2A":T.danger }}>
+                        {paidThisYear ? `✓ Paid ${currentYear}` : `Not marked paid for ${currentYear}`}
+                      </span>
+                    )}
+                  </div>
+                  <AddPaymentRow T={T} onAdd={(payment)=>addPayment(p.id, payment)}/>
+                  {isLoadingPayments && <p style={{ color:T.muted, fontSize:13 }}>Loading payment history…</p>}
+                  {!isLoadingPayments && payments.length === 0 && (
+                    <p style={{ color:T.faint, fontSize:13, textAlign:"center", padding:"10px 0" }}>No payments recorded yet.</p>
+                  )}
+                  {!isLoadingPayments && payments.map(pm => (
+                    <div key={pm.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"9px 0", borderBottom:`1px solid ${T.border}50` }}>
+                      <div>
+                        <div style={{ fontWeight:700, fontSize:13 }}>{invMoney(pm.amount)} <span style={{ fontWeight:400, color:T.muted }}>· {invFmtDate(pm.date)}</span></div>
+                        <div style={{ fontSize:11, color:T.faint, marginTop:2 }}>
+                          {pm.year}{pm.method ? ` · ${pm.method}` : ""}{pm.modules?.length ? ` · ${pm.modules.join(", ")}` : ""}{pm.note ? ` · ${pm.note}` : ""}
+                        </div>
+                      </div>
+                      <button onClick={()=>deletePayment(p.id, pm.id)} style={{ background:"none", border:"none", cursor:"pointer", color:T.danger, fontSize:14, opacity:0.7 }} title="Delete this payment record">🗑</button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
