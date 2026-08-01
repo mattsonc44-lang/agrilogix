@@ -64,3 +64,43 @@ export function buildGuaranteeProgress(fields) {
     .map(u => ({ ...u, pct: (u.harvestedBu / u.guaranteeBu) * 100 }))
     .sort((a, b) => a.unit.localeCompare(b.unit, undefined, { numeric: true, sensitivity: "base" }));
 }
+
+// ── Bin summary for the Report tab / printable report — grouped by which
+// bin each load's binId points to. The displayed crop is derived from the
+// grain(s) actually recorded into the bin, NOT bin.grainName: that field is
+// only set once, when a bin is created or hand-edited in Edit Bin, and
+// recording a load never touches it — so it silently goes stale the moment
+// a different crop gets dumped into a bin that was last labeled for
+// something else. A bin with loads of more than one grain in it shows both
+// (joined with " + ") rather than picking one and hiding the mix.
+export function buildBinSummary(fields, bins, grains) {
+  const grainFor = (name) => (grains || []).find(g => g.name === name) || { name: "WHEAT", bushel_lbs: 60 };
+  const buOf = (load) => (parseFloat(load.net) || 0) / (grainFor(load.grainName).bushel_lbs || 60);
+  return (bins || []).map(bin => {
+    const loadsInBin = [];
+    (fields || []).forEach(field => (field.loads || []).filter(Boolean).forEach(load => {
+      if (load.binId === bin.id) loadsInBin.push({ ...load, fieldName: field.name });
+    }));
+    const totLbs = loadsInBin.reduce((s, l) => s + (parseFloat(l.net) || 0), 0);
+    const totBu = loadsInBin.reduce((s, l) => s + buOf(l), 0);
+    const grainTotals = {};
+    loadsInBin.forEach(l => { const g = l.grainName || "Unknown"; grainTotals[g] = (grainTotals[g] || 0) + buOf(l); });
+    const grainsPresent = Object.entries(grainTotals).sort((a, b) => b[1] - a[1]).map(([name]) => name);
+    // Empty bin, nothing recorded yet — nothing to derive from, so fall
+    // back to whatever grain it was assigned when set up.
+    const cropLabel = grainsPresent.length === 0 ? bin.grainName
+      : grainsPresent.length === 1 ? grainsPresent[0]
+      : grainsPresent.join(" + ");
+    const grain = grainFor(grainsPresent[0] || bin.grainName);
+    const storedBu = (parseFloat(bin.storedLbs) || 0) / (grain.bushel_lbs || 60);
+    const pctFull = bin.capacityBu > 0 ? Math.min(100, storedBu / bin.capacityBu * 100) : 0;
+    const fieldTotals = {};
+    loadsInBin.forEach(l => { fieldTotals[l.fieldName] = (fieldTotals[l.fieldName] || 0) + buOf(l); });
+    const fieldList = Object.entries(fieldTotals).sort((a, b) => b[1] - a[1]).map(([name, bu]) => ({ name, bu }));
+    return {
+      id: bin.id, name: bin.name, crop: cropLabel,
+      capacityBu: bin.capacityBu, storedBu, pctFull,
+      loads: loadsInBin.length, totLbs, totBu, fields: fieldList,
+    };
+  });
+}
