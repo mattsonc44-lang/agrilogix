@@ -238,10 +238,19 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const [selRecIds,setSelRecs]  = useState(new Set());
   const [selPoIds, setSelPoIds] = useState(new Set());
   const [gsQuery,  setGsQ]      = useState("");
+  const [highlightRecId, setHighlightRecId] = useState(null);
   const [poFilters,setPOF]      = useState({q:"",vendor:"",num:"",vehicle:"",status:""});
   const [invFilters,setInvF]    = useState({q:"",vendor:"",location:""});
   const [poNew,    setPoNew]    = useState({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});
   const [reportFil,setRepFil]   = useState({dateFrom:"",dateTo:"",type:"",custId:""});
+
+  // Search results jump to a specific service record (see SearchView) — flash
+  // the highlight briefly, then clear it so it doesn't linger forever.
+  useEffect(()=>{
+    if(!highlightRecId) return;
+    const t=setTimeout(()=>setHighlightRecId(null),4000);
+    return ()=>clearTimeout(t);
+  },[highlightRecId]);
 
   useEffect(()=>{
     if(!tenantId) return;
@@ -557,7 +566,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
               <div aria-hidden="true" className="main-watermark"/>
 
               {/* ── FLEET ── */}
-              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory} perms={perms}/>}
+              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory} perms={perms} highlightRecId={highlightRecId}/>}
               {tab==="report"&&<ReportView D={D} reportFil={reportFil} setRepFil={setRepFil} custName={custName} vehName={vehName} perms={perms}/>}
               {tab==="costs"&&perms.canViewCosts&&<CostView D={D} custName={custName}/>}
               {tab==="invoices"&&perms.canViewCosts&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
@@ -566,7 +575,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
               {tab==="vendors"&&<VendorsView D={D} deleteVendor={deleteVendor} setEdit={setEdit} setModal={setModal}/>}
               {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName} perms={perms}/>}
               {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal} setTab={setTab} setSelVeh={setSelVeh} setSelCust={setSelCust}/>}
-              {tab==="search"&&<SearchView D={D} gsQuery={gsQuery} setGsQ={setGsQ} setSelVeh={setSelVeh} setSelCust={setSelCust} setTab={setTab}/>}
+              {tab==="search"&&<SearchView D={D} gsQuery={gsQuery} setGsQ={setGsQ} setSelVeh={setSelVeh} setSelCust={setSelCust} setTab={setTab} setHighlightRecId={setHighlightRecId}/>}
               {tab==="admin"&&perms.canEditComm&&<AdminView D={D} toggleFeature={toggleFeature}/>}
 
             </div>
@@ -591,9 +600,18 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
 }
 
 // ── Fleet View ────────────────────────────────────────────────────
-function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory,perms}){
+function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory,perms,highlightRecId}){
   const canCost=perms?perms.canViewCosts:true;
   const [partsMenu, setPartsMenu] = useState(false);
+
+  // Deep-link from Search: scroll the matching service record into view once
+  // its vehicle's record list is on screen.
+  const recRefs=useRef({});
+  useEffect(()=>{
+    if(!highlightRecId) return;
+    const el=recRefs.current[highlightRecId];
+    if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
+  },[highlightRecId,selVeh?.id]);
 
   const partsSearchLinks = (v) => {
     if (!v?.model && !v?.make) return [];
@@ -763,7 +781,8 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
           const parts=(r.parts||[]);
           const inv=r.invoiced?D.invoices.find(i=>i.id===r.invoiceId):null;
           const checked=selRecIds.has(r.id);
-          return(<div key={r.id} className="sr" style={{background:checked?"rgba(217,119,6,.04)":""}}>
+          const jumped=highlightRecId===r.id;
+          return(<div key={r.id} ref={el=>{recRefs.current[r.id]=el;}} className="sr" style={{background:jumped?"rgba(217,119,6,.14)":checked?"rgba(217,119,6,.04)":"",borderLeftColor:jumped?"var(--amber)":"",boxShadow:jumped?"0 0 0 2px rgba(217,119,6,.35)":"",transition:"background .6s, box-shadow .6s"}}>
             <div><div className="sr-day">{d.day}</div><div className="sr-mon">{d.mon}</div><div className="sr-yr">{d.yr}</div></div>
             <div>
               <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
@@ -1094,11 +1113,11 @@ function TodosView({D,toggleTodo,deleteTodo,setEdit,setModal,setTab,setSelVeh,se
 }
 
 // ── Search ─────────────────────────────────────────────────────────
-function SearchView({D,gsQuery,setGsQ,setSelVeh,setSelCust,setTab}){
+function SearchView({D,gsQuery,setGsQ,setSelVeh,setSelCust,setTab,setHighlightRecId}){
   const q=gsQuery.toLowerCase().trim();
   const results=[];
   if(q.length>=2){
-    D.records.filter(r=>(r.notes+r.type+(r.parts||[]).map(p=>p.desc+p.num).join("")).toLowerCase().includes(q)).slice(0,20).forEach(r=>{const v=D.vehicles.find(v=>v.id===r.vehicleId);results.push({type:"record",label:`${v?.name||"?"} — ${r.type} (${r.date})`,sub:r.notes?.slice(0,80),vid:r.vehicleId,custId:v?.customerId});});
+    D.records.filter(r=>(r.notes+r.type+(r.parts||[]).map(p=>p.desc+p.num).join("")).toLowerCase().includes(q)).slice(0,20).forEach(r=>{const v=D.vehicles.find(v=>v.id===r.vehicleId);results.push({type:"record",label:`${v?.name||"?"} — ${r.type} (${r.date})`,sub:r.notes?.slice(0,80),vid:r.vehicleId,custId:v?.customerId,recId:r.id});});
     D.vehicles.filter(v=>(v.name+v.make+v.model+v.vin+(v.notes||"")).toLowerCase().includes(q)).slice(0,10).forEach(v=>results.push({type:"vehicle",label:v.name,sub:`${v.type}${v.year?" · "+v.year:""}`,vid:v.id,custId:v.customerId}));
     D.partsInventory.filter(p=>(p.name+(p.partNumbers||[]).map(n=>n.num+(n.vendor||"")).join("")).toLowerCase().includes(q)).slice(0,10).forEach(p=>results.push({type:"part",label:p.name,sub:`Qty: ${p.qty||"?"}${p.location?" · "+p.location:""}`}));
   }
@@ -1108,7 +1127,7 @@ function SearchView({D,gsQuery,setGsQ,setSelVeh,setSelCust,setTab}){
     <input className="form-input" style={{fontSize:"16px",padding:"12px 14px",marginBottom:"14px"}} placeholder="Search records, vehicles, parts…" value={gsQuery} onChange={e=>setGsQ(e.target.value)} autoFocus/>
     {q.length>=2&&<div className="overview-sub" style={{marginBottom:"10px"}}>{results.length} result{results.length!==1?"s":""} for "{q}"</div>}
     {results.map((r,i)=>(
-      <div key={i} style={{background:"var(--panel)",border:"1px solid var(--border)",borderRadius:"6px",padding:"10px 14px",marginBottom:"6px",cursor:r.vid?"pointer":"default"}} onClick={()=>{if(r.vid){setSelVeh(r.vid);if(r.custId)setSelCust(r.custId);setTab("fleet");}}}>
+      <div key={i} style={{background:"var(--panel)",border:"1px solid var(--border)",borderRadius:"6px",padding:"10px 14px",marginBottom:"6px",cursor:r.vid?"pointer":"default"}} onClick={()=>{if(r.vid){setSelVeh(r.vid);if(r.custId)setSelCust(r.custId);setHighlightRecId(r.recId||null);setTab("fleet");}}}>
         <span style={{...typeStyle[r.type],fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",letterSpacing:"1.5px",textTransform:"uppercase",padding:"2px 7px",borderRadius:"10px",display:"inline-block",marginBottom:"5px"}}>{r.type}</span>
         <div style={{fontWeight:600,fontSize:"14px",color:"var(--text-bright)"}}>{r.label}</div>
         {r.sub&&<div style={{fontSize:"12px",color:"var(--text-dim)",marginTop:"2px"}}>{r.sub}</div>}
