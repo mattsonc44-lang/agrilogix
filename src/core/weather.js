@@ -31,6 +31,12 @@ export const fmtWeather = (w) => {
 export const HIGH_WIND_MPH = 10; // commonly cited ceiling across ground-boom product labels
 export const LOW_WIND_MPH = 3;   // below this, extension guidance commonly flags inversion risk
 export const RAIN_PROB_PCT = 50; // precipitation-probability threshold worth flagging
+// Extension guidance commonly cites 85°F as where volatility and drift risk
+// pick up, and where several growth-regulator herbicides (dicamba, 2,4-D
+// especially) are most often flagged — some state rules (e.g. Minnesota's
+// dicamba restriction) use this exact cutoff. Still a general, not
+// product-specific, threshold — see the flag message below.
+export const HIGH_TEMP_F = 85;
 
 export function evaluateSprayWindow(hours) {
   const list = hours || [];
@@ -38,6 +44,7 @@ export function evaluateSprayWindow(hours) {
   const highWind = list.filter(h => h.windMph != null && h.windMph > HIGH_WIND_MPH);
   const lightWind = list.filter(h => h.windMph != null && h.windMph < LOW_WIND_MPH);
   const rain = list.filter(h => (h.precipProb != null && h.precipProb >= RAIN_PROB_PCT) || (h.precipIn != null && h.precipIn > 0));
+  const highTemp = list.filter(h => h.tempF != null && h.tempF > HIGH_TEMP_F);
   if (highWind.length > 0) {
     flags.push({ msg: `Wind above ${HIGH_WIND_MPH} mph in ${highWind.length} of the next ${list.length} hours — many labels restrict application above this. Check your product's label.` });
   }
@@ -46,6 +53,9 @@ export function evaluateSprayWindow(hours) {
   }
   if (rain.length > 0) {
     flags.push({ msg: `Rain is in the forecast within this window — check your product's rainfast time before spraying.` });
+  }
+  if (highTemp.length > 0) {
+    flags.push({ msg: `Temperature above ${HIGH_TEMP_F}°F in ${highTemp.length} of the next ${list.length} hours — heat like this raises volatility and drift risk and can reduce uptake, and some growth-regulator products (e.g. dicamba, 2,4-D) restrict or caution against application above this range. Check your product's label.` });
   }
   return flags;
 }

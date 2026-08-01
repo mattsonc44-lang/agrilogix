@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { degToCompass, fmtWeather, evaluateSprayWindow } from "./weather.js";
+import { degToCompass, fmtWeather, evaluateSprayWindow, HIGH_TEMP_F } from "./weather.js";
 
 describe("degToCompass", () => {
   it("maps the four cardinal directions correctly", () => {
@@ -88,8 +88,21 @@ describe("evaluateSprayWindow", () => {
     expect(evaluateSprayWindow(hours).length).toBe(2);
   });
 
-  it("ignores hours with missing wind/precip readings rather than flagging them", () => {
-    const hours = [{ windMph: null, precipProb: null, precipIn: null }];
+  it("flags high temperature above the general threshold", () => {
+    const hours = [{ windMph: 6, precipProb: 0, precipIn: 0, tempF: 91 }];
+    const flags = evaluateSprayWindow(hours);
+    expect(flags.length).toBe(1);
+    expect(flags[0].msg).toMatch(new RegExp(`above ${HIGH_TEMP_F}`));
+    expect(flags[0].msg).toMatch(/label/i);
+  });
+
+  it("does not flag temperature at or below the threshold", () => {
+    const hours = [{ windMph: 6, precipProb: 0, precipIn: 0, tempF: HIGH_TEMP_F }];
+    expect(evaluateSprayWindow(hours)).toEqual([]);
+  });
+
+  it("ignores hours with missing wind/precip/temp readings rather than flagging them", () => {
+    const hours = [{ windMph: null, precipProb: null, precipIn: null, tempF: null }];
     expect(evaluateSprayWindow(hours)).toEqual([]);
   });
 
