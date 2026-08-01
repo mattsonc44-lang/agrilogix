@@ -46,7 +46,10 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState(null); // deep-link a module straight into an add-form for a specific field/vehicle (Home's "Quick Log")
   const [loading,    setLoading]    = useState(true);
   const [authErr,    setAuthErr]    = useState("");
-  const [showAdmin,  setShowAdmin]  = useState(false);
+  // "admin" is a special hash value (not a real module id) so the Admin panel
+  // survives reload/back-forward the same way modules do — see the hashchange
+  // listener below and the "Admin"/"Back to App" handlers that set this hash.
+  const [showAdmin,  setShowAdmin]  = useState(()=>window.location.hash.slice(1)==="admin");
   const [showOrg,    setShowOrg]    = useState(false);
   const [syncStatus, setSyncStatus] = useState("idle");
   const [farms,      setFarms]      = useState([]);
@@ -184,13 +187,42 @@ export default function App() {
       if (available.length > 0) {
         const homeOn = profile?.homeScreenEnabled !== false;
         const hash = window.location.hash.slice(1);
-        const validHash = hash && (hash === "home" || available.includes(hash));
+        const validHash = hash && (hash === "home" || hash === "multiFarm" || available.includes(hash));
         const target = validHash ? hash : (homeOn ? "home" : available[0]);
         window.location.hash = target;
         setModule(target);
       }
     }
   }, [loading, tenant, profile, session, module]);
+
+  // ── Browser Back/Forward support ───────────────────────────────────
+  // Every module switch already updates window.location.hash (see the nav
+  // buttons and onNavigate below), which does push a real browser history
+  // entry — but nothing was ever listening for the hashchange that Back/
+  // Forward fires, so the address bar would change while the visible module
+  // stayed frozen. This listener is what actually makes Back/Forward work,
+  // and it also covers reload: the hash is already correct on load, this
+  // just keeps it in sync for the rest of the session too.
+  useEffect(() => {
+    const onHashChange = () => {
+      const h = window.location.hash.slice(1);
+      if (h === "admin") {
+        if (isAdmin) setShowAdmin(true);
+        return;
+      }
+      setShowAdmin(false);
+      if (h && h !== module) {
+        setModule(h);
+        // Navigating via Back/Forward is a fresh top-level jump, not a
+        // one-shot deep link — don't replay a stale pending sub-tab/action
+        // that was meant for a different navigation.
+        setPendingTab(null);
+        setPendingAction(null);
+      }
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [module, isAdmin]);
 
   // ── Load farms ────────────────────────────────────────────────────
   // Uses effectiveTenantId (not profile.tenantId) so this also works correctly
@@ -257,7 +289,7 @@ export default function App() {
           // URL hash already points somewhere specific.
           const homeOn = userProfile.homeScreenEnabled !== false;
           const hash = window.location.hash.slice(1);
-          const validHash = hash && (hash === "home" || mods.includes(hash));
+          const validHash = hash && (hash === "home" || hash === "multiFarm" || mods.includes(hash));
           const target = validHash ? hash : (homeOn ? "home" : mods[0]);
           window.location.hash = target;
           setModule(target);
@@ -342,7 +374,7 @@ export default function App() {
   );
   if (!session) return <AuthScreen onAuth={handleAuth}/>;
 
-  if (showAdmin && isAdmin) return <AdminPanel user={session} token={session.idToken} onBack={()=>setShowAdmin(false)} onViewTenant={(id, name)=>{setAdminViewTenantId(id);setAdminViewTenantName(name||id);setAdminViewRole("owner");setShowAdmin(false);}} adminViewTenantId={adminViewTenantId}/>;
+  if (showAdmin && isAdmin) return <AdminPanel user={session} token={session.idToken} onBack={()=>{ setShowAdmin(false); window.location.hash = module || "home"; }} onViewTenant={(id, name)=>{setAdminViewTenantId(id);setAdminViewTenantName(name||id);setAdminViewRole("owner");setShowAdmin(false);window.location.hash = module || "home";}} adminViewTenantId={adminViewTenantId}/>;
 
   // While Admin View is impersonating a tenant, every module should see the
   // role picked in the banner (owner/manager/operator) — not the admin's own
@@ -462,9 +494,9 @@ export default function App() {
             <span style={{ fontSize:"10px", background:"rgba(255,200,0,0.3)", color:"#FFE080", padding:"2px 6px", borderRadius:"4px", fontWeight:700 }}>TRIAL</span>
           )}
           {isAdmin && (
-            <button style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={()=>setShowAdmin(true)}>Admin</button>
+            <button style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={()=>{ window.location.hash="admin"; setShowAdmin(true); }}>Admin</button>
           )}
-          {(profile?.role==="owner"||profile?.role==="manager") && (
+          {(impersonatedProfile?.role==="owner"||impersonatedProfile?.role==="manager") && (
             <button style={{ ...mkBtn("ghost"), padding:"4px 8px", fontSize:"11px", borderColor:"rgba(255,255,255,0.3)", color:"rgba(255,255,255,0.7)" }} onClick={()=>setShowOrg(true)}>⚙️ Org</button>
           )}
           <button
@@ -547,7 +579,7 @@ export default function App() {
             setActiveFarm(f => f.id==="default" ? {...f, name:defaultFarmName} : f);
           }
         }}/>}
-      {showOrg && <OrgPanel session={session} profile={profile} tenant={tenant} onClose={()=>setShowOrg(false)}/>}
+      {showOrg && <OrgPanel session={session} profile={profile} tenant={tenant} effectiveTenantId={effectiveTenantId} onClose={()=>setShowOrg(false)}/>}
 
       {/* ── Admin view banner ── */}
       {adminViewTenantId && (
