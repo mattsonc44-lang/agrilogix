@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { degToCompass, fmtWeather } from "./weather.js";
+import { degToCompass, fmtWeather, evaluateSprayWindow } from "./weather.js";
 
 describe("degToCompass", () => {
   it("maps the four cardinal directions correctly", () => {
@@ -45,5 +45,57 @@ describe("fmtWeather", () => {
 
   it("only includes fields that are actually present", () => {
     expect(fmtWeather({ tempF: 32 })).toBe("32°F");
+  });
+});
+
+describe("evaluateSprayWindow", () => {
+  it("returns no flags for calm, dry, moderate-wind conditions", () => {
+    const hours = [
+      { windMph: 5, precipProb: 5, precipIn: 0 },
+      { windMph: 6, precipProb: 10, precipIn: 0 },
+    ];
+    expect(evaluateSprayWindow(hours)).toEqual([]);
+  });
+
+  it("flags high wind above the general threshold", () => {
+    const hours = [{ windMph: 14, precipProb: 0, precipIn: 0 }];
+    const flags = evaluateSprayWindow(hours);
+    expect(flags.length).toBe(1);
+    expect(flags[0].msg).toMatch(/above 10 mph/);
+  });
+
+  it("flags very light wind as a possible inversion signal", () => {
+    const hours = [{ windMph: 1, precipProb: 0, precipIn: 0 }];
+    const flags = evaluateSprayWindow(hours);
+    expect(flags.length).toBe(1);
+    expect(flags[0].msg).toMatch(/temperature inversion/);
+  });
+
+  it("flags rain via high probability even with zero measured precipitation", () => {
+    const hours = [{ windMph: 6, precipProb: 70, precipIn: 0 }];
+    const flags = evaluateSprayWindow(hours);
+    expect(flags.some(f => f.msg.includes("rainfast"))).toBe(true);
+  });
+
+  it("flags rain via measurable precipitation even with low probability", () => {
+    const hours = [{ windMph: 6, precipProb: 10, precipIn: 0.02 }];
+    const flags = evaluateSprayWindow(hours);
+    expect(flags.some(f => f.msg.includes("rainfast"))).toBe(true);
+  });
+
+  it("can raise multiple flags at once", () => {
+    const hours = [{ windMph: 15, precipProb: 80, precipIn: 0.1 }];
+    expect(evaluateSprayWindow(hours).length).toBe(2);
+  });
+
+  it("ignores hours with missing wind/precip readings rather than flagging them", () => {
+    const hours = [{ windMph: null, precipProb: null, precipIn: null }];
+    expect(evaluateSprayWindow(hours)).toEqual([]);
+  });
+
+  it("handles an empty or missing forecast without throwing", () => {
+    expect(evaluateSprayWindow([])).toEqual([]);
+    expect(evaluateSprayWindow(null)).toEqual([]);
+    expect(evaluateSprayWindow(undefined)).toEqual([]);
   });
 });
