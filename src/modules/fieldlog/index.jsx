@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import JSZip from "jszip";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
-import { degToCompass, fmtWeather, evaluateSprayWindow, HIGH_WIND_MPH, LOW_WIND_MPH, RAIN_PROB_PCT } from "../../core/weather.js";
+import { degToCompass, fmtWeather, evaluateSprayWindow, HIGH_WIND_MPH, LOW_WIND_MPH, RAIN_PROB_PCT, HIGH_TEMP_F } from "../../core/weather.js";
 import { getPerms, REDACTED } from "../../core/permissions.js";
 
 // ── Google Fonts ──────────────────────────────────────────────────────
@@ -1559,7 +1559,7 @@ setWeatherLoading(false);
 // forward-looking: check it BEFORE you go spray, not after. See
 // core/weather.js's evaluateSprayWindow for the caution-flag logic — this
 // only fetches the raw hourly numbers and hands them off to that.
-const[sprayForecast,setSprayForecast]=useState(null); // [{time,windMph,precipProb,precipIn}, ...] next few hours
+const[sprayForecast,setSprayForecast]=useState(null); // [{time,windMph,precipProb,precipIn,tempF}, ...] next few hours
 const[forecastLoading,setForecastLoading]=useState(false);
 const[forecastErr,setForecastErr]=useState("");
 const getSprayForecast=()=>{
@@ -1569,7 +1569,7 @@ navigator.geolocation.getCurrentPosition(
 async(pos)=>{
 try{
 const{latitude,longitude}=pos.coords;
-const res=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=wind_speed_10m,precipitation_probability,precipitation&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto`);
+const res=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=wind_speed_10m,precipitation_probability,precipitation,temperature_2m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=2&timezone=auto`);
 const j=await res.json();
 const h=j.hourly;
 if(!h?.time?.length) throw new Error("No forecast data returned");
@@ -1583,6 +1583,7 @@ time:t,
 windMph: h.wind_speed_10m ? Math.round(h.wind_speed_10m[idx]) : null,
 precipProb: h.precipitation_probability ? h.precipitation_probability[idx] : null,
 precipIn: h.precipitation ? h.precipitation[idx] : null,
+tempF: h.temperature_2m ? Math.round(h.temperature_2m[idx]) : null,
 };
 });
 setSprayForecast(hours);
@@ -1875,10 +1876,12 @@ Dismiss
 const hot = h.windMph!=null && h.windMph>HIGH_WIND_MPH;
 const calm = h.windMph!=null && h.windMph<LOW_WIND_MPH;
 const wet = (h.precipProb!=null && h.precipProb>=RAIN_PROB_PCT) || (h.precipIn!=null && h.precipIn>0);
+const hotTemp = h.tempF!=null && h.tempF>HIGH_TEMP_F;
 return (
-<div key={i} style={{flex:"0 0 auto",minWidth:"64px",textAlign:"center",background:"#fff",border:`1px solid ${hot||calm?"#D09020":"#BCD4EA"}`,borderRadius:"5px",padding:"5px 6px"}}>
+<div key={i} style={{flex:"0 0 auto",minWidth:"64px",textAlign:"center",background:"#fff",border:`1px solid ${hot||calm||hotTemp?"#D09020":"#BCD4EA"}`,borderRadius:"5px",padding:"5px 6px"}}>
 <div style={{fontSize:"10px",color:"#4A6A8A",fontWeight:600}}>{new Date(h.time).toLocaleTimeString([], {hour:"numeric"})}</div>
 <div style={{fontSize:"12px",fontWeight:700,color:hot||calm?"#B06000":"#1A3A5C"}}>{h.windMph!=null?`${h.windMph}mph`:"—"}</div>
+<div style={{fontSize:"11px",fontWeight:600,color:hotTemp?"#B06000":"#3A5A7A"}}>{h.tempF!=null?`${h.tempF}°F`:""}</div>
 <div style={{fontSize:"10px",color:wet?"#2060A0":"#7A8FA0"}}>{h.precipProb!=null?`${h.precipProb}% rain`:""}</div>
 </div>
 );
