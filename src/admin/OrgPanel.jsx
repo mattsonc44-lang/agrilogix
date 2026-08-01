@@ -17,6 +17,29 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
   const token = session?.idToken;
   const enabledModules = tenantProfile.modules || [];
 
+  // ── Billing address — collected during onboarding, but editable anytime
+  // here so orgs that predate that step (or need to update it) aren't stuck.
+  const [billingAddress, setBillingAddress] = useState(tenantProfile.billingAddress || "");
+  const [billingCity,    setBillingCity]    = useState(tenantProfile.billingCity || "");
+  const [billingSaving,  setBillingSaving]  = useState(false);
+  const [billingSaved,   setBillingSaved]   = useState(false);
+  useEffect(() => {
+    setBillingAddress(tenantProfile.billingAddress || "");
+    setBillingCity(tenantProfile.billingCity || "");
+  }, [tenantProfile.billingAddress, tenantProfile.billingCity]);
+
+  const saveBilling = async () => {
+    if (!profile?.tenantId) return;
+    setBillingSaving(true);
+    try {
+      await dbWrite(`tenants/${profile.tenantId}/profile/billingAddress`, billingAddress.trim(), token);
+      await dbWrite(`tenants/${profile.tenantId}/profile/billingCity`, billingCity.trim(), token);
+      setBillingSaved(true);
+      setTimeout(() => setBillingSaved(false), 2500);
+    } catch(e) { setErr(e.message); }
+    setBillingSaving(false);
+  };
+
   useEffect(() => {
     if (!profile?.tenantId) return;
     dbRead(`tenants/${profile.tenantId}/users`, token)
@@ -105,6 +128,26 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
             })}
           </div>
           <p style={{margin:"4px 0 0",fontSize:"11px",color:T.faint}}>To add or remove modules contact Agri Logix support.</p>
+        </div>
+
+        {/* Billing Information */}
+        <div style={{...S.card,marginBottom:"16px"}}>
+          <h3 style={{...S.sh,fontSize:"14px"}}>Billing Information</h3>
+          <p style={{margin:"0 0 12px",fontSize:"11px",color:T.faint}}>Used on invoices for your Agri Logix subscription.</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"10px"}}>
+            <div>
+              <label style={{fontSize:"11px",color:T.muted,display:"block",marginBottom:"4px"}}>Street Address</label>
+              <input style={S.input} value={billingAddress} onChange={e=>setBillingAddress(e.target.value)} placeholder="Street address"/>
+            </div>
+            <div>
+              <label style={{fontSize:"11px",color:T.muted,display:"block",marginBottom:"4px"}}>City, State, ZIP</label>
+              <input style={S.input} value={billingCity} onChange={e=>setBillingCity(e.target.value)} placeholder="City, State, ZIP"/>
+            </div>
+          </div>
+          <button style={{...mkBtn(billingSaved?"ghost":"primary", billingSaved?undefined:T.brand),padding:"7px 16px",fontSize:"12px",color:billingSaved?T.brand:undefined,borderColor:billingSaved?T.brand+"40":undefined}}
+            onClick={saveBilling} disabled={billingSaving}>
+            {billingSaving ? "Saving…" : billingSaved ? "✓ Saved" : "Save Billing Info"}
+          </button>
         </div>
 
         {/* Team Members with per-user module access */}

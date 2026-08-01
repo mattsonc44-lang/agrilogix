@@ -42,7 +42,7 @@ function InvoiceBuilder({ client,setClient,sel,setSel,extras,setExtras,date,setD
   const selectOrg = orgId => {
     if (!orgId) { setClient(c=>({...c, orgId:""})); return; }
     const org = (orgs||[]).find(o=>o.id===orgId);
-    setClient(c=>({...c, orgId, name:org?.name||c.name, email:org?.email||c.email}));
+    setClient(c=>({...c, orgId, name:org?.name||c.name, email:org?.email||c.email, address:org?.address||c.address, city:org?.city||c.city}));
   };
 
   const markPaid = () => {
@@ -622,7 +622,10 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
   }).sort((a,b) => (a.profile.name||"").localeCompare(b.profile.name||""));
 
   const orgOptions = Object.entries(tenants)
-    .map(([id, t]) => ({ id, name: t.profile?.name || id, email: t.profile?.ownerEmail || "" }))
+    .map(([id, t]) => ({
+      id, name: t.profile?.name || id, email: t.profile?.ownerEmail || "",
+      address: t.profile?.billingAddress || "", city: t.profile?.billingCity || "",
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const Switch = ({ on, onChange }) => (
