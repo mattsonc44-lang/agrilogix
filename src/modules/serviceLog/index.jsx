@@ -243,6 +243,10 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const [invFilters,setInvF]    = useState({q:"",vendor:"",location:""});
   const [poNew,    setPoNew]    = useState({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});
   const [reportFil,setRepFil]   = useState({dateFrom:"",dateTo:"",type:"",custId:""});
+  // Guided "stock it? notify me?" follow-up shown right after a brand-new
+  // Parts Inventory item is created (see saveInvItem / confirmReceive).
+  const [stockPromptItem,setStockPromptItem] = useState(null);
+  const [stockPromptSkipAsk,setStockPromptSkipAsk] = useState(false);
 
   // Search results jump to a specific service record (see SearchView) — flash
   // the highlight briefly, then clear it so it doesn't linger forever.
@@ -395,14 +399,19 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     if(p.invPartId){
       ni=ni.map(inv=>inv.id===p.invPartId?{...inv,qty:String((parseInt(inv.qty)||0)+(parseInt(f.qty)||1)),location:f.location||inv.location}:inv);
       save({partsToOrder:np,orderHistory:nh,partsInventory:ni});
+      setModal(null); setEdit(null);
     } else if(f.addToInventory){
-      const newInv={id:genId(),name:p.desc||"",qty:String(parseInt(f.qty)||1),minQty:"",location:f.location||"",notes:"",partNumbers:p.num?[{id:genId(),num:p.num,vendor:p.vendor||"",unitCost:f.unitCost||""}]:[]};
+      const newInv={id:genId(),name:p.desc||"",qty:String(parseInt(f.qty)||1),minQty:"",notifyLowStock:false,location:f.location||"",notes:"",partNumbers:p.num?[{id:genId(),num:p.num,vendor:p.vendor||"",unitCost:f.unitCost||""}]:[]};
       ni=[...ni,newInv];
       save({partsToOrder:np,orderHistory:nh,partsInventory:ni});
+      setEdit(null);
+      setStockPromptItem(newInv);
+      setStockPromptSkipAsk(true); // they already checked "Add to Parts Inventory" — skip straight to the notify question
+      setModal("stockPrompt");
     } else {
       save({partsToOrder:np,orderHistory:nh});
+      setModal(null); setEdit(null);
     }
-    setModal(null); setEdit(null);
   };
   const deletePart=id=>{save({partsToOrder:D.partsToOrder.filter(p=>p.id!==id)});};
   const archiveReceived=()=>{const rec=D.partsToOrder.filter(p=>p.received);if(!rec.length)return;const nh=[...D.orderHistory,...rec.map(p=>({id:genId(),desc:p.desc,num:p.num,vendor:p.vendor,qty:p.qty,unitCost:p.unitCost,vehicleId:p.vehicleId,receivedDate:today()}))];save({partsToOrder:D.partsToOrder.filter(p=>!p.received),orderHistory:nh});};
@@ -448,8 +457,26 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     w.document.write(`</tbody></table></body></html>`);
     w.document.close();
   };
-  const saveInvItem=f=>{let ni;if(editTarget){ni=D.partsInventory.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{ni=[...D.partsInventory,{id:genId(),partNumbers:[],...f}];}save({partsInventory:ni});setModal(null);setEdit(null);};
+  const saveInvItem=f=>{
+    if(editTarget){
+      save({partsInventory:D.partsInventory.map(p=>p.id===editTarget.id?{...editTarget,...f}:p)});
+      setModal(null);setEdit(null);
+    } else {
+      const newItem={id:genId(),partNumbers:[],notifyLowStock:false,...f};
+      save({partsInventory:[...D.partsInventory,newItem]});
+      setEdit(null);
+      setStockPromptItem(newItem);
+      setStockPromptSkipAsk(false);
+      setModal("stockPrompt");
+    }
+  };
   const deleteInvItem=id=>save({partsInventory:D.partsInventory.filter(p=>p.id!==id)});
+  // Follow-up after a new inventory item is created: "stock it?" then, if yes,
+  // "notify me when it's low?" — applies whatever the user chose to the item.
+  const finishStockPrompt=(patch)=>{
+    if(stockPromptItem&&patch&&Object.keys(patch).length) save({partsInventory:D.partsInventory.map(p=>p.id===stockPromptItem.id?{...p,...patch}:p)});
+    setModal(null);setStockPromptItem(null);setStockPromptSkipAsk(false);
+  };
   const saveVendor=f=>{let nv;if(editTarget){nv=D.vendors.map(v=>v.id===editTarget.id?{...editTarget,...f}:v);}else{nv=[...D.vendors,{id:genId(),...f}];}save({vendors:nv});setModal(null);setEdit(null);};
   const deleteVendor=id=>{if(!confirm("Delete vendor?"))return;save({vendors:D.vendors.filter(v=>v.id!==id)});};
   const createInvoice=f=>{const recs=D.records.filter(r=>selRecIds.has(r.id));const inv={id:genId(),num:nextInvNum(D.invoices),date:f.date,custId:f.custId,businessName:f.businessName,records:recs.map(r=>r.id),laborCost:f.laborCost||"",laborDesc:f.laborDesc||"",status:"draft"};const nr=D.records.map(r=>selRecIds.has(r.id)?{...r,invoiced:true,invoiceId:inv.id}:r);save({invoices:[...D.invoices,inv],records:nr});setModal(null);setSelRecs(new Set());};
@@ -465,6 +492,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const neededCnt= D.partsToOrder.filter(p=>!p.ordered&&!p.received).length;
   const orderedCnt=D.partsToOrder.filter(p=>p.ordered&&!p.received).length;
   const openTodos=(D.vehicles||[]).reduce((s,v)=>s+(v.todos||[]).filter(t=>!t.done).length,0);
+  const lowStockAlerts=D.partsInventory.filter(p=>p.notifyLowStock&&p.qty!==""&&p.minQty!==""&&Number(p.qty)<=Number(p.minQty));
   const custName=id=>D.customers.find(c=>c.id===id)?.name||"";
   const vehName=id=>id==="__stock__"?"📦 For Stock":(D.vehicles.find(v=>v.id===id)?.name||"");
   const featOn=k=>D.settings.features?.[k]!==false;
@@ -485,7 +513,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     ...(perms.canViewCosts?[{id:"costs",label:"💰 Cost Analysis"}]:[]),
     ...(perms.canViewCosts&&featOn("invoicing")?[{id:"invoices",label:"🧾 Invoices"}]:[]),
     ...(featOn("orderParts")?[{id:"order",label:"🔩 Order Parts",badge:neededCnt>0?neededCnt:null,badgeClass:""}]:[]),
-    ...(featOn("partsInventory")?[{id:"parts",label:"📦 Parts"}]:[]),
+    ...(featOn("partsInventory")?[{id:"parts",label:"📦 Parts",badge:lowStockAlerts.length>0?lowStockAlerts.length:null,badgeClass:"red"}]:[]),
     {id:"vendors",label:"🏪 Vendors"},
     {id:"orderhistory",label:"✅ Order History"},
     {id:"todos",label:"☑️ To-Do",badge:openTodos>0?openTodos:null},
@@ -571,7 +599,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
               {tab==="costs"&&perms.canViewCosts&&<CostView D={D} custName={custName}/>}
               {tab==="invoices"&&perms.canViewCosts&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
               {tab==="order"&&<OrderView D={D} filteredPO={filteredPO} poFilters={poFilters} setPOF={setPOF} poNew={poNew} setPoNew={setPoNew} quickAddPart={quickAddPart} toggleOrdered={toggleOrdered} toggleReceived={toggleReceived} deletePart={deletePart} archiveReceived={archiveReceived} consolidateDupes={consolidateDupes} selPoIds={selPoIds} setSelPoIds={setSelPoIds} setEdit={setEdit} setModal={setModal} vehName={vehName} perms={perms}/>}
-              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj} perms={perms}/>}
+              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj} perms={perms} lowStockAlerts={lowStockAlerts}/>}
               {tab==="vendors"&&<VendorsView D={D} deleteVendor={deleteVendor} setEdit={setEdit} setModal={setModal}/>}
               {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName} perms={perms}/>}
               {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal} setTab={setTab} setSelVeh={setSelVeh} setSelCust={setSelCust}/>}
@@ -594,6 +622,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="addToService"&&<AddToServiceMo parts={(editTarget||[]).map(id=>D.partsToOrder.find(p=>p.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={addPartsToService} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="receive"  &&<ReceiveMo   part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="stockPrompt"&&<StockPromptMo item={stockPromptItem} skipAsk={stockPromptSkipAsk} onDone={finishStockPrompt}/>}
       {modal==="invoice"  &&<InvoiceMo   records={D.records.filter(r=>selRecIds.has(r.id))} customers={D.customers} settings={D.settings} selCustId={selCustId} vehicles={D.vehicles} nextNum={nextInvNum(D.invoices)} onSave={createInvoice} onClose={()=>setModal(null)}/>}
     </>
   );
@@ -1005,7 +1034,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
 }
 
 // ── Parts Inventory ────────────────────────────────────────────────
-function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj,perms}){
+function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj,perms,lowStockAlerts=[]}){
   const canCost=perms?perms.canViewCosts:true;
   const inv=D.partsInventory||[];
   const filtered=inv.filter(p=>{if(invFilters.q&&!(p.name+(p.notes||"")+(p.partNumbers||[]).map(n=>n.num+(n.vendor||"")).join("")).toLowerCase().includes(invFilters.q.toLowerCase()))return false;if(invFilters.location&&(p.location||"").toLowerCase()!==invFilters.location.toLowerCase())return false;return true;}).sort((a,b)=>a.name.localeCompare(b.name));
@@ -1013,6 +1042,12 @@ function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAd
   return(<div>
     <div className="overview-title">Parts Inventory</div>
     <div className="overview-sub">{inv.length} item{inv.length!==1?"s":""}{lowStock.length>0&&<span style={{color:"var(--red)",fontWeight:600}}> · {lowStock.length} low stock</span>}</div>
+    {lowStockAlerts.length>0&&(
+      <div style={{background:"rgba(220,38,38,.08)",border:"1px solid rgba(220,38,38,.25)",borderRadius:"6px",padding:"10px 14px",marginBottom:"12px"}}>
+        <div style={{fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:"14px",color:"var(--red)",marginBottom:"2px"}}>🔔 {lowStockAlerts.length} item{lowStockAlerts.length!==1?"s":""} below your alert level</div>
+        <div style={{fontSize:"12px",color:"var(--text-dim)"}}>{lowStockAlerts.map(p=>p.name).join(" · ")}</div>
+      </div>
+    )}
     <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
       <input className="form-input" style={{flex:2,minWidth:"140px",padding:"6px 8px"}} placeholder="Search items, part #, vendor…" value={invFilters.q} onChange={e=>setInvF(f=>({...f,q:e.target.value}))}/>
       <select className="form-select" style={{flex:1,minWidth:"110px",padding:"6px 8px"}} value={invFilters.location} onChange={e=>setInvF(f=>({...f,location:e.target.value}))}><option value="">All Locations</option>{[...new Set(inv.map(p=>p.location).filter(Boolean))].sort().map(l=><option key={l}>{l}</option>)}</select>
@@ -1022,7 +1057,7 @@ function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAd
     {filtered.map(p=>{const isLow=p.qty!==""&&p.minQty!==""&&Number(p.qty)<=Number(p.minQty);return(<div key={p.id} className="inv-row">
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"10px"}}>
         <div style={{flex:1}}>
-          <div className="inv-name">{p.name}{isLow&&<span className="inv-low" style={{marginLeft:"8px"}}>⚠ Low</span>}</div>
+          <div className="inv-name">{p.name}{isLow&&<span className="inv-low" style={{marginLeft:"8px"}}>⚠ Low</span>}{p.notifyLowStock&&<span title="Notifies when low" style={{marginLeft:"6px",fontSize:"12px"}}>🔔</span>}</div>
           <div className="inv-meta">{p.qty!==""&&<span style={{display:"flex",alignItems:"center",gap:"4px"}}>Qty: <button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,-1)}>−</button><strong>{p.qty}</strong><button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,1)}>+</button></span>}{p.minQty!==""&&<span>Min: {p.minQty}</span>}{p.location&&<span>📍 {p.location}</span>}</div>
           {(p.partNumbers||[]).map((n,i)=><div key={i} style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{canCost&&n.unitCost&&` · $${n.unitCost}`}</div>)}
           {p.notes&&<div style={{fontSize:"12px",color:"var(--text-dim)",fontStyle:"italic",marginTop:"4px"}}>{p.notes}</div>}
@@ -1369,7 +1404,7 @@ function PartMo({initial,vehicles,vendors,onSave,onClose}){
 }
 
 function InvItemMo({initial,vehicles,onSave,onClose}){
-  const[f,setF]=useState({name:initial?.name||"",qty:initial?.qty||"",minQty:initial?.minQty||"",location:initial?.location||"",notes:initial?.notes||"",partNumbers:initial?.partNumbers||[]});
+  const[f,setF]=useState({name:initial?.name||"",qty:initial?.qty||"",minQty:initial?.minQty||"",notifyLowStock:initial?.notifyLowStock||false,location:initial?.location||"",notes:initial?.notes||"",partNumbers:initial?.partNumbers||[]});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const addPN=()=>setF(p=>({...p,partNumbers:[...p.partNumbers,{id:genId(),num:"",vendor:"",unitCost:""}]}));
   const updPN=(i,k,v)=>setF(p=>({...p,partNumbers:p.partNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
@@ -1377,10 +1412,47 @@ function InvItemMo({initial,vehicles,onSave,onClose}){
   return(<Mo title={initial?"Edit Inventory Item":"Add Inventory Item"} onClose={onClose} onSave={()=>{if(!f.name.trim())return alert("Name required.");onSave(f);}} saveLabel={initial?"Save":"Add"} large>
     <Fg label="Part Name *" full><Fi value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. Oil Filter 15W-40"/></Fg>
     <Fr><Fg label="Qty on Hand"><Fi type="number" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Min Qty"><Fi type="number" value={f.minQty} onChange={e=>s("minQty",e.target.value)}/></Fg><Fg label="Storage Location"><Fi value={f.location} onChange={e=>s("location",e.target.value)} placeholder="Shop Shelf A"/></Fg></Fr>
+    {initial&&(
+      <label style={{display:"flex",alignItems:"center",gap:"8px",fontSize:"13px",cursor:"pointer"}}>
+        <input type="checkbox" checked={f.notifyLowStock} onChange={e=>s("notifyLowStock",e.target.checked)} style={{accentColor:"var(--amber)",width:"15px",height:"15px"}}/>
+        🔔 Notify me when Qty falls to or below Min Qty
+      </label>
+    )}
     <div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Part Numbers / Vendors</label><button className="btn btn-ghost btn-xs" onClick={addPN}>+ Add</button></div>
     {f.partNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi placeholder="Part #" value={n.num} onChange={e=>updPN(i,"num",e.target.value)}/><Fi placeholder="Vendor" value={n.vendor} onChange={e=>updPN(i,"vendor",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updPN(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remPN(i)}>✕</button></div>))}</div>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
+}
+
+// ── Stock / Notify follow-up (shown right after a new inventory item is
+// created — either via "+ Add Item" or "add to inventory" while receiving) ──
+function StockPromptMo({item,skipAsk,onDone}){
+  const[step,setStep]=useState(skipAsk?"notify":"stock");
+  const[threshold,setThreshold]=useState(item?.minQty||"");
+  if(!item) return null;
+  if(step==="stock"){
+    return(<div className="sl"><div className="modal-overlay"><div className="modal" style={{maxWidth:"420px"}}>
+      <div className="modal-hdr"><div className="modal-title">📦 Stock This Item?</div><button className="modal-close" onClick={()=>onDone(null)}>✕</button></div>
+      <div className="modal-body">
+        <p style={{fontSize:"13px",color:"var(--text-dim)",margin:0}}>Keep <strong>{item.name}</strong> in your on-hand parts inventory and track how many you have?</p>
+      </div>
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={()=>onDone(null)}>Not right now</button>
+        <button className="btn btn-primary" onClick={()=>setStep("notify")}>Yes, stock it</button>
+      </div>
+    </div></div></div>);
+  }
+  return(<div className="sl"><div className="modal-overlay"><div className="modal" style={{maxWidth:"420px"}}>
+    <div className="modal-hdr"><div className="modal-title">🔔 Low-Stock Alert?</div><button className="modal-close" onClick={()=>onDone({})}>✕</button></div>
+    <div className="modal-body">
+      <p style={{fontSize:"13px",color:"var(--text-dim)",margin:0}}>Want to be notified when <strong>{item.name}</strong> falls below a set level?</p>
+      <Fg label="Notify me when Qty falls to or below" full><Fi type="number" min="0" autoFocus value={threshold} onChange={e=>setThreshold(e.target.value)} placeholder="e.g. 2"/></Fg>
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-ghost" onClick={()=>onDone({})}>Skip</button>
+      <button className="btn btn-primary" disabled={threshold===""} onClick={()=>onDone({minQty:threshold,notifyLowStock:true})}>Enable Alert</button>
+    </div>
+  </div></div></div>);
 }
 
 function VendorMo({initial,onSave,onClose}){
