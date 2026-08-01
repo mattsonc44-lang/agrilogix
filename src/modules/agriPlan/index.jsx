@@ -608,6 +608,22 @@ function calc(field){
   const expenses=expRate*acres;
   return{valAcre,guarantee,revenue,risk:revenue-guarantee,expRate,expenses,net:revenue-expenses};
 }
+// Real $ actually spent this field/year, by the same EXP categories the
+// projected rates use — entered as a total dollar figure per category (not a
+// rate), since that's how a grower actually tracks spend. Lives on the
+// per-year field record itself (field.actualExpenses), same as
+// expenseOverrides, so it's automatically scoped to whichever year's plan
+// you're looking at. Returns null when nothing's been entered yet, so callers
+// can cleanly hide the "actual" UI until there's real data.
+function calcActual(field){
+  const ae=field?.actualExpenses;
+  if(!ae) return null;
+  const entries=Object.entries(ae).filter(([,v])=>v!==undefined&&v!==null&&v!==""&&!isNaN(v));
+  if(entries.length===0) return null;
+  const total=entries.reduce((s,[,v])=>s+(+v||0),0);
+  const acres=field?.acres||0;
+  return{total,rate:acres>0?total/acres:0,categoriesEntered:entries.length};
+}
 const f$=(n,neg)=>{const abs=Math.abs(n);const str="$"+abs.toLocaleString("en-US",{maximumFractionDigits:0});return neg&&n<0?"("+str+")":str;};
 const f2=n=>(+n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -2358,7 +2374,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
   // Operators/managers without the right flag never see raw dollar figures —
   // same PERMS model AgriScale already enforces, see core/permissions.js.
   const p=perms||PERMS.owner;
@@ -2383,6 +2399,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[newUnitText,setNewUnitText]=useState("");
   const[newUnitAcres,setNewUnitAcres]=useState("");
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
+  const actual=calcActual(field);
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
   return(<div>
@@ -2501,6 +2518,20 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         ? <SCard label="Net Income" val={f$(c.net,true)} color={c.net>=0?"#1a7010":"#c02020"} sub="rev − expenses"/>
         : <SCard label="Net Income" val={REDACTED} color="#6a8a50" sub="restricted"/>}
     </div>
+    {/* Actual vs Projected — only shows once real $ has been entered on the Expenses tab */}
+    {p.canViewCosts && actual && (()=>{
+      const over = actual.total > c.expenses;
+      const diff = actual.total - c.expenses;
+      return (
+        <div style={{display:"flex",gap:18,alignItems:"center",flexWrap:"wrap",padding:"10px 16px",marginBottom:16,
+          background:over?"#fff4f0":"#f0f8ec",border:`1px solid ${over?"#e0a090":"#a8d888"}`,borderRadius:8}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#3a5a28"}}>💰 Actual vs Projected — {activeYear}</div>
+          <div style={{fontSize:12,color:"#5a7a48"}}>Actual spent: <strong style={{color:"#c05010"}}>{f$(actual.total)}</strong> <span style={{color:"#8a9a7a"}}>(${f2(actual.rate)}/ac · {actual.categoriesEntered} of {EXP.length} categories)</span></div>
+          <div style={{fontSize:12,color:"#5a7a48"}}>Projected: <strong>{f$(c.expenses)}</strong></div>
+          <div style={{fontSize:12,fontWeight:700,color:over?"#c02020":"#1a7010"}}>{over?"+":""}{f$(diff,true)} vs plan</div>
+        </div>
+      );
+    })()}
     {/* Chemical plantback warnings */}
     {chemWarnings.length > 0 && (
       <div style={{background:"#fff8e0",border:"2px solid #c07010",borderRadius:8,padding:"12px 16px",marginBottom:16}}>
@@ -2614,21 +2645,24 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         </span>
       </div>
       {/* Column headers */}
-      <div style={{display:"grid",gridTemplateColumns:"220px 110px 110px 110px 1fr 110px",gap:8,padding:"5px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
-        {["Category","2026 $/Ac","Crop Default","Prior Year","vs Prior Yr","Total $"].map((h,i)=>(<div key={i} style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,textAlign:i>0?"right":"left"}}>{h}</div>))}
+      <div style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,padding:"5px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
+        {["Category","Proj $/Ac","Crop Default","Prior Year","vs Prior Yr","Actual $ Spent","Variance"].map((h,i)=>(<div key={i} style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,textAlign:i>0?"right":"left"}}>{h}</div>))}
       </div>
       {EXP.map(([key,label])=>{
         const rate=getRate(field,key);const cropDef=getCropDefault(field.crop,key);
         const isOv=field.expenseOverrides&&field.expenseOverrides[key]!==undefined;
         const prior=priorRates[key];const chg=rate-prior;const tot=rate*field.acres;
-        return(<div key={key} style={{display:"grid",gridTemplateColumns:"220px 110px 110px 110px 1fr 110px",gap:8,alignItems:"center",padding:"5px 0",borderBottom:"1px solid #0f1a0f",background:isOv?"#fffcf0":"transparent"}}>
+        const actualVal=field.actualExpenses&&field.actualExpenses[key]!==undefined?field.actualExpenses[key]:"";
+        const hasActual=actualVal!==""&&actualVal!==undefined&&!isNaN(actualVal);
+        const catVariance=hasActual?(+actualVal-tot):null;
+        return(<div key={key} style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,alignItems:"center",padding:"5px 0",borderBottom:"1px solid #0f1a0f",background:isOv?"#fffcf0":"transparent"}}>
           <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:isOv?"#9a6010":"#5a7a48"}}>
             <span style={{fontSize:9}}>{isOv?"★":"●"}</span>{label}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
             <span style={{color:"#4a8a30",fontSize:11}}>$</span>
             <input type="number" value={rate} step="0.01" onChange={e=>onUpdateExpense(field.id,key,e.target.value)}
-              style={{background:"#ffffff",border:`1px solid ${isOv?"#cc9400":"#b8d09a"}`,borderRadius:4,padding:"4px 6px",color:isOv?"#9a6010":"#c05010",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,width:72,outline:"none",textAlign:"right"}}/>
+              style={{background:"#ffffff",border:`1px solid ${isOv?"#cc9400":"#b8d09a"}`,borderRadius:4,padding:"4px 6px",color:isOv?"#9a6010":"#c05010",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,width:62,outline:"none",textAlign:"right"}}/>
           </div>
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#6a8a50",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
             ${f2(cropDef)}
@@ -2636,16 +2670,22 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           </div>
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>${f2(prior)}</div>
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,textAlign:"right",color:chg>0?"#c02020":chg<0?"#1a7010":"#6a8a50"}}>{chg>0?"+":""}{f2(chg)} ({chg>0?"+":""}{prior>0?(chg/prior*100).toFixed(1):0}%)</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#8a5030",textAlign:"right"}}>{f$(tot)}</div>
+          <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
+            <span style={{color:"#8a5030",fontSize:11}}>$</span>
+            <input type="number" value={actualVal} step="1" placeholder="0" onChange={e=>onUpdateActualExpense(field.id,key,e.target.value)}
+              style={{background:hasActual?"#fff8f0":"#ffffff",border:`1px solid ${hasActual?"#e0a878":"#d8ceb8"}`,borderRadius:4,padding:"4px 6px",color:"#8a5030",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,width:78,outline:"none",textAlign:"right"}}/>
+          </div>
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,textAlign:"right",color:!hasActual?"#c0c8b8":catVariance>0?"#c02020":"#1a7010"}}>{hasActual?`${catVariance>0?"+":""}${f2(catVariance)}`:"—"}</div>
         </div>);
       })}
-      <div style={{display:"grid",gridTemplateColumns:"220px 110px 110px 110px 1fr 110px",gap:8,alignItems:"center",padding:"9px 0",borderTop:"2px solid #2a4030",marginTop:4}}>
+      <div style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,alignItems:"center",padding:"9px 0",borderTop:"2px solid #2a4030",marginTop:4}}>
         <div style={{fontSize:12,color:"#3a5a28",fontWeight:600}}>TOTAL EXPENSES</div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:12,color:"#c05010",textAlign:"right"}}>${f2(c.expRate)}/ac</div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#6a8a50",textAlign:"right"}}>${f2(EXP.reduce((s,[k])=>s+getCropDefault(field.crop,k),0))}/ac</div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>${f2(Object.values(priorRates).reduce((s,v)=>s+v,0))}/ac</div>
         <div></div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:14,color:"#c05010",textAlign:"right",fontWeight:600}}>{f$(c.expenses)}</div>
+        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a5030",textAlign:"right",fontWeight:600}}>{actual?f$(actual.total):"—"}</div>
+        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,textAlign:"right",fontWeight:600,color:!actual?"#c0c8b8":actual.total>c.expenses?"#c02020":"#1a7010"}}>{actual?`${actual.total>c.expenses?"+":""}${f$(actual.total-c.expenses,true)}`:"—"}</div>
       </div>
     </div>)}
 
@@ -4582,6 +4622,12 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   const updateIncome=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,income:{...f.income,[k]:+v}}:f);}),[pushUndo]);
   const updateExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,expenseOverrides:{...(f.expenseOverrides||{}),[k]:+v}}:f);}),[pushUndo]);
   const resetExpense=useCallback((id,k)=>setFields(p=>p.map(f=>{if(f.id!==id)return f;const ov={...(f.expenseOverrides||{})};delete ov[k];return{...f,expenseOverrides:ov};})),[]);
+  // Actual $ spent per category, for the active year's field record — distinct
+  // from expenseOverrides (which change the PROJECTED $/ac rate). This is real
+  // money actually spent, entered as a total dollar figure per category so it
+  // reads the way a grower actually tracks spend ("I spent $12k on seed here"),
+  // not a rate they'd have to back-calculate.
+  const updateActualExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,actualExpenses:{...(f.actualExpenses||{}),[k]:v===""?undefined:+v}}:f);}),[pushUndo]);
   // Removes a single crop's entire imported APH history (all years) from one field — for
   // cleaning up a crop that got attributed to the wrong field during an APH import (e.g. a
   // duplicate same-named field that shared the wrong field's aphData bucket before that was
@@ -4814,7 +4860,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
           :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
