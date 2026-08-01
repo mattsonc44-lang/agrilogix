@@ -1256,24 +1256,24 @@ function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHist
 
 
 // ── Farm Expenses View ────────────────────────────────────────────────────────
-function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
+function FarmExpensesView({ fields, activeYear, onApplyExpenses, onApplyActualExpenses }) {
   const entities = [...new Set(fields.map(f=>f.entity).filter(Boolean))];
   const [activeEntity, setActiveEntity] = useState(()=>entities[0]||"");
-  const [totals, setTotals] = useState(() => {
-    // Initialize from current field expense overrides × acres
-    const t = {};
-    entities.forEach(entity => {
-      t[entity] = {};
-      EXP.forEach(([key]) => { t[entity][key] = ""; });
-    });
-    return t;
-  });
+  // "projected" edits expenseOverrides (the plan's $/ac rate). "actual" edits
+  // actualExpenses (real $ spent, scaled per field by acres) — same total ÷
+  // acres mechanism, just a different destination on the field record.
+  const [mode, setMode] = useState("projected");
+  const emptyTotals = () => { const t = {}; entities.forEach(entity => { t[entity] = {}; EXP.forEach(([key]) => { t[entity][key] = ""; }); }); return t; };
+  const [totals, setTotals] = useState(emptyTotals);
+  const [actualTotals, setActualTotals] = useState(emptyTotals);
   const [applied, setApplied] = useState(false);
 
   const entityFields = fields.filter(f => f.entity === activeEntity);
   const totalAcres = entityFields.reduce((s, f) => s + f.acres, 0);
 
-  // Calculate current per-acre rates from field expense overrides
+  // Current per-acre rates — projected from expenseOverrides/crop defaults,
+  // actual blended from whatever's already been entered on each field
+  // (actualExpenses $ ÷ that field's acres, averaged across the entity).
   const currentRates = useMemo(() => {
     const rates = {};
     EXP.forEach(([key]) => {
@@ -1285,19 +1285,32 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
     return rates;
   }, [entityFields, activeEntity]);
 
+  const currentActualRates = useMemo(() => {
+    const rates = {};
+    EXP.forEach(([key]) => {
+      const sum = entityFields.reduce((s, f) => s + (parseFloat(f.actualExpenses?.[key]) || 0), 0);
+      rates[key] = totalAcres > 0 ? sum / totalAcres : 0;
+    });
+    return rates;
+  }, [entityFields, activeEntity, totalAcres]);
+
+  const activeTotals = mode === "actual" ? actualTotals : totals;
+  const setActiveTotals = mode === "actual" ? setActualTotals : setTotals;
+  const activeCurrentRates = mode === "actual" ? currentActualRates : currentRates;
+
   const handleTotalChange = (key, val) => {
-    setTotals(t => ({ ...t, [activeEntity]: { ...t[activeEntity], [key]: val } }));
+    setActiveTotals(t => ({ ...t, [activeEntity]: { ...t[activeEntity], [key]: val } }));
     setApplied(false);
   };
 
   const getRateFromTotal = (key) => {
-    const total = parseFloat(totals[activeEntity]?.[key]);
+    const total = parseFloat(activeTotals[activeEntity]?.[key]);
     if (!total || !totalAcres) return null;
     return total / totalAcres;
   };
 
-  const totalEntered = EXP.reduce((s, [key]) => s + (parseFloat(totals[activeEntity]?.[key]) || 0), 0);
-  const totalCurrent = EXP.reduce((s, [key]) => s + currentRates[key] * totalAcres, 0);
+  const totalEntered = EXP.reduce((s, [key]) => s + (parseFloat(activeTotals[activeEntity]?.[key]) || 0), 0);
+  const totalCurrent = EXP.reduce((s, [key]) => s + activeCurrentRates[key] * totalAcres, 0);
 
   const handleApply = () => {
     const updates = {};
@@ -1305,7 +1318,8 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
       const rate = getRateFromTotal(key);
       if (rate !== null) updates[key] = Math.round(rate * 100) / 100;
     });
-    onApplyExpenses(activeEntity, updates);
+    if (mode === "actual") onApplyActualExpenses(activeEntity, updates);
+    else onApplyExpenses(activeEntity, updates);
     setApplied(true);
     setTimeout(() => setApplied(false), 2500);
   };
@@ -1314,32 +1328,48 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
     // Pre-fill totals from current $/ac × acres
     const t = {};
     EXP.forEach(([key]) => {
-      const total = currentRates[key] * totalAcres;
+      const total = activeCurrentRates[key] * totalAcres;
       t[key] = total > 0 ? f2(total) : "";
     });
-    setTotals(prev => ({ ...prev, [activeEntity]: t }));
+    setActiveTotals(prev => ({ ...prev, [activeEntity]: t }));
     setApplied(false);
   };
 
   return (
     <div style={{padding:"24px",maxWidth:1100,margin:"0 auto"}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
         <div>
           <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#1a3010"}}>Farm Expenses — {activeYear}</div>
-          <div style={{fontSize:12,color:"#7a9260",marginTop:2}}>Enter total dollar amounts — the app divides by total acres to calculate per-acre rates for each field</div>
+          <div style={{fontSize:12,color:"#7a9260",marginTop:2}}>
+            {mode === "actual"
+              ? "Enter what was actually spent, total — the app divides by total acres and scales real $ back out to each field"
+              : "Enter total dollar amounts — the app divides by total acres to calculate per-acre rates for each field"}
+          </div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={handleLoadCurrent}
             style={{background:"#f4f8ee",border:"1px solid #b8d09a",borderRadius:5,padding:"7px 14px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"'Barlow',sans-serif"}}>
-            ↻ Load Current Rates
+            ↻ Load Current {mode==="actual"?"Actuals":"Rates"}
           </button>
           <button onClick={handleApply}
             disabled={totalEntered === 0}
             style={{background:applied?"#4a9030":totalEntered>0?"#2a7a18":"#aac890",border:"none",borderRadius:5,padding:"7px 18px",fontSize:12,fontWeight:600,cursor:totalEntered>0?"pointer":"not-allowed",color:"#fff",fontFamily:"'Barlow',sans-serif"}}>
-            {applied ? "✓ Applied!" : `Apply to All ${activeEntity} Fields`}
+            {applied ? "✓ Applied!" : `Apply ${mode==="actual"?"Actual":""} to All ${activeEntity} Fields`}
           </button>
         </div>
+      </div>
+
+      {/* Projected / Actual mode toggle */}
+      <div style={{display:"flex",gap:6,marginBottom:16}}>
+        {[["projected","📋 Projected (Budget)"],["actual","💰 Actual (Real $ Spent)"]].map(([m,l])=>(
+          <button key={m} onClick={()=>{setMode(m);setApplied(false);}}
+            style={{padding:"7px 16px",borderRadius:5,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+              background:mode===m?"#8a5030":"#f4ecd8",
+              color:mode===m?"#fff":"#8a5030"}}>
+            {l}
+          </button>
+        ))}
       </div>
 
       {/* Entity tabs */}
@@ -1361,7 +1391,7 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#1a3010"}}>{totalAcres.toFixed(0)}</div>
         </div>
         <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
-          <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Current Total Expenses</div>
+          <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Current {mode==="actual"?"Actual":"Total"} Expenses</div>
           <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#c05010"}}>{f$(totalCurrent)}</div>
           <div style={{fontSize:10,color:"#8a9a70"}}>${f2(totalAcres>0?totalCurrent/totalAcres:0)}/ac</div>
         </div>
@@ -1375,16 +1405,15 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
       {/* Expense rows */}
       <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,overflow:"hidden"}}>
         {/* Column headers */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,background:"#1e3a18",padding:"8px 16px"}}>
-          {["Category","Total $ Entered","÷ Acres","= $/Ac","Current $/Ac"].map((h,i)=>(
-            <div key={h} style={{fontSize:9,color:"#c8e8a0",textTransform:"uppercase",letterSpacing:0.7,textAlign:i>0?"right":"left"}}>{h}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,background:mode==="actual"?"#4a2e18":"#1e3a18",padding:"8px 16px"}}>
+          {["Category","Total $ Entered","÷ Acres","= $/Ac",`Current ${mode==="actual"?"Actual":""} $/Ac`].map((h,i)=>(
+            <div key={h} style={{fontSize:9,color:mode==="actual"?"#f0c8a0":"#c8e8a0",textTransform:"uppercase",letterSpacing:0.7,textAlign:i>0?"right":"left"}}>{h}</div>
           ))}
         </div>
 
         {EXP.map(([key, label], i) => {
-          const enteredTotal = parseFloat(totals[activeEntity]?.[key]) || 0;
           const calcRate = getRateFromTotal(key);
-          const curRate = currentRates[key];
+          const curRate = activeCurrentRates[key];
           const diff = calcRate !== null ? calcRate - curRate : null;
           return (
             <div key={key}
@@ -1397,10 +1426,10 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
                 <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
                   <span style={{fontSize:11,color:"#7a9260"}}>$</span>
                   <input type="number" min="0" step="100"
-                    value={totals[activeEntity]?.[key] ?? ""}
+                    value={activeTotals[activeEntity]?.[key] ?? ""}
                     onChange={e=>handleTotalChange(key, e.target.value)}
                     placeholder={f2(curRate * totalAcres)}
-                    style={{width:110,textAlign:"right",background:"#f0f8e8",border:"1px solid #b8d09a",
+                    style={{width:110,textAlign:"right",background:mode==="actual"?"#fff8f0":"#f0f8e8",border:`1px solid ${mode==="actual"?"#e0b078":"#b8d09a"}`,
                       borderRadius:4,padding:"5px 8px",fontSize:12,fontFamily:"'IBM Plex Mono',monospace",
                       color:"#1a3010",outline:"none"}}/>
                 </div>
@@ -1429,17 +1458,20 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses }) {
         })}
 
         {/* Total row */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,padding:"10px 16px",background:"#1e3a18",alignItems:"center"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#c8e8a0",textTransform:"uppercase",letterSpacing:0.8}}>Total</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,padding:"10px 16px",background:mode==="actual"?"#4a2e18":"#1e3a18",alignItems:"center"}}>
+          <div style={{fontSize:11,fontWeight:700,color:mode==="actual"?"#f0c8a0":"#c8e8a0",textTransform:"uppercase",letterSpacing:0.8}}>Total</div>
           <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,fontWeight:700,color:totalEntered>0?"#90e870":"#5a7a50"}}>{totalEntered>0?`$${f$(totalEntered)}`:"—"}</div>
           <div/>
           <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,fontWeight:700,color:"#90e870"}}>{totalEntered>0&&totalAcres>0?`$${f2(totalEntered/totalAcres)}/ac`:""}</div>
-          <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#5a8a50"}}>${f2(totalAcres>0?totalCurrent/totalAcres:0)}</div>
+          <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:mode==="actual"?"#e0b090":"#5a8a50"}}>${f2(totalAcres>0?totalCurrent/totalAcres:0)}</div>
         </div>
       </div>
 
       <div style={{fontSize:10,color:"#8a9a70",marginTop:10,fontStyle:"italic"}}>
-        Clicking "Apply" sets the $/ac rate as an override on every {activeEntity} field. Individual fields can still be overridden separately in the field detail view. Use "↻ Load Current Rates" to pre-fill with existing rates × acres.
+        {mode === "actual"
+          ? `Clicking "Apply" sets real $ spent (scaled to each field's own acres) on every ${activeEntity} field's actualExpenses — that's what each field's Expenses tab compares against its projected rate, and what rolls into the Home dashboard's actual net figure.`
+          : `Clicking "Apply" sets the $/ac rate as an override on every ${activeEntity} field. Individual fields can still be overridden separately in the field detail view.`}
+        {" "}Use "↻ Load Current {mode==="actual"?"Actuals":"Rates"}" to pre-fill with existing values.
       </div>
     </div>
   );
@@ -2374,7 +2406,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onSetActualExpenses,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
   // Operators/managers without the right flag never see raw dollar figures —
   // same PERMS model AgriScale already enforces, see core/permissions.js.
   const p=perms||PERMS.owner;
@@ -2400,24 +2432,6 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[newUnitAcres,setNewUnitAcres]=useState("");
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
   const actual=calcActual(field);
-  const[actualTotalInput,setActualTotalInput]=useState("");
-  // Quick-entry: grower types ONE total ("I spent $42,000 on this field"),
-  // and we split it across the EXP categories proportional to that field's
-  // own projected $/ac weights — so the category table still shows a
-  // reasonable actual-vs-projected breakdown without making anyone hand-type
-  // 18 numbers. Individual category cells stay editable afterward for
-  // true-ups.
-  const applyActualTotal=()=>{
-    const amt=parseFloat(actualTotalInput);
-    if(!amt||amt<=0||!onSetActualExpenses) return;
-    const weights=EXP.map(([key])=>({key,w:getRate(field,key)*field.acres}));
-    const sumW=weights.reduce((s,w)=>s+w.w,0);
-    const map={};
-    if(sumW>0){weights.forEach(({key,w})=>{map[key]=Math.round(amt*(w/sumW)*100)/100;});}
-    else{const even=amt/EXP.length;EXP.forEach(([key])=>{map[key]=Math.round(even*100)/100;});}
-    onSetActualExpenses(field.id,map);
-    setActualTotalInput("");
-  };
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
   return(<div>
@@ -2662,24 +2676,16 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           <span style={{background:"#f4ecd8",padding:"2px 8px",borderRadius:3,color:"#7a4a10",fontWeight:600}}>★ Field Override</span>
         </span>
       </div>
-      {/* Actual expenses — quick entry. Enter one total ("I spent $X on this
-          field this year") and it's split across the categories below
-          proportional to their projected $/ac weight, so you're not stuck
-          hand-typing 18 line items to see actual vs projected. */}
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14,padding:"10px 12px",background:"#fff8f0",border:"1px solid #e0c090",borderRadius:6}}>
-        <span style={{fontSize:11,fontWeight:700,color:"#8a5030",whiteSpace:"nowrap"}}>💰 Actual $ spent this field/year:</span>
-        <div style={{display:"flex",alignItems:"center",gap:3}}>
-          <span style={{color:"#8a5030",fontSize:12}}>$</span>
-          <input type="number" value={actualTotalInput} onChange={e=>setActualTotalInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")applyActualTotal();}} placeholder="total $"
-            style={{border:"1px solid #e0a878",borderRadius:4,padding:"5px 8px",fontSize:12,fontFamily:"'IBM Plex Mono',monospace",color:"#8a5030",width:110,outline:"none"}}/>
+      {/* Actual $ is entered farm-wide from the 💰 Expenses screen (top nav) —
+          same total-÷-acres mechanism as the projected budget there. It shows
+          up here already split out per category; nudge any single category
+          below if this field ran different from the entity average. */}
+      {actual && (
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14,padding:"8px 12px",background:"#fff8f0",border:"1px solid #e0c090",borderRadius:6}}>
+          <span style={{fontSize:11,color:"#9a7a50"}}>💰 Actual $ entered from the farm-wide Expenses screen — edit any category below to fine-tune this field.</span>
+          <span style={{marginLeft:"auto",fontSize:11,color:"#8a5030",fontWeight:600}}>Currently: {f$(actual.total)}</span>
         </div>
-        <button onClick={applyActualTotal} disabled={!actualTotalInput}
-          style={{background:actualTotalInput?"#c07010":"#e8d8c0",border:"none",borderRadius:4,padding:"6px 14px",color:"#fff",fontSize:11,fontWeight:700,cursor:actualTotalInput?"pointer":"default",fontFamily:"'Barlow',sans-serif"}}>
-          Split across categories →
-        </button>
-        <span style={{fontSize:10,color:"#9a7a50",fontStyle:"italic"}}>splits proportional to projected rates — edit any category below to fine-tune</span>
-        {actual && <span style={{marginLeft:"auto",fontSize:11,color:"#8a5030",fontWeight:600}}>Currently: {f$(actual.total)} entered</span>}
-      </div>
+      )}
       {/* Column headers */}
       <div style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,padding:"5px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
         {["Category","Proj $/Ac","Crop Default","Prior Year","vs Prior Yr","Actual $ Spent","Variance"].map((h,i)=>(<div key={i} style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,textAlign:i>0?"right":"left"}}>{h}</div>))}
@@ -4668,7 +4674,23 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   // total, split it across categories" quick-entry tool in the Expenses tab,
   // so growers don't have to hand-type 18 category amounts to get a real
   // actual-vs-projected picture.
-  const setActualExpenses=useCallback((id,map)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,actualExpenses:map}:f);}),[pushUndo]);
+  // Farm-wide actual-expense entry (FarmExpensesView's "Actual" mode) — same
+  // mechanism as applying a projected budget total (top Expenses screen):
+  // enter one total $ for the whole entity, divide by that entity's acres to
+  // get a $/ac rate, then scale that rate back out to real $ per field by
+  // that field's own acres. Writes to actualExpenses (real $) instead of
+  // expenseOverrides (a projected rate).
+  const applyActualExpenses=useCallback((entity,rates)=>{
+    setFields(p=>{
+      pushUndo(p);
+      return p.map(f=>{
+        if(f.entity!==entity) return f;
+        const upd={...(f.actualExpenses||{})};
+        Object.entries(rates).forEach(([k,rate])=>{ upd[k]=Math.round(rate*f.acres*100)/100; });
+        return{...f,actualExpenses:upd};
+      });
+    });
+  },[pushUndo]);
   // Removes a single crop's entire imported APH history (all years) from one field — for
   // cleaning up a crop that got attributed to the wrong field during an APH import (e.g. a
   // duplicate same-named field that shared the wrong field's aphData bucket before that was
@@ -4900,8 +4922,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
-          :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onSetActualExpenses={setActualExpenses} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} onApplyActualExpenses={applyActualExpenses} />)
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
