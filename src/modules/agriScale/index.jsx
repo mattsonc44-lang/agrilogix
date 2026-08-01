@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress } from "../../core/agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary } from "../../core/agriscale.js";
 import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -273,35 +273,9 @@ u.crops = Object.entries(cropMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([cr
 return Object.values(units).sort((a,b)=>a.unit.localeCompare(b.unit, undefined,{numeric:true,sensitivity:"base"}));
 }
 
-// ── Summary by Bin — how full each bin is, its crop, and which fields fed it.
-// Grouped straight off each field's recorded loads (load.binId) rather than just
-// trusting the bin's current storedLbs, so "fields" always lists exactly what's
-// actually been run into that bin through AgriScale.
-function buildBinSummary(fields, bins, grains) {
-const grainFor = (name) => (grains||[]).find(g=>g.name===name) || FALLBACK_GRAIN;
-const buOf = (load) => load.net / ((grainFor(load.grainName).bushel_lbs)||60);
-return (bins||[]).map(bin=>{
-const loadsInBin = [];
-(fields||[]).forEach(field => (field.loads||[]).filter(Boolean).forEach(load => {
-if(load.binId===bin.id) loadsInBin.push({...load, fieldName: field.name});
-}));
-const totLbs = loadsInBin.reduce((s,l)=>s+l.net,0);
-const totBu = loadsInBin.reduce((s,l)=>s+buOf(l),0);
-const grain = grainFor(bin.grainName);
-const storedBu = bin.storedLbs / (grain.bushel_lbs||60);
-const pctFull = bin.capacityBu > 0 ? Math.min(100, storedBu / bin.capacityBu * 100) : 0;
-const fieldTotals = {};
-loadsInBin.forEach(l=>{ fieldTotals[l.fieldName] = (fieldTotals[l.fieldName]||0) + buOf(l); });
-const fieldList = Object.entries(fieldTotals).sort((a,b)=>b[1]-a[1]).map(([name,bu])=>({name,bu}));
-return {
-id: bin.id, name: bin.name, crop: bin.grainName,
-capacityBu: bin.capacityBu, storedBu, pctFull,
-loads: loadsInBin.length, totLbs, totBu, fields: fieldList,
-};
-});
-}
-
 // ── Main module ───────────────────────────────────────────────────
+// (buildBinSummary — how full each bin is, its actual crop, and which fields
+// fed it — now lives in core/agriscale.js, shared and unit-tested there.)
 function PrintReport({ fields, bins, grains, onClose }) {
 const reportRef = useRef(null);
 const allLoads = [];
