@@ -97,6 +97,26 @@ export function detectCropMismatch(fields, bins, binId, newGrainName, excludeLoa
   return null;
 }
 
+// ── Bin overfill check — flags a load that would push a bin's stored
+// bushels past its set capacity (capacityBu). Uses the load's own grain
+// bushel weight to convert both the bin's current stored pounds and the
+// incoming load into bushels — a bin is expected to hold one grain at a
+// time (see detectCropMismatch above), so this mirrors the same live
+// "remaining capacity" math the gauge already shows, just applied as a
+// warning instead of a display-only number. Doesn't block the load (grain
+// can legitimately mound above a bin's rated capacity) — same "warn, let
+// the operator decide" pattern as the crop-mismatch check.
+export function detectBinOverfill(bin, grain, netLbs) {
+  if (!bin || !(parseFloat(bin.capacityBu) > 0)) return null;
+  const bushelLbs = parseFloat(grain?.bushel_lbs) || 60;
+  const currentBu = (parseFloat(bin.storedLbs) || 0) / bushelLbs;
+  const addedBu = (parseFloat(netLbs) || 0) / bushelLbs;
+  const wouldBeBu = currentBu + addedBu;
+  const capacityBu = parseFloat(bin.capacityBu);
+  if (wouldBeBu <= capacityBu) return null;
+  return { binName: bin.name, capacityBu, wouldBeBu, overBy: wouldBeBu - capacityBu };
+}
+
 // ── Bin summary for the Report tab / printable report — grouped by which
 // bin each load's binId points to. The displayed crop is derived from the
 // grain(s) actually recorded into the bin, NOT bin.grainName: that field is
