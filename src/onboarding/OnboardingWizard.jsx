@@ -75,7 +75,7 @@ const S = {
 };
 
 // ── Step: Welcome ──────────────────────────────────────────────────────────────
-function StepWelcome({ tenantName, profile, onChange }) {
+function StepWelcome({ tenantName, billingAddress, billingCity, profile, onChange }) {
   return (
     <div>
       <div style={{textAlign:"center",marginBottom:28,padding:"12px 0"}}>
@@ -110,8 +110,20 @@ function StepWelcome({ tenantName, profile, onChange }) {
             value={profile?.email||""} readOnly/>
         </div>
       </div>
+      <div style={{marginTop:18,marginBottom:6}}>
+        <label style={S.label}>Billing Address <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(optional)</span></label>
+        <div style={{fontSize:11,color:"#8aaa60",marginBottom:8}}>
+          Used on invoices for your Agri Logix subscription — not shared anywhere else. You can add or update this later under Organization Settings.
+        </div>
+        <input style={{...S.input,marginBottom:10}} value={billingAddress}
+          onChange={e=>onChange("billingAddress",e.target.value)}
+          placeholder="Street address"/>
+        <input style={S.input} value={billingCity}
+          onChange={e=>onChange("billingCity",e.target.value)}
+          placeholder="City, State, ZIP"/>
+      </div>
       <div style={{background:"#f2f8ec",border:"1px solid #b8d898",borderRadius:8,
-        padding:"14px 16px",fontSize:12,color:"#3a6020",marginTop:8}}>
+        padding:"14px 16px",fontSize:12,color:"#3a6020",marginTop:14}}>
         💡 You're the account owner. You can invite team members after setup and grant them access to specific modules.
       </div>
       <div style={{background:"#f0f6fc",border:"1px solid #a8c8e0",borderRadius:8,
@@ -359,6 +371,8 @@ function StepDone({ crops, fields, aphFieldCount=0, prices }) {
 export default function OnboardingWizard({ tenantId, token, profile, tenant, onComplete }) {
   const [step, setStep]         = useState(0);
   const [tenantName, setTenantName] = useState("");
+  const [billingAddress, setBillingAddress] = useState("");
+  const [billingCity, setBillingCity] = useState("");
   const [crops, setCrops]       = useState([]);
   const [prices, setPrices]     = useState({});
   const [fields, setFields]     = useState([]);
@@ -400,6 +414,15 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
           await fb(`tenants/${tenantId}/farms/default/profile`, token, "PUT", {
             id: "default", name: tenantName.trim(), color: "#4A7535",
           });
+        }
+        // Billing address is optional — only write whichever fields were
+        // actually filled in, same "never overwrite with blank" guard as
+        // the operation name above.
+        if(billingAddress.trim()) {
+          await fb(`tenants/${tenantId}/profile/billingAddress`, token, "PUT", billingAddress.trim());
+        }
+        if(billingCity.trim()) {
+          await fb(`tenants/${tenantId}/profile/billingCity`, token, "PUT", billingCity.trim());
         }
       } else if(stepIdx === 1) {
         // Save crop list — skip if nothing selected.
@@ -546,8 +569,12 @@ export default function OnboardingWizard({ tenantId, token, profile, tenant, onC
           {err&&<div style={{background:"#fff0f0",border:"1px solid #e08080",borderRadius:6,
             padding:"8px 12px",fontSize:12,color:"#c02020",marginBottom:16}}>{err}</div>}
 
-          {step===0&&<StepWelcome tenantName={tenantName} profile={profile}
-            onChange={(k,v)=>{ if(k==="tenantName") setTenantName(v); }}/>}
+          {step===0&&<StepWelcome tenantName={tenantName} billingAddress={billingAddress} billingCity={billingCity} profile={profile}
+            onChange={(k,v)=>{
+              if(k==="tenantName") setTenantName(v);
+              else if(k==="billingAddress") setBillingAddress(v);
+              else if(k==="billingCity") setBillingCity(v);
+            }}/>}
           {step===1&&<StepCrops selected={crops} onToggle={toggleCrop}
             onSelectAll={()=>setCrops([...ALL_CROPS])} onClearAll={()=>setCrops([])}/>}
           {step===2&&<StepPrices crops={crops} prices={prices} onChange={updPrice}/>}
