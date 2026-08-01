@@ -595,7 +595,7 @@ export default function App() {
                 {Object.entries(ROLES).map(([id,r])=><option key={id} value={id} style={{ color:"#000" }}>{r.label}</option>)}
               </select>
             </label>
-            <button onClick={()=>{setAdminViewTenantId(null);setAdminViewRole("owner");}}
+            <button onClick={()=>{setAdminViewTenantId(null);setAdminViewRole("owner");window.location.hash="admin";setShowAdmin(true);}}
               style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.4)",
                 borderRadius:5, color:"#fff", padding:"3px 14px", cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>
               ✕ Exit Admin View
