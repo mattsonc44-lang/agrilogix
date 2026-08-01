@@ -1619,19 +1619,42 @@ function SCard({label,val,color,sub}){
   </div>);
 }
 
-function CropSelect({value,onChange,eligibleCrops}){
+function CropSelect({value,onChange,eligibleCrops,fieldRestrictions,fieldCommon,hist,targetYear}){
   const[open,setOpen]=useState(false);const ref=useRef();
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
   const _ec=Array.isArray(eligibleCrops)?eligibleCrops:eligibleCrops&&typeof eligibleCrops==="object"?Object.values(eligibleCrops):[]; const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!(_ec.length>0?_ec:(_tenantCrops||ALL_CROPS)).includes(c);
+  // Chemical plantback + rotation/insurance-rule warnings per candidate crop —
+  // same two rule sets checked everywhere else (see getPlantbackWarnings /
+  // getRotationRules), surfaced here so you see them while picking rather than
+  // only after the fact. Doesn't block selection — you may know something the
+  // rules don't (e.g. a waiver) — it's a warning, not a hard stop.
+  const warningsFor = c => {
+    const pb = getPlantbackWarnings(fieldRestrictions, fieldCommon, c);
+    const checker = hist && targetYear ? getRotationRules()[c] : null;
+    const rot = checker ? checker(hist, targetYear) : [];
+    return { pb, rot };
+  };
+  const valueWarnings = warningsFor(value);
+  const hasValueWarning = valueWarnings.pb.length>0 || valueWarnings.rot.length>0;
   return(<div ref={ref} style={{position:"relative",display:"inline-block"}}>
-    <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
+    <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:`1px solid ${hasValueWarning?"#c07010":"#2a4030"}`,borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:isInelig(value)?"#c02020":"#3a9020",flexShrink:0}}/>
       <span style={{flex:1,textAlign:"left"}}>{value}</span>
+      {hasValueWarning&&<span title="This crop has chemical plantback or rotation/insurance restrictions — see below" style={{fontSize:13}}>⚠️</span>}
       <span style={{fontSize:10,opacity:0.5}}>▾</span>
     </button>
-    {open&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#f8fbf5",border:"1px solid #2a4030",borderRadius:5,width:240,maxHeight:300,overflowY:"auto",boxShadow:"0 8px 32px rgba(0,0,0,.7)",marginTop:2}}>
+    {open&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#f8fbf5",border:"1px solid #2a4030",borderRadius:5,width:280,maxHeight:320,overflowY:"auto",boxShadow:"0 8px 32px rgba(0,0,0,.7)",marginTop:2}}>
       <div style={{padding:"6px 10px 2px",fontSize:9,color:"#4a8a30",textTransform:"uppercase",letterSpacing:1}}>✓ Eligible for this field</div>
-      {(_tenantCrops||ALL_CROPS).filter(c=>!isInelig(c)).map(c=>(<div key={c} onClick={()=>{onChange(c);setOpen(false);}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#1a6010":"#1a4010",background:c===value?"#d4ecc0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#d4ecc0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#d4ecc0":"transparent"}><span style={{width:6,height:6,borderRadius:"50%",background:"#3a9020",flexShrink:0}}/>{c}{c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#3a8020"}}>✓</span>}</div>))}
+      {(_tenantCrops||ALL_CROPS).filter(c=>!isInelig(c)).map(c=>{
+        const w=warningsFor(c); const warn=w.pb.length>0||w.rot.length>0;
+        const title=warn?[...w.pb.map(x=>`⚗️ ${x.chemName} — ${x.daysRemaining}d plantback remaining`),...w.rot.map(x=>`🛡 ${x}`)].join("\n"):"";
+        return(<div key={c} onClick={()=>{onChange(c);setOpen(false);}} title={title} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#1a6010":"#1a4010",background:c===value?"#d4ecc0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#d4ecc0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#d4ecc0":"transparent"}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:warn?"#c07010":"#3a9020",flexShrink:0}}/>
+          {c}
+          {warn&&<span style={{fontSize:11}}>⚠️</span>}
+          {c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#3a8020"}}>✓</span>}
+        </div>);
+      })}
       <div style={{padding:"8px 10px 2px",fontSize:9,color:"#904040",textTransform:"uppercase",letterSpacing:1,borderTop:"1px solid #2a2010",marginTop:4}}>✗ Not eligible</div>
       {(_tenantCrops||ALL_CROPS).filter(c=>isInelig(c)).map(c=>(<div key={c} style={{padding:"7px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8,color:"#7a3030",cursor:"not-allowed",opacity:0.7}} title={(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region ineligible":"No APH on this field"}><span style={{width:6,height:6,borderRadius:"50%",background:"#c02020",flexShrink:0}}/>{c}<span style={{marginLeft:"auto",fontSize:9,color:"#904040"}}>{(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region":"No APH"}</span></div>))}
     </div>)}
@@ -1662,7 +1685,69 @@ function getFieldHistory(field) {
   return null;
 }
 
-function getCropSuggestions(historyEntry, activeYear) {
+// ── Chemical plantback restrictions ──────────────────────────────────────────
+// Single source of truth for "is `crop` still chemically restricted on this
+// field" — shared by the FieldDetail warning banner, the CropSelect dropdown,
+// and the History tab's crop-suggestion scoring, so all three read the exact
+// same FieldLog-sourced spray/plantback data the same way instead of each
+// re-deriving it (which is how the dropdown and suggestions ended up with no
+// plantback awareness at all before this).
+function getPlantbackWarnings(fieldRestrictions, fieldCommon, crop) {
+  if (!crop || !fieldRestrictions || !fieldCommon) return [];
+  const safeKey = fieldCommon.replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
+  const fieldData = fieldRestrictions[safeKey];
+  if (!fieldData?.chemicals) return [];
+  const today = Date.now();
+  const warnings = [];
+  for (const [chemName, { date, plantback }] of Object.entries(fieldData.chemicals)) {
+    // Normalize crop names for lookup (e.g. "Spring Wheat" vs "Wheat")
+    const days = plantback[crop]
+      ?? plantback[crop.replace("Spring ", "").replace("Winter ", "").replace("CC ", "")]
+      ?? null;
+    if (!days) continue;
+    const daysAgo = Math.floor((today - new Date(date).getTime()) / 86400000);
+    const daysRemaining = days - daysAgo;
+    if (daysRemaining > 0) {
+      const appliedDate = new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      warnings.push({ chemName, daysAgo, daysRemaining, appliedDate, totalDays: days });
+    }
+  }
+  return warnings.sort((a, b) => b.daysRemaining - a.daysRemaining);
+}
+
+// ── Field history lookup (manual entries take priority over the legacy seed
+// table) — extracted from FieldHistoryTab so FieldDetail's header CropSelect
+// can run the same rotation-rule check the History tab already runs, instead
+// of the crop picker having zero awareness of rotation/insurance conflicts.
+function resolveFieldHistoryEntry(field, manualHistory) {
+  const ownYears = Object.keys(manualHistory || {});
+  if (ownYears.length > 0) {
+    const history = {};
+    ownYears.forEach(y => { if (manualHistory[y]?.crop) history[y] = manualHistory[y].crop; });
+    if (Object.keys(history).length > 0) {
+      return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
+    }
+  }
+  // Legacy fallback only if this field has no manually-entered history at all yet.
+  const keyFn = field.common + '|' + field.fieldNum;
+  if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
+  const keyLegal = field.common + '|' + field.legal;
+  if (HISTORY_DATA[keyLegal]) return HISTORY_DATA[keyLegal];
+  const byCommon = Object.values(HISTORY_DATA).filter(d =>
+    d.common.toLowerCase() === field.common.toLowerCase()
+  );
+  if (byCommon.length === 1) return byCommon[0];
+  if (byCommon.length > 1) {
+    const fnMatch = byCommon.find(d => d.fieldNum === field.fieldNum);
+    if (fnMatch) return fnMatch;
+    return byCommon.reduce((best, d) =>
+      Math.abs(d.acres - field.acres) < Math.abs(best.acres - field.acres) ? d : best
+    );
+  }
+  return null;
+}
+
+function getCropSuggestions(historyEntry, activeYear, fieldRestrictions, fieldCommon) {
   if (!historyEntry) return [];
   const hist = historyEntry.history;
   const nextYr = String(+activeYear + 1);
@@ -1676,6 +1761,11 @@ function getCropSuggestions(historyEntry, activeYear) {
     if ((_globallyIneligible||GLOBALLY_INELIGIBLE).has(crop)) continue;
     const checker = getRotationRules()[crop];
     const violations = checker ? checker(hist, nextYr) : [];
+    const rotationEligible = violations.length === 0;
+    const plantback = getPlantbackWarnings(fieldRestrictions, fieldCommon, crop);
+    const plantbackViolations = plantback.map(w =>
+      `${w.chemName} applied ${w.appliedDate} — ${w.daysRemaining} day${w.daysRemaining !== 1 ? "s" : ""} of plantback remaining`
+    );
 
     // Score: prefer crops not used recently, penalize violations
     const lastUsed = Object.keys(hist).filter(y => hist[y] === crop).sort().pop();
@@ -1683,8 +1773,10 @@ function getCropSuggestions(historyEntry, activeYear) {
 
     suggestions.push({
       crop,
-      eligible: violations.length === 0,
+      rotationEligible,
+      eligible: rotationEligible && plantbackViolations.length === 0,
       violations,
+      plantbackViolations,
       lastUsed: lastUsed || null,
       yearsAgo,
     });
@@ -1831,47 +1923,17 @@ function RevenueInputModal({ field, year, crop, existingData, onSave, onClose })
   );
 }
 
-function FieldHistoryTab({ field, activeYear, allFields, years, createYear, switchYear, onUpdate, tenantId, manualHistory={}, onSaveHistory }) {
-  const histEntry = useMemo(() => {
-    // Prefer this field's OWN history — whatever the grower actually entered for it
-    // via this History tab (manualHistory, keyed by year -> {crop,yield,acres}) —
-    // over the legacy HISTORY_DATA seed table below. That table is old demo/import
-    // data for a completely different set of farms (Ray, Englund, Sharray, Nuxoll
-    // Land, etc.) and matching against it by common name alone was silently handing
-    // back someone else's crop history whenever a name happened to collide, while
-    // fields with real manually-entered history but no name collision got nothing —
-    // which is why suggestions looked populated for some fields and not others.
-    const ownYears = Object.keys(manualHistory || {});
-    if (ownYears.length > 0) {
-      const history = {};
-      ownYears.forEach(y => { if (manualHistory[y]?.crop) history[y] = manualHistory[y].crop; });
-      if (Object.keys(history).length > 0) {
-        return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
-      }
-    }
-    // Legacy fallback only if this field has no manually-entered history at all yet.
-    // Primary: common|fieldNum
-    const keyFn = field.common + '|' + field.fieldNum;
-    if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
-    // Secondary: common|legal (old format)
-    const keyLegal = field.common + '|' + field.legal;
-    if (HISTORY_DATA[keyLegal]) return HISTORY_DATA[keyLegal];
-    // Fallback: match by common + fieldNum similarity
-    const byCommon = Object.values(HISTORY_DATA).filter(d =>
-      d.common.toLowerCase() === field.common.toLowerCase()
-    );
-    if (byCommon.length === 1) return byCommon[0];
-    if (byCommon.length > 1) {
-      const fnMatch = byCommon.find(d => d.fieldNum === field.fieldNum);
-      if (fnMatch) return fnMatch;
-      return byCommon.reduce((best, d) =>
-        Math.abs(d.acres - field.acres) < Math.abs(best.acres - field.acres) ? d : best
-      );
-    }
-    return null;
-  }, [field.common, field.fieldNum, field.legal, manualHistory]);
+function FieldHistoryTab({ field, activeYear, allFields, years, createYear, switchYear, onUpdate, tenantId, manualHistory={}, onSaveHistory, fieldRestrictions={} }) {
+  // Prefer this field's OWN history — whatever the grower actually entered for it
+  // via this History tab (manualHistory, keyed by year -> {crop,yield,acres}) —
+  // over the legacy HISTORY_DATA seed table. That table is old demo/import data
+  // for a completely different set of farms and matching against it by common
+  // name alone was silently handing back someone else's crop history whenever a
+  // name happened to collide. See resolveFieldHistoryEntry (shared with the
+  // CropSelect header picker, so both read the exact same history).
+  const histEntry = useMemo(() => resolveFieldHistoryEntry(field, manualHistory), [field.common, field.fieldNum, field.legal, manualHistory]);
 
-  const suggestions = useMemo(() => getCropSuggestions(histEntry, activeYear), [histEntry, activeYear]);
+  const suggestions = useMemo(() => getCropSuggestions(histEntry, activeYear, fieldRestrictions, field.common), [histEntry, activeYear, fieldRestrictions, field.common]);
   const HIST_YEARS_ALL = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
 
   // ── Manual history state ──────────────────────────────────────────────────
@@ -2260,14 +2322,28 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
             </div>
           );})}
 
-          {/* Ineligible */}
+          {/* Rotation-eligible but chemically restricted */}
+          {suggestions.some(s=>s.rotationEligible && s.plantbackViolations.length>0) && (<>
+            <div style={{fontSize:12,color:"#8a6010",textTransform:"uppercase",letterSpacing:0.7,marginBottom:8,fontWeight:700,marginTop:16}}>⚗️ Plantback Restricted</div>
+            {suggestions.filter(s=>s.rotationEligible && s.plantbackViolations.length>0).map(s=>(
+              <div key={s.crop} style={{marginBottom:6,padding:"9px 11px",background:"#fff8e0",borderRadius:5,border:"1px solid #e0c060"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
+                  <span style={{background:cropColor(s.crop),color:"#fff",padding:"3px 10px",borderRadius:3,fontSize:12,fontWeight:600,opacity:0.6}}>{s.crop}</span>
+                </div>
+                {s.plantbackViolations.map((v,i)=><div key={i} style={{fontSize:11,color:"#8a6010",marginTop:3}}>• {v}</div>)}
+              </div>
+            ))}
+          </>)}
+
+          {/* Ineligible by rotation/insurance rule */}
           <div style={{fontSize:12,color:"#904040",textTransform:"uppercase",letterSpacing:0.7,marginBottom:8,fontWeight:700,marginTop:16}}>✗ Rotation Conflict</div>
-          {suggestions.filter(s=>!s.eligible).map(s=>(
+          {suggestions.filter(s=>!s.rotationEligible).map(s=>(
             <div key={s.crop} style={{marginBottom:6,padding:"9px 11px",background:"#fff8f0",borderRadius:5,border:"1px solid #f0c090"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
                 <span style={{background:cropColor(s.crop),color:"#fff",padding:"3px 10px",borderRadius:3,fontSize:12,fontWeight:600,opacity:0.6}}>{s.crop}</span>
               </div>
               {s.violations.map((v,i)=><div key={i} style={{fontSize:11,color:"#c05010",marginTop:3}}>• {v}</div>)}
+              {s.plantbackViolations.map((v,i)=><div key={"pb"+i} style={{fontSize:11,color:"#8a6010",marginTop:3}}>• ⚗️ {v}</div>)}
             </div>
           ))}
           <div style={{fontSize:10,color:"#b0b8a8",marginTop:12,fontStyle:"italic",lineHeight:1.5}}>
@@ -2285,29 +2361,20 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   // Operators/managers without the right flag never see raw dollar figures —
   // same PERMS model AgriScale already enforces, see core/permissions.js.
   const p=perms||PERMS.owner;
-  // ── Chemical plantback warnings ────────────────────────────────────────────
-  const chemWarnings = useMemo(() => {
-    if(!field.crop || !fieldRestrictions) return [];
-    const safeKey = field.common.replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
-    const fieldData = fieldRestrictions[safeKey];
-    if(!fieldData?.chemicals) return [];
-    const today = Date.now();
-    const warnings = [];
-    for(const [chemName, {date, plantback}] of Object.entries(fieldData.chemicals)) {
-      // Normalize crop names for lookup (e.g. "Spring Wheat" vs "Wheat")
-      const days = plantback[field.crop]
-        ?? plantback[field.crop.replace("Spring ","").replace("Winter ","").replace("CC ","")]
-        ?? null;
-      if(!days) continue;
-      const daysAgo = Math.floor((today - new Date(date).getTime()) / 86400000);
-      const daysRemaining = days - daysAgo;
-      if(daysRemaining > 0) {
-        const appliedDate = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-        warnings.push({ chemName, daysAgo, daysRemaining, appliedDate, totalDays: days });
-      }
-    }
-    return warnings.sort((a,b) => b.daysRemaining - a.daysRemaining);
-  }, [field.crop, field.common, fieldRestrictions]);
+  // ── Chemical plantback warnings — shared helper, see getPlantbackWarnings ──
+  const chemWarnings = useMemo(() => getPlantbackWarnings(fieldRestrictions, field.common, field.crop), [field.crop, field.common, fieldRestrictions]);
+
+  // ── Rotation / insurance-rule warnings for the crop currently selected on
+  // this field — same rules engine the History tab's suggestions and the
+  // Rotation Rules editor use (getRotationRules), just evaluated for THIS
+  // year instead of next year, since this is checking the crop you already
+  // picked rather than suggesting one.
+  const cropHistEntry = useMemo(() => resolveFieldHistoryEntry(field, fieldHistory[field.common] || {}), [field.common, field.fieldNum, field.legal, fieldHistory]);
+  const rotationWarnings = useMemo(() => {
+    if (!field.crop || !cropHistEntry) return [];
+    const checker = getRotationRules()[field.crop];
+    return checker ? checker(cropHistEntry.history, activeYear || "2026") : [];
+  }, [field.crop, cropHistEntry, activeYear]);
   const[tab,setTab]=useState("income");
   const[priorYear,setPriorYear]=useState("2023 Actuals");
   const[editing,setEditing]=useState(false);
@@ -2408,7 +2475,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         )}
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={field.eligibleCrops}/>
+        <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={field.eligibleCrops} fieldRestrictions={fieldRestrictions} fieldCommon={field.common} hist={cropHistEntry?.history} targetYear={activeYear||"2026"}/>
         <button onClick={()=>{setEditDraft({entity:field.entity||"",farm:field.farm||"",farmNumber:field.farmNumber||"",legal:field.legal||"",common:field.common||"",fieldNum:field.fieldNum||"",acres:field.acres||"",insuranceUnits:field.insuranceUnits||[]});setEditing(true);}}
           style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 10px",color:"#2a6010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✏️ Edit</button>
         <button onClick={()=>{if(window.confirm("Delete this field?"))onDelete(field.id);}} style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 10px",color:"#c02020",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Delete</button>
@@ -2453,6 +2520,23 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         ))}
         <div style={{fontSize:10,color:"#9a7020",marginTop:8,paddingTop:6,borderTop:"1px solid #e0c060"}}>
           ⚠️ Spraying data from FieldLog. Verify with your agronomist before planting.
+        </div>
+      </div>
+    )}
+    {/* Rotation / insurance-rule warnings */}
+    {rotationWarnings.length > 0 && (
+      <div style={{background:"#f0f4fc",border:"2px solid #3a5a9a",borderRadius:8,padding:"12px 16px",marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#1a3a7a",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+          🛡 Rotation / Insurance Rule — <span style={{fontWeight:400}}>{field.crop} may not be insurable on this field this year</span>
+        </div>
+        {rotationWarnings.map((msg,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:11,color:"#2a3a6a",padding:"4px 0",borderTop:"1px solid #c0cce8"}}>
+            <span style={{fontSize:14}}>⚠️</span>
+            <div style={{flex:1}}>{msg}</div>
+          </div>
+        ))}
+        <div style={{fontSize:10,color:"#5a6a9a",marginTop:8,paddingTop:6,borderTop:"1px solid #c0cce8"}}>
+          Based on crop history and your Rotation Rules config. Confirm with your insurance agent before planting.
         </div>
       </div>
     )}
@@ -2584,7 +2668,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       </div>
 
     </div>)}
-    {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate} tenantId={tenantId} manualHistory={fieldHistory[field.common]||{}} onSaveHistory={hist=>onSaveFieldHistory&&onSaveFieldHistory(field.common,hist)}/>)}
+    {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate} tenantId={tenantId} manualHistory={fieldHistory[field.common]||{}} fieldRestrictions={fieldRestrictions} onSaveHistory={hist=>onSaveFieldHistory&&onSaveFieldHistory(field.common,hist)}/>)}
   </div>);
 }
 
