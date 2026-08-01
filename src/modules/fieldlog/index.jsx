@@ -3747,7 +3747,7 @@ disabled={bulkLoading||!s.agriScaleUrl}>
 );
 }
 
-export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriFieldix, farmId }){
+export default function FieldLogModule({ tenantId, token, userProfile, persist: persistToAgriFieldix, farmId, initialAction }){
   // Owner/manager/operator tiering — same shared model as AgriPlan/AgriScale/
   // ServiceLog, see core/permissions.js. Standalone (no tenantId) mode predates
   // accounts entirely, so it stays full-access. The only real $ figures logged
@@ -3832,6 +3832,18 @@ setSync("offline");
 }catch(e){ setSync("error"); }
 }).finally(()=>setLoading(false));
 },[tenantId,token]);
+
+// ── Quick Log deep-link (Home's "⚡ Quick Log") — once fields are loaded,
+// jump straight to the requested field and open Add Activity for it.
+const quickActionDone=useRef(false);
+useEffect(()=>{
+if(loading||quickActionDone.current) return;
+if(initialAction?.type==="addActivity"&&initialAction.fieldId){
+const f=fields.find(ff=>ff.id===initialAction.fieldId);
+if(f){ setAF(f); setView("fieldDetail"); setShowAdd(true); }
+quickActionDone.current=true;
+}
+},[loading,fields,initialAction]);
 
 // ── Real-time listener ────────────────────────────────────
 useEffect(()=>{
