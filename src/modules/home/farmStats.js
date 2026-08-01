@@ -79,12 +79,18 @@ export function computeFarmStats(d, year) {
     .sort((a, b) => (PRI_ORDER[a.priority || "medium"] ?? 1) - (PRI_ORDER[b.priority || "medium"] ?? 1));
   const partsNeeded = obj2arr(d.slData?.partsToOrder).filter(p => !p.ordered && !p.received).length;
 
+  // Parts Inventory items the user opted into low-stock alerts for (see
+  // serviceLog/index.jsx's "stock it? notify me?" prompt), currently at or
+  // below their set threshold.
+  const lowStockItems = obj2arr(d.slData?.partsInventory)
+    .filter(p => p.notifyLowStock && p.qty !== "" && p.minQty !== "" && Number(p.qty) <= Number(p.minQty));
+
   return {
     apFieldsArr, apAcres, revenueProjected, guarantee, actualBushels, actualRevenue, fieldsWithActuals,
     actualExpensesTotal, fieldsWithActualExpenses, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek, flAcres,
     asFieldsArr, seasonBushels, loadsThisWeek,
-    slVehicles, openTodos, partsNeeded,
+    slVehicles, openTodos, partsNeeded, lowStockItems,
     acres: apAcres || flAcres,
     fieldCount: apFieldsArr.length || flFields.length,
   };
