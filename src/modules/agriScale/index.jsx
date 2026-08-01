@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch } from "../../core/agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill } from "../../core/agriscale.js";
 import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -525,9 +525,17 @@ const [flFields, setFLFields] = useState([]);
 const [flSelected, setFLSelected] = useState(new Set());
 const [flLoading, setFLLoading] = useState(false);
 const [flApByName, setFlApByName] = useState({}); // field name (lowercase) -> matching AgriPlan record, for the import-name preview
+// Acres shown/edited per row in the import preview — pre-filled from
+// whatever's found on the source field (or its matched AgriPlan record), but
+// editable right there before importing, since acres often isn't set on a
+// FieldLog field at all (e.g. added without a boundary or drawn from a KML
+// with no acreage in it) and there was previously no way to notice or fix
+// that until you went looking for a missing yield later.
+const [flAcresOv, setFLAcresOv] = useState({}); // field.id -> acres string
 const [apImportModal, setAPImportModal] = useState(false);
 const [apFields, setAPFields] = useState([]);
 const [apSelected, setAPSelected] = useState(new Set());
+const [apAcresOv, setAPAcresOv] = useState({}); // field.common -> acres string
 const [apLoading, setAPLoading] = useState(false);
 // Shared by both import modals: "field" = just the field/common name (old
 // behavior, default so nothing changes unless you pick otherwise), "farmField"
@@ -819,6 +827,8 @@ const recordLoad = () => {
 if(!canRecord) return;
 const mismatch = detectCropMismatch(safeFields, safeBins, activeBinId, grain.name);
 if(mismatch && !confirm(`⚠ Crop mismatch: ${mismatch.binName} already has ${mismatch.existing} recorded in it. You're about to add ${grain.name}. Continue and mix grains in this bin?`)) return;
+const overfill = detectBinOverfill(activeBin, grain, netLbs);
+if(overfill && !confirm(`⚠ ${overfill.binName}'s capacity is ${overfill.capacityBu.toLocaleString()} BU — this load would bring it to ${overfill.wouldBeBu.toFixed(0)} BU (${overfill.overBy.toFixed(0)} BU over). Continue anyway?`)) return;
 const now = new Date();
 const load = {
 id:nextId.current++, net:netLbs, ts:now.getTime(),
@@ -851,6 +861,19 @@ const oldLoad = owner.loads.find(l=>l.id===updatedLoad.id);
 if((updatedLoad.binId!==oldLoad.binId || updatedLoad.grainName!==oldLoad.grainName)){
 const mismatch = detectCropMismatch(safeFields, safeBins, updatedLoad.binId, updatedLoad.grainName, updatedLoad.id);
 if(mismatch && !confirm(`⚠ Crop mismatch: ${mismatch.binName} already has ${mismatch.existing} recorded in it. You're about to save this load as ${updatedLoad.grainName}. Continue and mix grains in this bin?`)) return;
+}
+// Same overfill guard as recording a new load — only relevant if the
+// target bin or the load's weight actually changed; editing something
+// unrelated (driver, truck, notes) shouldn't re-warn about a fill level
+// that was already true before this edit.
+if(updatedLoad.binId!==oldLoad.binId || updatedLoad.net!==oldLoad.net){
+const targetBin = safeBins.find(b=>b.id===updatedLoad.binId);
+if(targetBin){
+const baseStoredLbs = updatedLoad.binId===oldLoad.binId ? Math.max(0, targetBin.storedLbs-oldLoad.net) : targetBin.storedLbs;
+const targetGrain = safeGrains.find(g=>g.name===updatedLoad.grainName) || FALLBACK_GRAIN;
+const overfill = detectBinOverfill({...targetBin, storedLbs:baseStoredLbs}, targetGrain, updatedLoad.net);
+if(overfill && !confirm(`⚠ ${overfill.binName}'s capacity is ${overfill.capacityBu.toLocaleString()} BU — saving this load would bring it to ${overfill.wouldBeBu.toFixed(0)} BU (${overfill.overBy.toFixed(0)} BU over). Continue anyway?`)) return;
+}
 }
 const nb = safeBins.map(b=>{
 let s = b.storedLbs;
@@ -936,6 +959,7 @@ const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
 const newOnly = seededFields.filter(f => !existingNames.has((f.name||"").trim().toLowerCase()));
 setFLFields(newOnly);
 setFLSelected(new Set(newOnly.map(f => f.id)));
+setFLAcresOv(Object.fromEntries(newOnly.map(f => [f.id, String(f.acres || apByName[norm(f.name)]?.acres || "")])));
 } catch(e) { setFLFields([]); }
 finally { setFLLoading(false); }
 };
@@ -995,7 +1019,7 @@ const farmTract = ap?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "";
 return {
 id: genId(),
 name: buildImportName(f.name, farmTract, ap?.fieldNum),
-acres: f.acres || ap?.acres || 0,
+acres: parseFloat(flAcresOv[f.id]) || 0,
 farmId: farmId || "default",
 loads: [], costs: {},
 grainPrice: cp?.projPrice ? String(cp.projPrice) : "",
@@ -1031,6 +1055,7 @@ const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
 const newOnly = apAll.filter(a => a?.common && a.crop?.trim().toLowerCase()!=="chem-fallow" && !existingNames.has(a.common.trim().toLowerCase()));
 setAPFields(newOnly);
 setAPSelected(new Set(newOnly.map(a => a.common)));
+setAPAcresOv(Object.fromEntries(newOnly.map(a => [a.common, String(a.acres || "")])));
 } catch(e) { setAPFields([]); }
 finally { setAPLoading(false); }
 };
@@ -1051,7 +1076,7 @@ const cp = ap.crop ? cropPrices[ap.crop] : null;
 return {
 id: genId(),
 name: buildImportName(ap.common, ap.farm, ap.fieldNum),
-acres: ap.acres || 0,
+acres: parseFloat(apAcresOv[ap.common]) || 0,
 farmId: farmId || "default",
 loads: [], costs: {},
 grainPrice: cp?.projPrice ? String(cp.projPrice) : "",
@@ -1724,9 +1749,13 @@ const sel = flSelected.has(f.id);
 return(
 <label key={f.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
 <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(flSelected);sel?n.delete(f.id):n.add(f.id);setFLSelected(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
-<div>
+<div style={{flex:1,minWidth:0}}>
 <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{buildImportName(f.name, flApByName[(f.name||"").trim().toLowerCase()]?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "", flApByName[(f.name||"").trim().toLowerCase()]?.fieldNum)}</div>
-{f.acres&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#6a8060",marginTop:"2px"}}>{f.acres} ACRES</div>}
+</div>
+<div style={{display:"flex",alignItems:"center",gap:"4px",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+<input type="number" min="0" step="0.1" value={flAcresOv[f.id]??""} onChange={e=>setFLAcresOv(o=>({...o,[f.id]:e.target.value}))}
+placeholder="acres" style={{width:"64px",background:"rgba(0,0,0,0.25)",border:`1px solid ${flAcresOv[f.id]?"rgba(255,255,255,0.15)":"#a06030"}`,borderRadius:"4px",padding:"4px 6px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0",textAlign:"right"}}/>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#6a8060"}}>ac</span>
 </div>
 </label>
 );
@@ -1783,9 +1812,14 @@ const sel = apSelected.has(a.common);
 return(
 <label key={a.common} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(122,90,58,0.18)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#7a5a3a":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
 <input type="checkbox" checked={sel} onChange={()=>{const n=new Set(apSelected);sel?n.delete(a.common):n.add(a.common);setAPSelected(n);}} style={{accentColor:"#7a5a3a",width:"14px",height:"14px",flexShrink:0}}/>
-<div>
+<div style={{flex:1,minWidth:0}}>
 <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{buildImportName(a.common, a.farm, a.fieldNum)}</div>
-<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860",marginTop:"2px"}}>{a.acres?`${a.acres} ACRES`:""}{a.acres&&a.crop?" · ":""}{a.crop||""}</div>
+{a.crop&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860",marginTop:"2px"}}>{a.crop}</div>}
+</div>
+<div style={{display:"flex",alignItems:"center",gap:"4px",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+<input type="number" min="0" step="0.1" value={apAcresOv[a.common]??""} onChange={e=>setAPAcresOv(o=>({...o,[a.common]:e.target.value}))}
+placeholder="acres" style={{width:"64px",background:"rgba(0,0,0,0.25)",border:`1px solid ${apAcresOv[a.common]?"rgba(255,255,255,0.15)":"#a06030"}`,borderRadius:"4px",padding:"4px 6px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#e4d0c0",textAlign:"right"}}/>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860"}}>ac</span>
 </div>
 </label>
 );
