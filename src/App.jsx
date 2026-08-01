@@ -43,6 +43,7 @@ export default function App() {
   const [tenant,     setTenant]     = useState(null);
   const [module,     setModule]     = useState(()=>window.location.hash.slice(1)||null);
   const [pendingTab, setPendingTab] = useState(null); // deep-link a module to a specific sub-tab (e.g. Home's "Parts Needed" card -> ServiceLog's Order Parts tab)
+  const [pendingAction, setPendingAction] = useState(null); // deep-link a module straight into an add-form for a specific field/vehicle (Home's "Quick Log")
   const [loading,    setLoading]    = useState(true);
   const [authErr,    setAuthErr]    = useState("");
   const [showAdmin,  setShowAdmin]  = useState(false);
@@ -412,7 +413,7 @@ export default function App() {
         </div>
         <div style={{ display:"flex", flex:1, overflowX:"auto" }}>
           {homeScreenEnabled && (
-            <button onClick={()=>{ window.location.hash = "home"; setModule("home"); setPendingTab(null); }} style={{
+            <button onClick={()=>{ window.location.hash = "home"; setModule("home"); setPendingTab(null); setPendingAction(null); }} style={{
               display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
               border:"none", cursor:"pointer",
               background: module==="home" ? "rgba(255,255,255,0.15)" : "transparent",
@@ -425,7 +426,7 @@ export default function App() {
             </button>
           )}
           {canCompareFarms && (
-            <button onClick={()=>{ window.location.hash = "multiFarm"; setModule("multiFarm"); setPendingTab(null); }} style={{
+            <button onClick={()=>{ window.location.hash = "multiFarm"; setModule("multiFarm"); setPendingTab(null); setPendingAction(null); }} style={{
               display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
               border:"none", cursor:"pointer",
               background: module==="multiFarm" ? "rgba(255,255,255,0.15)" : "transparent",
@@ -441,7 +442,7 @@ export default function App() {
             const m = MODULES[mid]; if (!m) return null;
             const active = module === mid;
             return (
-              <button key={mid} onClick={()=>{ window.location.hash = mid; setModule(mid); setPendingTab(null); }} style={{
+              <button key={mid} onClick={()=>{ window.location.hash = mid; setModule(mid); setPendingTab(null); setPendingAction(null); }} style={{
                 display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
                 border:"none", cursor:"pointer",
                 background: active ? "rgba(255,255,255,0.15)" : "transparent",
@@ -573,11 +574,11 @@ export default function App() {
 
       {/* ── Modules ── */}
       <div>
-        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} enabledModules={enabledModules} onNavigate={(mid,tab)=>{ window.location.hash=mid; setModule(mid); setPendingTab(tab||null); }} onHideHome={toggleHomeScreen}/>}
-        {module === "multiFarm"   && canCompareFarms && <MultiFarmModule tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} farms={allFarms} enabledModules={enabledModules} onOpenFarm={(f)=>{ setActiveFarm(f); window.location.hash="home"; setModule("home"); setPendingTab(null); }}/>}
-        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.fieldlog   || impersonatedProfile.role}} persist={persist}/>}
+        {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} enabledModules={enabledModules} onNavigate={(mid,tab,action)=>{ window.location.hash=mid; setModule(mid); setPendingTab(tab||null); setPendingAction(action||null); }} onHideHome={toggleHomeScreen}/>}
+        {module === "multiFarm"   && canCompareFarms && <MultiFarmModule tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} farms={allFarms} enabledModules={enabledModules} onOpenFarm={(f)=>{ setActiveFarm(f); window.location.hash="home"; setModule("home"); setPendingTab(null); setPendingAction(null); }}/>}
+        {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.fieldlog   || impersonatedProfile.role}} persist={persist} initialAction={pendingAction}/>}
         {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.agriScale   || impersonatedProfile.role}} persist={persist}/>}
-        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.serviceLog  || impersonatedProfile.role}} persist={persist} initialTab={pendingTab}/>}
+        {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.serviceLog  || impersonatedProfile.role}} persist={persist} initialTab={pendingTab} initialAction={pendingAction}/>}
         {module === "agriPlan"   && <AgriPlanModule  key={`ap-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.agriPlan   || impersonatedProfile.role}} persist={persist}/>}
         {!module && enabledModules.length === 0 && (
           <div style={{ ...S.content, textAlign:"center", paddingTop:"60px" }}>
