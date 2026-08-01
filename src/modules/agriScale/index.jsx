@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO } from "../../core/agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress } from "../../core/agriscale.js";
 import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -510,7 +510,7 @@ Total <strong>{c.crop}</strong> for {u.unit} = <span style={{fontFamily:"'IBM Pl
 );
 }
 
-export default function AgriScaleModule({ tenantId, token, userProfile, persist, farmId, farmName }) {
+export default function AgriScaleModule({ tenantId, token, userProfile, persist, farmId, farmName, initialTab }) {
 const BASE = `tenants/${tenantId}/agriScale`;
 // Fields on non-default farms use the farm path
 const FIELD_BASE = (!farmId || farmId === "default")
@@ -545,7 +545,7 @@ const [truckColor, setTruckColor] = useState(DEFAULT_TRUCKS[0].id);
 const [activeUnit, setActiveUnit] = useState("");
 
 // UI
-const [tab, setTab] = useState("SCALE");
+const [tab, setTab] = useState(initialTab || "SCALE");
 const [flImportModal, setFLImportModal] = useState(false);
 const [flFields, setFLFields] = useState([]);
 const [flSelected, setFLSelected] = useState(new Set());
@@ -915,6 +915,7 @@ const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
 // Rows with no insurance unit are dropped here — "Summary by Field" above
 // already covers plain field totals, so a unit-less row would just repeat it.
 const unitBreakdown = useMemo(()=>buildUnitBreakdown(safeFields), [safeFields]);
+const guaranteeProgress = useMemo(()=>buildGuaranteeProgress(safeFields), [safeFields]);
 const binSummary = useMemo(()=>buildBinSummary(safeFields, safeBins, safeGrains), [safeFields, safeBins, safeGrains]);
 const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
 const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
@@ -1544,6 +1545,35 @@ return(<div key={l.id} style={{display:"flex",gap:"7px",alignItems:"center",font
 </div>
 ))}
 </div>
+
+{/* Guarantee progress by Insurance Unit — bushels logged vs. guaranteed yield */}
+{perms.canViewInsurance && guaranteeProgress.length>0 && (<>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>GUARANTEE PROGRESS</div>
+<div style={{background:"#fdf3df",border:"1px solid #e0c078",borderRadius:"4px",padding:"9px 11px",marginBottom:"10px",fontSize:"9px",color:"#7a5008",lineHeight:1.6,letterSpacing:"0.02em"}}>
+⚠ Not a claim determination. This compares bushels logged here to the Guaranteed Yield entered on each field — it doesn't know your policy's full terms, unit structure at the insurer, or adjuster-verified yields. Contact your crop insurance agent with coverage questions.
+</div>
+{guaranteeProgress.map(u=>{
+const pct = u.pct;
+const barPct = Math.max(0,Math.min(pct,100));
+const barColor = pct>=100 ? "#4a7535" : pct>=60 ? "#c47d0a" : "#b0623a";
+const statusColor = pct>=100 ? "#4a7535" : "#a06010";
+const statusLabel = pct>=100 ? "Guarantee bushels logged" : "Below guarantee pace so far";
+return (
+<div key={u.unit} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px",flexWrap:"wrap",gap:"4px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"12px",color:"#4a5568",letterSpacing:"0.08em"}}>{u.unit}</div>
+<div style={{fontSize:"9px",fontWeight:700,color:statusColor,letterSpacing:"0.04em"}}>{statusLabel}</div>
+</div>
+<div style={{background:"#e8e4dc",borderRadius:"3px",height:"7px",overflow:"hidden",marginBottom:"5px"}}>
+<div style={{background:barColor,height:"100%",width:`${barPct}%`}}/>
+</div>
+<div style={{fontSize:"9px",color:"#6a7280",fontFamily:"'IBM Plex Mono',monospace"}}>
+{u.harvestedBu.toFixed(0)} of {u.guaranteeBu.toFixed(0)} guarantee bu logged ({pct.toFixed(0)}%)
+</div>
+</div>
+);
+})}
+</>)}
 
 {/* Breakdown by Insurance Unit, then Field */}
 <div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>BREAKDOWN BY INSURANCE UNIT</div>
