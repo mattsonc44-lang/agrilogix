@@ -2374,7 +2374,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onSetActualExpenses,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
   // Operators/managers without the right flag never see raw dollar figures —
   // same PERMS model AgriScale already enforces, see core/permissions.js.
   const p=perms||PERMS.owner;
@@ -2400,6 +2400,24 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[newUnitAcres,setNewUnitAcres]=useState("");
   const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
   const actual=calcActual(field);
+  const[actualTotalInput,setActualTotalInput]=useState("");
+  // Quick-entry: grower types ONE total ("I spent $42,000 on this field"),
+  // and we split it across the EXP categories proportional to that field's
+  // own projected $/ac weights — so the category table still shows a
+  // reasonable actual-vs-projected breakdown without making anyone hand-type
+  // 18 numbers. Individual category cells stay editable afterward for
+  // true-ups.
+  const applyActualTotal=()=>{
+    const amt=parseFloat(actualTotalInput);
+    if(!amt||amt<=0||!onSetActualExpenses) return;
+    const weights=EXP.map(([key])=>({key,w:getRate(field,key)*field.acres}));
+    const sumW=weights.reduce((s,w)=>s+w.w,0);
+    const map={};
+    if(sumW>0){weights.forEach(({key,w})=>{map[key]=Math.round(amt*(w/sumW)*100)/100;});}
+    else{const even=amt/EXP.length;EXP.forEach(([key])=>{map[key]=Math.round(even*100)/100;});}
+    onSetActualExpenses(field.id,map);
+    setActualTotalInput("");
+  };
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
   return(<div>
@@ -2643,6 +2661,24 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           <span style={{background:"#e8f4e0",padding:"2px 8px",borderRadius:3,color:"#1a5010",fontWeight:600,marginRight:6}}>● Crop Default</span>
           <span style={{background:"#f4ecd8",padding:"2px 8px",borderRadius:3,color:"#7a4a10",fontWeight:600}}>★ Field Override</span>
         </span>
+      </div>
+      {/* Actual expenses — quick entry. Enter one total ("I spent $X on this
+          field this year") and it's split across the categories below
+          proportional to their projected $/ac weight, so you're not stuck
+          hand-typing 18 line items to see actual vs projected. */}
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14,padding:"10px 12px",background:"#fff8f0",border:"1px solid #e0c090",borderRadius:6}}>
+        <span style={{fontSize:11,fontWeight:700,color:"#8a5030",whiteSpace:"nowrap"}}>💰 Actual $ spent this field/year:</span>
+        <div style={{display:"flex",alignItems:"center",gap:3}}>
+          <span style={{color:"#8a5030",fontSize:12}}>$</span>
+          <input type="number" value={actualTotalInput} onChange={e=>setActualTotalInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")applyActualTotal();}} placeholder="total $"
+            style={{border:"1px solid #e0a878",borderRadius:4,padding:"5px 8px",fontSize:12,fontFamily:"'IBM Plex Mono',monospace",color:"#8a5030",width:110,outline:"none"}}/>
+        </div>
+        <button onClick={applyActualTotal} disabled={!actualTotalInput}
+          style={{background:actualTotalInput?"#c07010":"#e8d8c0",border:"none",borderRadius:4,padding:"6px 14px",color:"#fff",fontSize:11,fontWeight:700,cursor:actualTotalInput?"pointer":"default",fontFamily:"'Barlow',sans-serif"}}>
+          Split across categories →
+        </button>
+        <span style={{fontSize:10,color:"#9a7a50",fontStyle:"italic"}}>splits proportional to projected rates — edit any category below to fine-tune</span>
+        {actual && <span style={{marginLeft:"auto",fontSize:11,color:"#8a5030",fontWeight:600}}>Currently: {f$(actual.total)} entered</span>}
       </div>
       {/* Column headers */}
       <div style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,padding:"5px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
@@ -4628,6 +4664,11 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   // reads the way a grower actually tracks spend ("I spent $12k on seed here"),
   // not a rate they'd have to back-calculate.
   const updateActualExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,actualExpenses:{...(f.actualExpenses||{}),[k]:v===""?undefined:+v}}:f);}),[pushUndo]);
+  // Replaces the whole actualExpenses map at once — used by the "enter one
+  // total, split it across categories" quick-entry tool in the Expenses tab,
+  // so growers don't have to hand-type 18 category amounts to get a real
+  // actual-vs-projected picture.
+  const setActualExpenses=useCallback((id,map)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,actualExpenses:map}:f);}),[pushUndo]);
   // Removes a single crop's entire imported APH history (all years) from one field — for
   // cleaning up a crop that got attributed to the wrong field during an APH import (e.g. a
   // duplicate same-named field that shared the wrong field's aphData bucket before that was
@@ -4860,7 +4901,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
           :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onSetActualExpenses={setActualExpenses} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
