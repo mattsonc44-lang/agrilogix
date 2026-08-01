@@ -950,15 +950,19 @@ function cropColor(crop) { return CROP_COLORS[crop] || "#aabbaa"; }
 // ─── HISTORY VIEW ─────────────────────────────────────────────────────────────
 const HIST_YEARS = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
 
-function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHistory=null, onDeleteAphCrop=null }) {
+function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHistory=null, onDeleteAphCrop=null, tenantId=null }) {
   const [year, setYear] = useState("2026");
   const [search, setSearch] = useState("");
   const [filterViol, setFilterViol] = useState(false);
   const [sortKey, setSortKey] = useState("farm");
 
-  // Build history data — merges manual fieldHistory (priority) + imported APH
+  // Build history data — merges manual fieldHistory (priority) + imported APH.
+  // HISTORY_DATA is Flat Acre Farms / Via Terra's own real historical data
+  // (Chris's tenant) — it must never be the fallback for anyone else's empty
+  // history, or a brand-new tenant with nothing entered yet would see someone
+  // else's actual farm/crop data. See resolveFieldHistoryEntry for the same rule.
   const histData = useMemo(() => {
-    if (!aphData && !fieldHistory) return HISTORY_DATA;
+    if (!aphData && !fieldHistory) return isFlatAcreTenant(tenantId) ? HISTORY_DATA : {};
     const built = {};
 
     const ensureField = (fieldCommon) => {
@@ -993,8 +997,8 @@ function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHist
       });
     }
 
-    return Object.keys(built).length > 0 ? built : HISTORY_DATA;
-  }, [aphData, fieldHistory, allFields]);
+    return Object.keys(built).length > 0 ? built : (isFlatAcreTenant(tenantId) ? HISTORY_DATA : {});
+  }, [aphData, fieldHistory, allFields, tenantId]);
 
   const [, forceUpdate] = useState(0);
   const violations = useMemo(() => checkRotationViolations(histData, year), [histData, year, forceUpdate]);
@@ -1181,13 +1185,14 @@ function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHist
         {/* Crop summary sidebar */}
         <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"14px",position:"sticky",top:0,maxHeight:"90vh",overflowY:"auto"}}>
           <div style={{fontSize:11,fontWeight:600,color:"#3a6020",textTransform:"uppercase",letterSpacing:0.8,marginBottom:10}}>{year} Crop Summary</div>
-          {[["All",null],...([...new Set(INITIAL_FIELDS.map(f=>f.entity))].filter(Boolean).map(e=>[e,e]))].map(([label,entityFilter])=>{
-            // Build crop summary for this entity filter
+          {[["All",null],...([...new Set((allFields||[]).map(f=>f.entity))].filter(Boolean).map(e=>[e,e]))].map(([label,entityFilter])=>{
+            // Build crop summary for this entity filter — matched against this
+            // tenant's own real fields (allFields), never the hardcoded
+            // Flat Acre seed list, so another tenant's entities are what show up.
             const filtered = Object.values(histData).filter(d=>{
               if(!d.history[year]) return false;
               if(!entityFilter) return true;
-              // Match entity by checking INITIAL_FIELDS
-              const match = INITIAL_FIELDS.find(f=>f.common===d.common&&f.fieldNum===d.fieldNum);
+              const match = (allFields||[]).find(f=>f.common===d.common&&f.fieldNum===d.fieldNum);
               return match ? match.entity===entityFilter : false;
             });
             if(entityFilter&&filtered.length===0) return null;
@@ -1663,27 +1668,8 @@ function CropSelect({value,onChange,eligibleCrops,fieldRestrictions,fieldCommon,
 
 
 // ── Field History + Crop Suggestions ─────────────────────────────────────────
-function getFieldHistory(field) {
-  // Primary: match by common|fieldNum — most reliable since fieldNum distinguishes west 5 from west 6 etc.
-  const keyFn = field.common + '|' + field.fieldNum;
-  if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
-  // Secondary: common|legal
-  const keyLegal = field.common + '|' + field.legal;
-  if (HISTORY_DATA[keyLegal]) return HISTORY_DATA[keyLegal];
-  // Fallback: match by common name, prefer fieldNum match, then closest acres
-  const byCommon = Object.values(HISTORY_DATA).filter(d =>
-    d.common.toLowerCase() === field.common.toLowerCase()
-  );
-  if (byCommon.length === 1) return byCommon[0];
-  if (byCommon.length > 1) {
-    const fnMatch = byCommon.find(d => d.fieldNum === field.fieldNum);
-    if (fnMatch) return fnMatch;
-    return byCommon.reduce((best, d) =>
-      Math.abs(d.acres - field.acres) < Math.abs(best.acres - field.acres) ? d : best
-    );
-  }
-  return null;
-}
+// (Legacy per-field lookup superseded by resolveFieldHistoryEntry below, which
+// adds tenant gating around HISTORY_DATA — see that function's comment.)
 
 // ── Chemical plantback restrictions ──────────────────────────────────────────
 // Single source of truth for "is `crop` still chemically restricted on this
@@ -1719,7 +1705,17 @@ function getPlantbackWarnings(fieldRestrictions, fieldCommon, crop) {
 // table) — extracted from FieldHistoryTab so FieldDetail's header CropSelect
 // can run the same rotation-rule check the History tab already runs, instead
 // of the crop picker having zero awareness of rotation/insurance conflicts.
-function resolveFieldHistoryEntry(field, manualHistory) {
+//
+// HISTORY_DATA is real historical crop data for exactly one tenant (Chris's
+// own Flat Acre Farms / Via Terra operation, imported from their workbook —
+// field/farm names like "Ray", "Englund", "Nuxoll Land", etc. are THEIR real
+// land, not sample data). It must never be used as a fallback for any other
+// tenant — a different customer with a field also named e.g. "Home Place"
+// would otherwise silently inherit Flat Acre's actual rotation history for
+// it. Gated the same way the one-time workbook importer already is, via
+// isFlatAcreTenant(tenantId). Every other tenant gets real answers only:
+// their own manually-entered / APH-imported history, or nothing yet.
+function resolveFieldHistoryEntry(field, manualHistory, tenantId) {
   const ownYears = Object.keys(manualHistory || {});
   if (ownYears.length > 0) {
     const history = {};
@@ -1728,7 +1724,9 @@ function resolveFieldHistoryEntry(field, manualHistory) {
       return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
     }
   }
-  // Legacy fallback only if this field has no manually-entered history at all yet.
+  // Legacy fallback only if this field has no manually-entered history at all
+  // yet, AND only for the one tenant this seed data actually belongs to.
+  if (!isFlatAcreTenant(tenantId)) return null;
   const keyFn = field.common + '|' + field.fieldNum;
   if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
   const keyLegal = field.common + '|' + field.legal;
@@ -1931,7 +1929,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
   // name alone was silently handing back someone else's crop history whenever a
   // name happened to collide. See resolveFieldHistoryEntry (shared with the
   // CropSelect header picker, so both read the exact same history).
-  const histEntry = useMemo(() => resolveFieldHistoryEntry(field, manualHistory), [field.common, field.fieldNum, field.legal, manualHistory]);
+  const histEntry = useMemo(() => resolveFieldHistoryEntry(field, manualHistory, tenantId), [field.common, field.fieldNum, field.legal, manualHistory, tenantId]);
 
   const suggestions = useMemo(() => getCropSuggestions(histEntry, activeYear, fieldRestrictions, field.common), [histEntry, activeYear, fieldRestrictions, field.common]);
   const HIST_YEARS_ALL = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
@@ -2017,10 +2015,13 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
         }
       } catch {}
     }
-    // 3. Workbook production data (col S × T) - fills in gaps
-    // For workbook production, try fieldNum-specific key first then fall back
+    // 3. Workbook production data (col S × T) - fills in gaps.
+    // WORKBOOK_PRODUCTION, like HISTORY_DATA, is Flat Acre Farms' own real
+    // imported revenue/yield numbers — gated the same way so another tenant
+    // with a same-named field never has Flat Acre's actual $ figures folded
+    // into their history table.
   const wbFieldKey2 = field.common + '|' + field.fieldNum;
-  const wbField = WORKBOOK_PRODUCTION[fieldKey] || WORKBOOK_PRODUCTION[wbFieldKey2];
+  const wbField = isFlatAcreTenant(tenantId) ? (WORKBOOK_PRODUCTION[fieldKey] || WORKBOOK_PRODUCTION[wbFieldKey2]) : null;
     if (wbField) {
       for (const yr of HIST_YEARS_ALL) {
         if (map[yr]) continue;
@@ -2369,7 +2370,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   // Rotation Rules editor use (getRotationRules), just evaluated for THIS
   // year instead of next year, since this is checking the crop you already
   // picked rather than suggesting one.
-  const cropHistEntry = useMemo(() => resolveFieldHistoryEntry(field, fieldHistory[field.common] || {}), [field.common, field.fieldNum, field.legal, fieldHistory]);
+  const cropHistEntry = useMemo(() => resolveFieldHistoryEntry(field, fieldHistory[field.common] || {}, tenantId), [field.common, field.fieldNum, field.legal, fieldHistory, tenantId]);
   const rotationWarnings = useMemo(() => {
     if (!field.crop || !cropHistEntry) return [];
     const checker = getRotationRules()[field.crop];
@@ -4811,7 +4812,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
             : <SCard label="Net Income" val={REDACTED} color="#6a8a50" sub="restricted"/>}
         </div>
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
-          :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} />)
+          :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
           :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
