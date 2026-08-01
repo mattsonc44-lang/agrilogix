@@ -65,6 +65,38 @@ export function buildGuaranteeProgress(fields) {
     .sort((a, b) => a.unit.localeCompare(b.unit, undefined, { numeric: true, sensitivity: "base" }));
 }
 
+// ── Crop-mismatch check — a bin should hold one grain at a time. Given a
+// target bin and the grain about to be recorded into it, checks what's
+// actually already been recorded into that bin (same load-history signal
+// buildBinSummary's crop label is derived from) and flags a mismatch rather
+// than silently mixing grains together. Falls back to the bin's assigned
+// grain only when there's no load history yet but the bin already shows
+// stored weight (e.g. grain that predates AgriScale tracking) — a bin with
+// no history and no stored weight never flags a mismatch.
+//
+// `excludeLoadId` leaves a load's own prior entry out of the "already in the
+// bin" set — used when editing an existing load so correcting the only load
+// in a bin (e.g. fixing a typo'd grain) doesn't flag itself as a mismatch.
+export function detectCropMismatch(fields, bins, binId, newGrainName, excludeLoadId = null) {
+  const bin = (bins || []).find(b => b.id === binId);
+  if (!bin) return null;
+  // Track whether the bin has ANY tracked load history separately from the
+  // (possibly exclusion-filtered) `existing` set — a bin with exactly one
+  // load, which is the one being edited right now, still counts as "has
+  // history" and must NOT fall through to the stale bin.grainName fallback
+  // just because excluding it leaves nothing to compare against.
+  let hasAnyLoadHistory = false;
+  const existing = new Set();
+  (fields || []).forEach(f => (f.loads || []).forEach(l => {
+    if (l.binId !== binId || !l.grainName) return;
+    hasAnyLoadHistory = true;
+    if (l.id !== excludeLoadId) existing.add(l.grainName);
+  }));
+  if (!hasAnyLoadHistory && bin.storedLbs > 0 && bin.grainName) existing.add(bin.grainName);
+  if (existing.size > 0 && !existing.has(newGrainName)) return { binName: bin.name, existing: [...existing].join(", ") };
+  return null;
+}
+
 // ── Bin summary for the Report tab / printable report — grouped by which
 // bin each load's binId points to. The displayed crop is derived from the
 // grain(s) actually recorded into the bin, NOT bin.grainName: that field is
