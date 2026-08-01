@@ -627,6 +627,29 @@ function calcActual(field){
 const f$=(n,neg)=>{const abs=Math.abs(n);const str="$"+abs.toLocaleString("en-US",{maximumFractionDigits:0});return neg&&n<0?"("+str+")":str;};
 const f2=n=>(+n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 
+// Combines calcActual (real $ spent) with actual bushels/revenue (from
+// fieldHistory — AgriScale weigh tickets or manually entered) into one
+// per-field "how did this actually turn out" figure, for the reports
+// (exportCSV / openPrint). Only ever reads real, tenant-entered data — no
+// hardcoded benchmark years — so it's safe to show to every tenant.
+function calcFieldActuals(field, fieldHistory, year){
+  const ae=calcActual(field);
+  const act=fieldHistory?.[field.common]?.[year];
+  const bu=parseFloat(act?.bushels)||0;
+  const hasRevenue=bu>0;
+  const actualRevenue=hasRevenue?bu*(field.income?.currentPrice||0):0;
+  const hasAny=!!ae||hasRevenue;
+  return{
+    actualExpenses:ae?ae.total:0,
+    hasExpenses:!!ae,
+    actualRevenue,
+    hasRevenue,
+    actualNet:hasAny?(actualRevenue-(ae?ae.total:0)):null,
+    hasAny,
+    bushels:bu,
+  };
+}
+
 function mkF(farmNum,entity,farm,legal,common,fieldNum,acres,crop,bG,pG,bP,cP,el){
   return{id:String(_id++),farmNumber:farmNum,entity,farm,legal:legal||"",common,fieldNum:fieldNum||"",
     acres:+acres,crop,eligibleCrops:el||(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:FA_ELIG),
@@ -1478,31 +1501,61 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses, onApplyActualEx
 }
 
 // ── CSV Export ────────────────────────────────────────────────────────────────
-function exportCSV(fields){
+// tenantId/fieldHistory/activeYear are only used to compute each tenant's OWN
+// real actual-vs-projected figures (calcFieldActuals) — nothing here ever
+// reads the hardcoded ACTUALS_2023/BUDGET_2024/etc year-over-year benchmarks,
+// which were Flat Acre Farms' own real budget history and had no business
+// showing up in another tenant's export. Those are only referenced anymore in
+// FieldDetail's "Compare to" tool, gated behind isFlatAcreTenant.
+function exportCSV(fields,tenantId,farmName,fieldHistory={},activeYear){
   const sep=",";const q=v=>`"${String(v).replace(/"/g,'""')}"`;const rows=[];
-  rows.push([q("AGRIPLAN 2025 — FULL FARM INCOME & EXPENSE REPORT"),q(""),q("Date: "+new Date().toLocaleDateString())].join(sep));
+  const label=farmName?`${farmName} — `:"";
+  rows.push([q(`AGRILOGIX — ${label}FULL FARM INCOME & EXPENSE REPORT`),q(""),q("Date: "+new Date().toLocaleDateString())].join(sep));
   rows.push("");
-  rows.push(q("=== FIELD DETAIL ==="));
-  rows.push(["Entity","Farm","Legal","Common","Field #","Acres","Crop","Bu Guarantee","Price Guarantee","Value/Ac","Ins. Guarantee","Bu Projection","Curr Price","Proj Revenue","Risk",...EXP.map(([,l])=>l),"Total Exp $/Ac","Total Expenses","Net Income"].map(q).join(sep));
-  fields.forEach(f=>{const c=calc(f);rows.push([q(f.entity),q(f.farm),q(f.legal),q(f.common),q(f.fieldNum),f.acres.toFixed(2),q(f.crop),f.income.bushelGuarantee,f.income.priceGuarantee,c.valAcre.toFixed(2),c.guarantee.toFixed(2),f.income.bushelProjection,f.income.currentPrice,c.revenue.toFixed(2),c.risk.toFixed(2),...EXP.map(([k])=>getRate(f,k).toFixed(2)),c.expRate.toFixed(2),c.expenses.toFixed(2),c.net.toFixed(2)].join(sep));});
-  rows.push("");
-  rows.push(q("=== CROP SUMMARY ==="));
-  rows.push(["Crop","Acres","% of Total","Proj Revenue","Rev $/Ac","Ins Guarantee","Total Expenses","Exp $/Ac","Net Income","Net $/Ac"].map(q).join(sep));
   const totalAcres=fields.reduce((s,f)=>s+f.acres,0);
+  const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
+  const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);
+  const fieldActuals=fields.map(f=>({f,a:calcFieldActuals(f,fieldHistory,activeYear)}));
+  const totActualRev=fieldActuals.reduce((s,{a})=>s+a.actualRevenue,0);
+  const totActualExp=fieldActuals.reduce((s,{a})=>s+a.actualExpenses,0);
+  const anyActual=fieldActuals.some(({a})=>a.hasAny);
+
+  rows.push(q("=== ACTUAL VS PROJECTED — FARM TOTAL ==="));
+  rows.push(["","Projected","Actual","Variance"].map(q).join(sep));
+  rows.push([q("Revenue"),totRev.toFixed(2),anyActual?totActualRev.toFixed(2):"",anyActual?(totActualRev-totRev).toFixed(2):""].join(sep));
+  rows.push([q("Expenses"),totExp.toFixed(2),anyActual?totActualExp.toFixed(2):"",anyActual?(totActualExp-totExp).toFixed(2):""].join(sep));
+  rows.push([q("Net Income"),(totRev-totExp).toFixed(2),anyActual?(totActualRev-totActualExp).toFixed(2):"",anyActual?((totActualRev-totActualExp)-(totRev-totExp)).toFixed(2):""].join(sep));
+  rows.push("");
+
+  rows.push(q("=== FIELD DETAIL ==="));
+  rows.push(["Entity","Farm","Legal","Common","Field #","Acres","Crop","Bu Guarantee","Price Guarantee","Value/Ac","Ins. Guarantee","Bu Projection","Curr Price","Proj Revenue","Risk",...EXP.map(([,l])=>l),"Total Exp $/Ac","Total Expenses","Net Income","Actual Revenue","Actual Expenses","Actual Net"].map(q).join(sep));
+  fieldActuals.forEach(({f,a})=>{const c=calc(f);rows.push([q(f.entity),q(f.farm),q(f.legal),q(f.common),q(f.fieldNum),f.acres.toFixed(2),q(f.crop),f.income.bushelGuarantee,f.income.priceGuarantee,c.valAcre.toFixed(2),c.guarantee.toFixed(2),f.income.bushelProjection,f.income.currentPrice,c.revenue.toFixed(2),c.risk.toFixed(2),...EXP.map(([k])=>getRate(f,k).toFixed(2)),c.expRate.toFixed(2),c.expenses.toFixed(2),c.net.toFixed(2),a.hasRevenue?a.actualRevenue.toFixed(2):"",a.hasExpenses?a.actualExpenses.toFixed(2):"",a.hasAny?a.actualNet.toFixed(2):""].join(sep));});
+  rows.push("");
+  rows.push(q("=== CROP SUMMARY (Projected) ==="));
+  rows.push(["Crop","Acres","% of Total","Proj Revenue","Rev $/Ac","Ins Guarantee","Total Expenses","Exp $/Ac","Net Income","Net $/Ac"].map(q).join(sep));
   const cm={};fields.forEach(f=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;});
   Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).forEach(([crop,d])=>{const net=d.revenue-d.expenses;rows.push([q(crop),d.acres.toFixed(1),(d.acres/totalAcres*100).toFixed(1)+"%",d.revenue.toFixed(2),(d.revenue/d.acres).toFixed(2),d.guarantee.toFixed(2),d.expenses.toFixed(2),(d.expenses/d.acres).toFixed(2),net.toFixed(2),(net/d.acres).toFixed(2)].join(sep));});
   rows.push("");
-  rows.push(q("=== EXPENSE CATEGORY SUMMARY ==="));
-  rows.push(["Category","2026 Total $","2026 $/Ac","2024 Budget $/Ac","2023 Actual $/Ac","Change vs 2023 $/Ac","Change %","% of Revenue"].map(q).join(sep));
-  const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
-  EXP.forEach(([key,label])=>{const tot=fields.reduce((s,f)=>s+getRate(f,key)*f.acres,0);const avg=tot/totalAcres;const a23=ACTUALS_2023[key];const chg=avg-a23;rows.push([q(label),tot.toFixed(2),avg.toFixed(2),BUDGET_2024[key].toFixed(2),a23.toFixed(2),chg.toFixed(2),(a23>0?chg/a23*100:0).toFixed(1)+"%",(totRev>0?tot/totRev*100:0).toFixed(1)+"%"].join(sep));});
+  rows.push(q("=== EXPENSE CATEGORY — PROJECTED VS ACTUAL ==="));
+  rows.push(["Category","Projected Total $","Projected $/Ac","Actual Total $","Actual $/Ac","Variance $","% of Rev (Proj)"].map(q).join(sep));
+  EXP.forEach(([key,label])=>{
+    const projTot=fields.reduce((s,f)=>s+getRate(f,key)*f.acres,0);
+    const projAvg=projTot/totalAcres;
+    const actTot=fields.reduce((s,f)=>s+(parseFloat(f.actualExpenses?.[key])||0),0);
+    const actAvg=totalAcres>0?actTot/totalAcres:0;
+    rows.push([q(label),projTot.toFixed(2),projAvg.toFixed(2),actTot>0?actTot.toFixed(2):"",actTot>0?actAvg.toFixed(2):"",actTot>0?(actTot-projTot).toFixed(2):"",(totRev>0?projTot/totRev*100:0).toFixed(1)+"%"].join(sep));
+  });
   const blob=new Blob([rows.join("\n")],{type:"text/csv"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="AgriPlan_2025_Budget.csv";a.click();
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`AgriLogix_${(farmName||"Budget").replace(/[^a-z0-9]+/gi,"_")}_${activeYear||""}.csv`;a.click();
 }
 
 // ── Print / PDF ───────────────────────────────────────────────────────────────
-function openPrint(fields,entityFilter){
-  const title=entityFilter==="all"?"Farm Budget":entityFilter;
+// See exportCSV's comment — same rule here: tenantId/fieldHistory/activeYear
+// only feed calcFieldActuals (each tenant's own real numbers). The old
+// hardcoded ACTUALS_2023/BUDGET_2024 year-over-year table is gone from this
+// report entirely, replaced by real Actual $ vs Projected $.
+function openPrint(fields,entityFilter,tenantId,farmName,fieldHistory={},activeYear){
+  const title=entityFilter==="all"?(farmName||"Farm Budget"):entityFilter;
   const totAc=fields.reduce((s,f)=>s+f.acres,0);const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
   const totGuar=fields.reduce((s,f)=>s+calc(f).guarantee,0);const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);const totNet=totRev-totExp;
   const fmt=n=>"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
@@ -1511,7 +1564,13 @@ function openPrint(fields,entityFilter){
   const pct=(a,b)=>b>0?(a/b*100).toFixed(1)+"%":"—";
   const cm={};fields.forEach(f=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;});
   const expTots={};EXP.forEach(([k])=>{expTots[k]=fields.reduce((s,f)=>s+getRate(f,k)*f.acres,0);});
+  const actualCatTots={};EXP.forEach(([k])=>{actualCatTots[k]=fields.reduce((s,f)=>s+(parseFloat(f.actualExpenses?.[k])||0),0);});
   const entMap={};fields.forEach(f=>{if(!entMap[f.entity])entMap[f.entity]={acres:0,revenue:0,guarantee:0,expenses:0};const c=calc(f);entMap[f.entity].acres+=f.acres;entMap[f.entity].revenue+=c.revenue;entMap[f.entity].guarantee+=c.guarantee;entMap[f.entity].expenses+=c.expenses;});
+  const fieldActuals=fields.map(f=>({f,a:calcFieldActuals(f,fieldHistory,activeYear)}));
+  const totActualRev=fieldActuals.reduce((s,{a})=>s+a.actualRevenue,0);
+  const totActualExp=fieldActuals.reduce((s,{a})=>s+a.actualExpenses,0);
+  const totActualNet=totActualRev-totActualExp;
+  const anyActual=fieldActuals.some(({a})=>a.hasAny);
 
   const css=`
     @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Barlow+Condensed:wght@400;500;600;700&display=swap');
@@ -1544,15 +1603,15 @@ function openPrint(fields,entityFilter){
     @media print{.toolbar{display:none}}
   `;
 
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AgriPlan 2025 — ${title}</title><style>${css}</style></head><body>
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AgriLogix — ${title}</title><style>${css}</style></head><body>
 <div class="toolbar">
-  <span style="color:#c8e8a0;font-size:17px;font-weight:700">🌾 AgriPlan 2025 — ${title}</span>
+  <span style="color:#c8e8a0;font-size:17px;font-weight:700">🌾 AgriLogix — ${title}</span>
   <button class="btn" style="background:#5cb850;color:#fff" onclick="window.print()">🖨 Print / Save PDF</button>
   <button class="btn" style="background:#3a3a3a;color:#ccc" onclick="window.close()">Close</button>
 </div>
 <div class="page">
 <h1>${title}</h1>
-<p style="font-family:'Libre Baskerville',serif;font-size:13px;color:#5a7a4a;font-style:italic;margin-bottom:4px">2025 Projected Farm Income &amp; Expense Budget</p>
+<p style="font-family:'Libre Baskerville',serif;font-size:13px;color:#5a7a4a;font-style:italic;margin-bottom:4px">${activeYear||""} Projected Farm Income &amp; Expense Budget</p>
 <div class="meta">Generated ${new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})} &nbsp;·&nbsp; ${fields.length} field units &nbsp;·&nbsp; ${totAc.toFixed(1)} total acres</div>
 
 <div class="sg">
@@ -1562,6 +1621,14 @@ function openPrint(fields,entityFilter){
   <div class="sc"><div class="lb">Total Expenses</div><div class="vl">${fmt(totExp)}</div><div class="sb">${fmtR(totExp/totAc)}/ac avg</div></div>
   <div class="sc"><div class="lb">Net Income</div><div class="vl" style="color:${totNet>=0?"#1a5a10":"#b52020"}">${fmtN(totNet)}</div><div class="sb">${fmtR(totNet/totAc)}/ac avg</div></div>
 </div>
+
+${anyActual?`<h2>Actual — Season to Date</h2>
+<div class="sg" style="grid-template-columns:repeat(4,1fr)">
+  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Actual Revenue</div><div class="vl">${fmt(totActualRev)}</div><div class="sb">vs ${fmt(totRev)} projected</div></div>
+  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Actual Expenses</div><div class="vl">${fmt(totActualExp)}</div><div class="sb">vs ${fmt(totExp)} projected</div></div>
+  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Actual Net</div><div class="vl" style="color:${totActualNet>=0?"#1a5a10":"#b52020"}">${fmtN(totActualNet)}</div><div class="sb">vs ${fmtN(totNet)} projected</div></div>
+  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Variance vs Plan</div><div class="vl" style="color:${(totActualNet-totNet)>=0?"#1a5a10":"#b52020"}">${fmtN(totActualNet-totNet)}</div><div class="sb">actual net − projected net</div></div>
+</div>`:""}
 
 <h2>Crop Summary</h2>
 <table><thead><tr>
@@ -1587,31 +1654,29 @@ ${Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).map(([crop,d])=>{const n
   <td class="r ${totNet>=0?"pos":"neg"}"><strong>${fmtN(totNet)}</strong></td><td class="r ${totNet>=0?"pos":"neg"}">${fmtR(totNet/totAc)}</td>
 </tr></tfoot></table>
 
-<h2>Expense Category Breakdown &amp; Year-over-Year Comparison</h2>
+<h2>Expense Category — Projected vs Actual</h2>
 <table><thead><tr>
   <th>Category</th>
-  <th class="r">2026 Total $</th><th class="r">2026 $/Ac</th>
-  <th class="r">2024 Budget $/Ac</th><th class="r">2023 Actual $/Ac</th>
-  <th class="r">Δ vs 2023 $/Ac</th><th class="r">Δ %</th>
-  <th class="r">% of Revenue</th>
+  <th class="r">Projected Total $</th><th class="r">Projected $/Ac</th>
+  <th class="r">Actual Total $</th><th class="r">Actual $/Ac</th>
+  <th class="r">Variance $</th><th class="r">% of Rev (Proj)</th>
 </tr></thead><tbody>
 ${EXP.map(([key,label])=>{
-  const tot=expTots[key];const avg=tot/totAc;const a23=ACTUALS_2023[key];const b24=BUDGET_2024[key];const chg=avg-a23;const cls=chg>0?"neg":chg<0?"pos":"";
+  const tot=expTots[key];const avg=tot/totAc;const actTot=actualCatTots[key];const actAvg=totAc>0?actTot/totAc:0;const hasAct=actTot>0;const diff=actTot-tot;const cls=diff>0?"neg":diff<0?"pos":"";
   return`<tr>
     <td>${label}</td>
     <td class="r">${fmt(tot)}</td><td class="r">${fmtR(avg)}</td>
-    <td class="r warn">${fmtR(b24)}</td><td class="r">${fmtR(a23)}</td>
-    <td class="r ${cls}">${chg>=0?"+":""}${fmtR(chg)}</td>
-    <td class="r ${cls}">${chg>=0?"+":""}${a23>0?(chg/a23*100).toFixed(1):0}%</td>
+    <td class="r">${hasAct?fmt(actTot):"—"}</td><td class="r">${hasAct?fmtR(actAvg):"—"}</td>
+    <td class="r ${hasAct?cls:""}">${hasAct?`${diff>=0?"+":""}${fmtR(diff)}`:"—"}</td>
     <td class="r">${pct(tot,totRev)}</td>
   </tr>`;}).join("")}
 </tbody><tfoot><tr>
   <td><strong>TOTAL</strong></td>
   <td class="r"><strong>${fmt(totExp)}</strong></td>
   <td class="r"><strong>${fmtR(totExp/totAc)}</strong></td>
-  <td class="r">${fmtR(Object.values(BUDGET_2024).reduce((s,v)=>s+v,0))}</td>
-  <td class="r">${fmtR(Object.values(ACTUALS_2023).reduce((s,v)=>s+v,0))}</td>
-  <td class="r"></td><td class="r"></td>
+  <td class="r"><strong>${anyActual?fmt(totActualExp):"—"}</strong></td>
+  <td class="r"><strong>${anyActual&&totAc>0?fmtR(totActualExp/totAc):"—"}</strong></td>
+  <td class="r ${anyActual?((totActualExp-totExp)>0?"neg":"pos"):""}"><strong>${anyActual?fmtN(totActualExp-totExp):"—"}</strong></td>
   <td class="r"><strong>${pct(totExp,totRev)}</strong></td>
 </tr></tfoot></table>
 
@@ -1630,9 +1695,9 @@ ${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;return`<
   <th class="r">Ins. Guarantee</th><th class="r">Guar $/Ac</th>
   <th class="r">Revenue</th><th class="r">Rev $/Ac</th>
   <th class="r">Expenses</th><th class="r">Exp $/Ac</th>
-  <th class="r">Net Income</th>
+  <th class="r">Net Income</th>${anyActual?`<th class="r">Actual Net</th>`:""}
 </tr></thead><tbody>
-${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numeric:true,sensitivity:"base"})||(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
+${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numeric:true,sensitivity:"base"})||(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f=>{const c=calc(f);const a=calcFieldActuals(f,fieldHistory,activeYear);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
   <td><span class="badge ent">${(f.entity||"").slice(0,8)||"—"}</span></td>
   <td>${f.farm}</td>
   <td><strong>${f.common}</strong></td>
@@ -1647,7 +1712,7 @@ ${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numer
   <td class="r">${fmtR(c.revenue/f.acres)}</td>
   <td class="r">${fmt(c.expenses)}</td>
   <td class="r">${fmtR(c.expRate)}</td>
-  <td class="r ${ni}">${fmtN(c.net)}</td>
+  <td class="r ${ni}">${fmtN(c.net)}</td>${anyActual?`<td class="r ${a.hasAny?(a.actualNet>=0?"pos":"neg"):""}">${a.hasAny?fmtN(a.actualNet):"—"}</td>`:""}
 </tr>`;}).join("")}
 </tbody><tfoot><tr>
   <td colspan="4"><strong>TOTALS</strong></td>
@@ -1656,7 +1721,7 @@ ${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numer
   <td class="r"><strong>${fmt(totGuar)}</strong></td><td class="r">${fmtR(totGuar/totAc)}</td>
   <td class="r"><strong>${fmt(totRev)}</strong></td><td class="r">${fmtR(totRev/totAc)}</td>
   <td class="r"><strong>${fmt(totExp)}</strong></td><td class="r">${fmtR(totExp/totAc)}</td>
-  <td class="r ${totNet>=0?"pos":"neg"}"><strong>${fmtN(totNet)}</strong></td>
+  <td class="r ${totNet>=0?"pos":"neg"}"><strong>${fmtN(totNet)}</strong></td>${anyActual?`<td class="r ${totActualNet>=0?"pos":"neg"}"><strong>${fmtN(totActualNet)}</strong></td>`:""}
 </tr></tfoot></table>
 </div></body></html>`;
 
@@ -2430,7 +2495,15 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[editDraft,setEditDraft]=useState({});
   const[newUnitText,setNewUnitText]=useState("");
   const[newUnitAcres,setNewUnitAcres]=useState("");
-  const c=calc(field);const priorRates=YEAR_LABELS[priorYear];
+  const c=calc(field);
+  // YEAR_LABELS (ACTUALS_2023/BUDGET_2024/etc) is Flat Acre Farms' own real
+  // historical budget/actual $/ac data, same category as HISTORY_DATA and
+  // WORKBOOK_PRODUCTION — gated the same way so no other tenant sees it as if
+  // it were a generic benchmark. Everyone else just doesn't get a prior-year
+  // comparison here (no fabricated substitute) until they've entered their
+  // own actuals over a few seasons.
+  const showPriorYearCompare=isFlatAcreTenant(tenantId);
+  const priorRates=showPriorYearCompare?YEAR_LABELS[priorYear]:null;
   const actual=calcActual(field);
   const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
 
@@ -2667,15 +2740,17 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       </div>
     )}
     {tab==="expenses"&&p.canViewCosts&&(<div>
-      {/* Prior year toggle */}
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"8px 12px",background:"#ffffff",borderRadius:6,border:"1px solid #1e3020"}}>
-        <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Compare to:</span>
-        {Object.keys(YEAR_LABELS).map(yr=>(<button key={yr} onClick={()=>setPriorYear(yr)} style={{background:priorYear===yr?"#2a7a18":"transparent",border:"1px solid #2a4030",borderRadius:3,padding:"4px 10px",color:priorYear===yr?"#ffffff":"#6a8a50",fontSize:10,fontWeight:priorYear===yr?700:400,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>{yr}</button>))}
-        <span style={{marginLeft:"auto",fontSize:10}}>
-          <span style={{background:"#e8f4e0",padding:"2px 8px",borderRadius:3,color:"#1a5010",fontWeight:600,marginRight:6}}>● Crop Default</span>
-          <span style={{background:"#f4ecd8",padding:"2px 8px",borderRadius:3,color:"#7a4a10",fontWeight:600}}>★ Field Override</span>
-        </span>
-      </div>
+      {/* Prior year toggle — Flat Acre's own tenant only, see showPriorYearCompare above */}
+      {showPriorYearCompare && (
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"8px 12px",background:"#ffffff",borderRadius:6,border:"1px solid #1e3020"}}>
+          <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Compare to:</span>
+          {Object.keys(YEAR_LABELS).map(yr=>(<button key={yr} onClick={()=>setPriorYear(yr)} style={{background:priorYear===yr?"#2a7a18":"transparent",border:"1px solid #2a4030",borderRadius:3,padding:"4px 10px",color:priorYear===yr?"#ffffff":"#6a8a50",fontSize:10,fontWeight:priorYear===yr?700:400,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>{yr}</button>))}
+          <span style={{marginLeft:"auto",fontSize:10}}>
+            <span style={{background:"#e8f4e0",padding:"2px 8px",borderRadius:3,color:"#1a5010",fontWeight:600,marginRight:6}}>● Crop Default</span>
+            <span style={{background:"#f4ecd8",padding:"2px 8px",borderRadius:3,color:"#7a4a10",fontWeight:600}}>★ Field Override</span>
+          </span>
+        </div>
+      )}
       {/* Actual $ is entered farm-wide from the 💰 Expenses screen (top nav) —
           same total-÷-acres mechanism as the projected budget there. It shows
           up here already split out per category; nudge any single category
@@ -2693,7 +2768,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
       {EXP.map(([key,label])=>{
         const rate=getRate(field,key);const cropDef=getCropDefault(field.crop,key);
         const isOv=field.expenseOverrides&&field.expenseOverrides[key]!==undefined;
-        const prior=priorRates[key];const chg=rate-prior;const tot=rate*field.acres;
+        const prior=priorRates?priorRates[key]:null;const chg=prior!=null?rate-prior:null;const tot=rate*field.acres;
         const actualVal=field.actualExpenses&&field.actualExpenses[key]!==undefined?field.actualExpenses[key]:"";
         const hasActual=actualVal!==""&&actualVal!==undefined&&!isNaN(actualVal);
         const catVariance=hasActual?(+actualVal-tot):null;
@@ -2710,8 +2785,8 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
             ${f2(cropDef)}
             {isOv&&(<button onClick={()=>onResetExpense(field.id,key)} title="Reset to crop default" style={{background:"#fff3d4",border:"1px solid #4a3010",borderRadius:3,padding:"1px 5px",color:"#8a6010",fontSize:9,cursor:"pointer"}}>↺</button>)}
           </div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>${f2(prior)}</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,textAlign:"right",color:chg>0?"#c02020":chg<0?"#1a7010":"#6a8a50"}}>{chg>0?"+":""}{f2(chg)} ({chg>0?"+":""}{prior>0?(chg/prior*100).toFixed(1):0}%)</div>
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>{prior!=null?`$${f2(prior)}`:"—"}</div>
+          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,textAlign:"right",color:chg==null?"#c0c8b8":chg>0?"#c02020":chg<0?"#1a7010":"#6a8a50"}}>{chg==null?"—":`${chg>0?"+":""}${f2(chg)} (${chg>0?"+":""}${prior>0?(chg/prior*100).toFixed(1):0}%)`}</div>
           <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
             <span style={{color:"#8a5030",fontSize:11}}>$</span>
             <input type="number" value={actualVal} step="1" placeholder="0" onChange={e=>onUpdateActualExpense(field.id,key,e.target.value)}
@@ -2724,7 +2799,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         <div style={{fontSize:12,color:"#3a5a28",fontWeight:600}}>TOTAL EXPENSES</div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:12,color:"#c05010",textAlign:"right"}}>${f2(c.expRate)}/ac</div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#6a8a50",textAlign:"right"}}>${f2(EXP.reduce((s,[k])=>s+getCropDefault(field.crop,k),0))}/ac</div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>${f2(Object.values(priorRates).reduce((s,v)=>s+v,0))}/ac</div>
+        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>{priorRates?`$${f2(Object.values(priorRates).reduce((s,v)=>s+v,0))}/ac`:"—"}</div>
         <div></div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a5030",textAlign:"right",fontWeight:600}}>{actual?f$(actual.total):"—"}</div>
         <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,textAlign:"right",fontWeight:600,color:!actual?"#c0c8b8":actual.total>c.expenses?"#c02020":"#1a7010"}}>{actual?`${actual.total>c.expenses?"+":""}${f$(actual.total-c.expenses,true)}`:"—"}</div>
@@ -4376,7 +4451,7 @@ function ImportWorkbookModal({ tenantId, token, onClose }) {
   </div>);
 }
 
-export default function AgriPlanModule({ tenantId, token, userProfile, persist, farmId } = {}){
+export default function AgriPlanModule({ tenantId, token, userProfile, persist, farmId, farmName } = {}){
   // Configure Firebase and localStorage mode for this tenant
  _isAgriLogixTenant = !!tenantId;
   _tenantIdCache = tenantId || null;
@@ -4858,8 +4933,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
         {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
         {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
-        {perms.canReport&&<button onClick={()=>exportCSV(filtered)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>}
-        {perms.canReport&&<button onClick={()=>openPrint(filtered,entityFilter)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>}
+        {perms.canReport&&<button onClick={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>}
+        {perms.canReport&&<button onClick={()=>openPrint(filtered,entityFilter,tenantId,farmName,fieldHistory,activeYear)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>}
       </div>
     </div>
 
@@ -4928,7 +5003,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
           }}/>)
-          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered)} onPrint={()=>openPrint(filtered,entityFilter)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear} perms={perms}/>)}
+          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear)} onPrint={()=>openPrint(filtered,entityFilter,tenantId,farmName,fieldHistory,activeYear)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear} perms={perms}/>)}
       </div>
     </div>
   </div>);
