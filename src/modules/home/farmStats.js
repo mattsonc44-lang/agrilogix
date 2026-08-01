@@ -9,6 +9,7 @@
 import { dbRead } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
 import { sumLoadsBushels, buildGuaranteeProgress } from "../../core/agriscale.js";
+import { findDueReminders } from "../../core/maintenance.js";
 
 export const PRI_ORDER = { high: 0, medium: 1, low: 2 };
 
@@ -92,12 +93,18 @@ export function computeFarmStats(d, year) {
   const lowStockItems = obj2arr(d.slData?.partsInventory)
     .filter(p => p.notifyLowStock && p.qty !== "" && p.minQty !== "" && Number(p.qty) <= Number(p.minQty));
 
+  // Optional, self-configured per-vehicle maintenance reminders (interval
+  // hours and/or months, set on the vehicle in ServiceLog) — same shared
+  // due-check core/agriscale.js's other Home cards use, so this never drifts
+  // from what ServiceLog's own fleet view shows.
+  const dueMaintenance = findDueReminders(slVehicles);
+
   return {
     apFieldsArr, apAcres, revenueProjected, guarantee, actualBushels, actualRevenue, fieldsWithActuals,
     actualExpensesTotal, fieldsWithActualExpenses, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek, flAcres,
     asFieldsArr, seasonBushels, loadsThisWeek, guaranteeProgress,
-    slVehicles, openTodos, partsNeeded, lowStockItems,
+    slVehicles, openTodos, partsNeeded, lowStockItems, dueMaintenance,
     acres: apAcres || flAcres,
     fieldCount: apFieldsArr.length || flFields.length,
   };

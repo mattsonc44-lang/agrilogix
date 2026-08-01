@@ -67,7 +67,7 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
     actualExpensesTotal, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek,
     seasonBushels, loadsThisWeek,
-    openTodos, partsNeeded, lowStockItems, slVehicles, guaranteeProgress, acres,
+    openTodos, partsNeeded, lowStockItems, slVehicles, guaranteeProgress, acres, dueMaintenance,
   } = computeFarmStats(d, year);
   const flFieldName = id => flFields.find(f => f.id === id)?.name || "Field";
 
@@ -160,6 +160,7 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
         {showServiceLog && <Stat icon="☑️" label="Open To-Dos" val={openTodos.length} color={openTodos.length > 0 ? T.warning : T.text} sub={openTodos.length > 0 ? "click to view" : undefined} onClick={() => onNavigate("serviceLog", "todos")} />}
         {showServiceLog && partsNeeded > 0 && <Stat icon="🔩" label="Parts Needed" val={partsNeeded} color={T.warning} sub="click to view" onClick={() => onNavigate("serviceLog", "order")} />}
         {showServiceLog && lowStockItems.length > 0 && <Stat icon="🔔" label="Low Stock" val={lowStockItems.length} color={T.danger} sub={lowStockItems.slice(0, 3).map(p => p.name).join(", ") + (lowStockItems.length > 3 ? "…" : "")} onClick={() => onNavigate("serviceLog", "parts")} />}
+        {showServiceLog && dueMaintenance.length > 0 && <Stat icon="🔧" label="Maintenance Due" val={dueMaintenance.length} color={T.danger} sub={dueMaintenance.slice(0, 3).map(m => `${m.vehicleName}: ${m.reminder.label || "service"}`).join(", ") + (dueMaintenance.length > 3 ? "…" : "")} onClick={() => onNavigate("serviceLog", "fleet")} />}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "16px", alignItems: "start" }}>
