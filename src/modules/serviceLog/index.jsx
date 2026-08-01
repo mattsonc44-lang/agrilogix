@@ -218,7 +218,7 @@ const nextInvNum = invs=>{const ns=invs.map(i=>parseInt((i.num||"").replace("INV
 const safeLoads = f=>(f&&f.loads)||[];
 
 // ── Main ──────────────────────────────────────────────────────────
-export default function ServiceLogModule({ tenantId, token, persist, userProfile, initialTab }) {
+export default function ServiceLogModule({ tenantId, token, persist, userProfile, initialTab, initialAction }) {
   // Owner/manager/operator tiering — same shared model as AgriPlan/AgriScale,
   // see core/permissions.js. Standalone (no tenantId) mode predates accounts
   // entirely, so it stays full-access.
@@ -267,6 +267,23 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   },[tenantId,token]);
 
   const skipRef = useRef(false);
+
+  // Quick Log deep-link (Home's "⚡ Quick Log") — once vehicles are loaded,
+  // jump straight to the requested vehicle and open the requested form.
+  const quickActionDone=useRef(false);
+  useEffect(()=>{
+    if(loading||quickActionDone.current) return;
+    if((initialAction?.type==="logService"||initialAction?.type==="addTodo")&&initialAction.vehicleId){
+      const v=D.vehicles.find(vv=>vv.id===initialAction.vehicleId);
+      if(v){
+        setSelVeh(v.id);
+        setSelCust(v.customerId||null);
+        setTab("fleet");
+        setModal(initialAction.type==="logService"?"record":"todo");
+      }
+      quickActionDone.current=true;
+    }
+  },[loading,D.vehicles,initialAction]);
 
   useEffect(()=>{
     if(!tenantId) return;
