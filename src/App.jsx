@@ -372,6 +372,13 @@ export default function App() {
   // viewing their own account or impersonating another tenant via Admin View —
   // they need to be able to get in to fix or upgrade an expired account.
   const trialExpired = tenantProfile.plan === "trial" && tenantProfile.trialEnds && new Date(tenantProfile.trialEnds) < new Date();
+  // Non-blocking heads-up before the hard block above ever fires — shown once
+  // trial has 5 days or less left, so owners/managers aren't caught off guard
+  // by the full-screen "trial ended" wall with no warning first.
+  const trialDaysLeft = (tenantProfile.plan === "trial" && tenantProfile.trialEnds)
+    ? Math.ceil((new Date(tenantProfile.trialEnds) - new Date()) / 86400000) : null;
+  const trialEndingSoon = trialDaysLeft != null && trialDaysLeft > 0 && trialDaysLeft <= 5
+    && (impersonatedProfile?.role === "owner" || impersonatedProfile?.role === "manager") && !isAdmin;
   if (trialExpired && !isAdmin) {
     return (
       <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:T.bg, padding:"20px" }}>
@@ -508,6 +515,13 @@ export default function App() {
       {!FB_CONFIGURED && (
         <div style={{ background:"#FDF6EC", borderBottom:`1px solid #D4A840`, padding:"8px 20px", fontSize:"12px", color:"#7A5008" }}>
           ⚠️ Firebase not configured
+        </div>
+      )}
+
+      {trialEndingSoon && (
+        <div style={{ background:"#FDF6EC", borderBottom:`1px solid #D4A840`, padding:"8px 20px", fontSize:"12px", color:"#7A5008", display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
+          <span>⏳ Your trial ends in {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} ({new Date(tenantProfile.trialEnds).toLocaleDateString("en-US",{month:"long",day:"numeric"})}).</span>
+          <a href="mailto:cmattson@agrilogixsolutions.com?subject=Upgrade%20my%20Agri%20Logix%20trial" style={{ color:"#7A5008", fontWeight:700, textDecoration:"underline" }}>Contact us to upgrade</a>
         </div>
       )}
 
