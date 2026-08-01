@@ -1500,6 +1500,121 @@ function FarmExpensesView({ fields, activeYear, onApplyExpenses, onApplyActualEx
   );
 }
 
+// ── Farm-wide Harvest Entry ─────────────────────────────────────────────────
+// Mirrors FarmExpensesView's total-÷-acres mechanism, but for actual bushels
+// instead of $ — pick an entity, pick a crop, enter the total bushels
+// actually harvested across every field growing that crop, and it splits
+// proportional to acres and writes into fieldHistory (source:"manual"). For
+// tenants without AgriScale weigh-ticket sync, this is the only way to get
+// real yield numbers into the app at all.
+function FarmHarvestView({ fields, activeYear, fieldHistory, onApplyHarvest }) {
+  const entities = [...new Set(fields.map(f=>f.entity).filter(Boolean))];
+  const [activeEntity, setActiveEntity] = useState(()=>entities[0]||"");
+  const entityFields = fields.filter(f=>f.entity===activeEntity);
+  const crops = [...new Set(entityFields.map(f=>f.crop).filter(Boolean))];
+  const [activeCrop, setActiveCrop] = useState(()=>crops[0]||"");
+  useEffect(()=>{ if(!crops.includes(activeCrop)) setActiveCrop(crops[0]||""); },[activeEntity]);
+
+  const cropFields = entityFields.filter(f=>f.crop===activeCrop);
+  const totalAcres = cropFields.reduce((s,f)=>s+f.acres,0);
+  const [totalBu, setTotalBu] = useState("");
+  const [applied, setApplied] = useState(false);
+
+  const currentTotal = cropFields.reduce((s,f)=>s+(parseFloat(fieldHistory?.[f.common]?.[activeYear]?.bushels)||0),0);
+  const projTotal = cropFields.reduce((s,f)=>s+(f.income?.bushelProjection||0)*f.acres,0);
+  const enteredBu = parseFloat(totalBu)||0;
+  const perAcre = totalAcres>0?enteredBu/totalAcres:0;
+
+  const handleApply = () => {
+    if (!enteredBu || !totalAcres) return;
+    const updates = {};
+    cropFields.forEach(f=>{ updates[f.common] = Math.round(perAcre*f.acres*100)/100; });
+    onApplyHarvest(updates);
+    setApplied(true); setTotalBu(""); setTimeout(()=>setApplied(false),2500);
+  };
+
+  return (
+    <div style={{padding:"24px",maxWidth:900,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#1a3010"}}>Harvest Entry — {activeYear}</div>
+          <div style={{fontSize:12,color:"#7a9260",marginTop:2}}>Enter total bushels for one crop across an entity — the app splits it across every field growing that crop, by acres</div>
+        </div>
+        <button onClick={handleApply} disabled={!enteredBu||!totalAcres}
+          style={{background:applied?"#4a9030":enteredBu?"#2a7a18":"#aac890",border:"none",borderRadius:5,padding:"7px 18px",fontSize:12,fontWeight:600,cursor:enteredBu?"pointer":"not-allowed",color:"#fff",fontFamily:"'Barlow',sans-serif"}}>
+          {applied?"✓ Applied!":`Apply to All ${activeCrop||"—"} Fields`}
+        </button>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        {entities.map(e=>(
+          <button key={e} onClick={()=>setActiveEntity(e)} style={{padding:"6px 18px",borderRadius:5,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:e===activeEntity?"#2a7010":"#e8f0d8",color:e===activeEntity?"#fff":"#2a7010"}}>
+            {e} — {fields.filter(f=>f.entity===e).reduce((s,f)=>s+f.acres,0).toFixed(0)} ac
+          </button>
+        ))}
+      </div>
+
+      {crops.length===0?(
+        <div style={{padding:"16px",background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,color:"#7a9260",fontSize:12}}>No crops planted for {activeEntity} this year.</div>
+      ):(<>
+        <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+          {crops.map(c=>(
+            <button key={c} onClick={()=>setActiveCrop(c)} style={{padding:"6px 14px",borderRadius:5,border:`1px solid ${c===activeCrop?"#c07010":"#ccdda0"}`,cursor:"pointer",fontSize:12,fontWeight:600,background:c===activeCrop?cropColor(c):"#fff",color:c===activeCrop?"#fff":"#5a7a48"}}>
+              {c}
+            </button>
+          ))}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
+          <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
+            <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Acres ({activeCrop})</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#1a3010"}}>{totalAcres.toFixed(0)}</div>
+            <div style={{fontSize:10,color:"#8a9a70"}}>{cropFields.length} field{cropFields.length!==1?"s":""}</div>
+          </div>
+          <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
+            <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Currently Recorded</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#c05010"}}>{currentTotal>0?Math.round(currentTotal).toLocaleString():"—"}</div>
+            <div style={{fontSize:10,color:"#8a9a70"}}>{currentTotal>0&&totalAcres>0?`${(currentTotal/totalAcres).toFixed(1)} bu/ac`:`proj. ${totalAcres>0?(projTotal/totalAcres).toFixed(1):0} bu/ac`}</div>
+          </div>
+          <div style={{background:enteredBu>0?"#f4fce8":"#f8fbf5",border:`1px solid ${enteredBu>0?"#88c878":"#ccdda0"}`,borderRadius:8,padding:"12px 16px"}}>
+            <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>New Total Entered</div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <input type="number" min="0" value={totalBu} onChange={e=>setTotalBu(e.target.value)} placeholder={Math.round(currentTotal||projTotal)||"0"}
+                style={{width:"100%",background:"#fff",border:"1px solid #b8d09a",borderRadius:4,padding:"5px 8px",fontSize:14,fontFamily:"'IBM Plex Mono',monospace",color:"#1a3010",outline:"none"}}/>
+              <span style={{fontSize:11,color:"#7a9260"}}>bu</span>
+            </div>
+            <div style={{fontSize:10,color:"#8a9a70",marginTop:4}}>{enteredBu>0&&totalAcres>0?`${perAcre.toFixed(1)} bu/ac`:""}</div>
+          </div>
+        </div>
+
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
+            {["Field","Acres","Recorded Bu","Recorded Bu/Ac","Will Become (if applied)"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:h==="Field"?"left":"right",fontSize:9,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {cropFields.map((f,i)=>{
+              const rec=parseFloat(fieldHistory?.[f.common]?.[activeYear]?.bushels)||0;
+              const willBe=enteredBu>0?Math.round(perAcre*f.acres*100)/100:null;
+              return (
+                <tr key={f.id} style={{background:i%2===0?"#f8fbf5":"#fff",borderBottom:"1px solid #eef4e8"}}>
+                  <td style={{padding:"5px 8px",fontWeight:600,color:"#1a3010"}}>{f.common}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{f.acres.toFixed(1)}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:rec>0?"#2a5a18":"#b0c0a0"}}>{rec>0?Math.round(rec).toLocaleString():"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#7a9260"}}>{rec>0&&f.acres>0?(rec/f.acres).toFixed(1):"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,color:willBe!=null?"#2a7010":"#c0c8b0"}}>{willBe!=null?Math.round(willBe).toLocaleString():"—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{fontSize:10,color:"#8a9a70",marginTop:10,fontStyle:"italic"}}>
+          Clicking "Apply" overwrites each {activeCrop} field's recorded bushels for {activeYear} with its acre-weighted share of the total entered above. Individual fields can still be corrected one at a time from their own Income tab.
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 // ── CSV Export ────────────────────────────────────────────────────────────────
 // tenantId/fieldHistory/activeYear are only used to compute each tenant's OWN
 // real actual-vs-projected figures (calcFieldActuals) — nothing here ever
@@ -2479,7 +2594,7 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 
 
 // ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
+function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onSaveActualBushels,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
   // Operators/managers without the right flag never see raw dollar figures —
   // same PERMS model AgriScale already enforces, see core/permissions.js.
   const p=perms||PERMS.owner;
@@ -2500,6 +2615,13 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
   const[tab,setTab]=useState("income");
   const[priorYear,setPriorYear]=useState("2023 Actuals");
   const[editing,setEditing]=useState(false);
+  // Manual actual-bushels entry — closes the loop for tenants not on
+  // AgriScale, who'd otherwise have no way to record what a field actually
+  // yielded. Writes into the same fieldHistory[common][year] record AgriScale
+  // pushes into, so every downstream consumer (reports, Home, calcFieldActuals)
+  // just works without knowing where the number came from.
+  const[bushelsEdit,setBushelsEdit]=useState(null);
+  useEffect(()=>{ setBushelsEdit(null); },[field.id, activeYear]);
   const[editDraft,setEditDraft]=useState({});
   const[newUnitText,setNewUnitText]=useState("");
   const[newUnitAcres,setNewUnitAcres]=useState("");
@@ -2695,23 +2817,43 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     {tab==="income"&&(<div>
       {(()=>{
         const act=fieldHistory?.[field.common]?.[activeYear];
-        if(!act||!act.bushels) return null;
+        const hasAct=act&&act.bushels>0;
         const projBu=(field.income?.bushelProjection||0)*field.acres;
-        const diff=projBu>0?Math.round((act.bushels-projBu)/projBu*100):null;
-        const estRevenue=act.bushels*(field.income?.currentPrice||0);
+        const diff=hasAct&&projBu>0?Math.round((act.bushels-projBu)/projBu*100):null;
+        const estRevenue=hasAct?act.bushels*(field.income?.currentPrice||0):0;
+        const isManual=act?.source==="manual";
+        const editing=bushelsEdit!=null;
         return (
-          <div style={{background:"#f0f8ec",border:"1px solid #a8d888",borderRadius:8,padding:"12px 16px",marginBottom:16,
+          <div style={{background:hasAct?"#f0f8ec":"#fbfbf5",border:`1px solid ${hasAct?"#a8d888":"#d8ceb8"}`,borderRadius:8,padding:"12px 16px",marginBottom:16,
             display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-            <div style={{fontSize:20}}>✓</div>
-            <div style={{flex:1,minWidth:200}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#2a5a18"}}>
-                {Math.round(act.bushels).toLocaleString()} bu actual ({act.yieldPerAc||Math.round(act.bushels/(field.acres||1))} bu/ac)
-                {diff!=null&&<span style={{color:diff>=0?"#2a8010":"#c05010",marginLeft:8}}>{diff>=0?"+":""}{diff}% vs. projected</span>}
-              </div>
-              <div style={{fontSize:11,color:"#5a7a48",marginTop:2}}>
-                From AgriScale weigh tickets{act.lastUpdated?` · updated ${new Date(act.lastUpdated).toLocaleDateString()}`:""}{p.canViewCosts?` · est. ${f$(estRevenue)} at $${f2(field.income?.currentPrice||0)}/bu`:""}
-              </div>
+            <div style={{fontSize:20}}>{hasAct?"✓":"🌾"}</div>
+            <div style={{flex:1,minWidth:220}}>
+              {hasAct?(<>
+                <div style={{fontSize:12,fontWeight:700,color:"#2a5a18"}}>
+                  {Math.round(act.bushels).toLocaleString()} bu actual ({act.yieldPerAc||Math.round(act.bushels/(field.acres||1))} bu/ac)
+                  {diff!=null&&<span style={{color:diff>=0?"#2a8010":"#c05010",marginLeft:8}}>{diff>=0?"+":""}{diff}% vs. projected</span>}
+                </div>
+                <div style={{fontSize:11,color:"#5a7a48",marginTop:2}}>
+                  {isManual?"Manually entered":"From AgriScale weigh tickets"}{act.lastUpdated?` · updated ${new Date(act.lastUpdated).toLocaleDateString()}`:""}{p.canViewCosts?` · est. ${f$(estRevenue)} at $${f2(field.income?.currentPrice||0)}/bu`:""}
+                </div>
+              </>):(
+                <div style={{fontSize:12,color:"#8a9a70",fontStyle:"italic"}}>No actual harvest recorded yet for {activeYear}.</div>
+              )}
             </div>
+            {onSaveActualBushels&&(editing?(
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <input type="number" autoFocus value={bushelsEdit} placeholder="bushels" onChange={e=>setBushelsEdit(e.target.value)}
+                  style={{width:100,border:"1px solid #4a8030",borderRadius:4,padding:"5px 8px",fontSize:12,fontFamily:"'IBM Plex Mono',monospace",color:"#1a3010",outline:"none"}}/>
+                <button onClick={()=>{onSaveActualBushels(field.common,activeYear,bushelsEdit);setBushelsEdit(null);}}
+                  style={{background:"#2a7a18",border:"none",borderRadius:4,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Save</button>
+                <button onClick={()=>setBushelsEdit(null)} style={{background:"none",border:"1px solid #ccc",borderRadius:4,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#888",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
+              </div>
+            ):(
+              <button onClick={()=>setBushelsEdit(hasAct?String(act.bushels):"")}
+                style={{background:"#fff",border:"1px solid #4a8030",borderRadius:4,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#2a6010",fontWeight:600,fontFamily:"'Barlow',sans-serif"}}>
+                {hasAct?"✏️ Edit":"+ Enter Actual"}
+              </button>
+            ))}
           </div>
         );
       })()}
@@ -2923,7 +3065,22 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHisto
   const ts=k=>{if(sortKey===k)setSortDir(d=>-d);else{setSortKey(k);setSortDir(1);}};
   const Th=({label,k,right})=>(<th onClick={()=>ts(k)} style={{padding:"8px 10px",fontSize:10,color:sortKey===k?"#1a7010":"#6a8a50",textTransform:"uppercase",letterSpacing:0.8,cursor:"pointer",textAlign:right?"right":"left",background:"#ffffff",borderBottom:"2px solid #2a4030",fontWeight:500,whiteSpace:"nowrap"}}>{label}{sortKey===k?(sortDir>0?" ↑":" ↓"):""}</th>);
   const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);const totNet=totRev-totExp;const totAc=fields.reduce((s,f)=>s+f.acres,0);
+  // Budget-overrun alert — computed here (not on the Home dashboard) because
+  // this is the one place the full expense-rate engine (getRate/EXP/crop
+  // defaults/overrides) already lives; duplicating it elsewhere would drift.
+  const overBudget=useMemo(()=>{
+    if(!p.canViewCosts) return [];
+    return fields.map(f=>{const c=calc(f);const a=calcActual(f);return a&&a.total>c.expenses?{f,variance:a.total-c.expenses}:null;})
+      .filter(Boolean).sort((x,y)=>y.variance-x.variance);
+  },[fields,p.canViewCosts]);
   return(<div>
+    {overBudget.length>0&&(
+      <div style={{background:"#fff4f0",border:"1px solid #e0a090",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:16}}>⚠️</span>
+        <span style={{fontSize:12,fontWeight:700,color:"#8a3020"}}>{overBudget.length} field{overBudget.length!==1?"s":""} over budget</span>
+        <span style={{fontSize:11,color:"#8a5030"}}>{overBudget.slice(0,4).map(o=>`${o.f.common} (+${f$(o.variance)})`).join(", ")}{overBudget.length>4?` + ${overBudget.length-4} more`:""}</span>
+      </div>
+    )}
     <div style={{display:"flex",alignItems:"center",marginBottom:16,gap:10}}>
       <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"#1a4010"}}>All Fields</div>
       <div style={{fontSize:12,color:"#7a9260"}}>— {fields.length} units · {totAc.toFixed(0)} ac</div>
@@ -4774,6 +4931,35 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       });
     });
   },[pushUndo]);
+  // Manual actual-bushels entry (per field) — writes into the same
+  // fieldHistory[common][year] record AgriScale pushes into (marked
+  // source:"manual" so the UI can label it), so every downstream reader
+  // (reports, Home, calcFieldActuals) just works regardless of where the
+  // number came from.
+  const saveActualBushels=useCallback((common,year,bushelsStr)=>{
+    const bu=parseFloat(bushelsStr);
+    const acres=fields.find(f=>f.common===common)?.acres||0;
+    const yearData={...(fieldHistory[common]?.[year]||{})};
+    if(!bu||bu<=0){ delete yearData.bushels; delete yearData.yieldPerAc; delete yearData.source; delete yearData.lastUpdated; }
+    else{ yearData.bushels=bu; yearData.yieldPerAc=acres>0?+(bu/acres).toFixed(2):undefined; yearData.source="manual"; yearData.lastUpdated=new Date().toISOString(); }
+    const updated={...fieldHistory,[common]:{...(fieldHistory[common]||{}),[year]:yearData}};
+    setFieldHistory(updated);
+    if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
+  },[fieldHistory,fields,tenantId,token,farmId]);
+  // Farm-wide bulk harvest entry (FarmHarvestView) — same total-÷-acres
+  // mechanism as farm-wide expenses: enter total bushels for one crop across
+  // an entity, split across every field growing that crop, proportional to
+  // acres.
+  const applyHarvest=useCallback((updates)=>{ // {common: bushels}
+    const now=new Date().toISOString();
+    const merged={...fieldHistory};
+    Object.entries(updates).forEach(([common,bu])=>{
+      const acres=fields.find(f=>f.common===common)?.acres||0;
+      merged[common]={...(merged[common]||{}),[activeYear]:{...(merged[common]?.[activeYear]||{}),bushels:bu,yieldPerAc:acres>0?+(bu/acres).toFixed(2):undefined,source:"manual",lastUpdated:now}};
+    });
+    setFieldHistory(merged);
+    if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(merged)}).catch(()=>{});
+  },[fieldHistory,fields,activeYear,tenantId,token,farmId]);
   // Removes a single crop's entire imported APH history (all years) from one field — for
   // cleaning up a crop that got attributed to the wrong field during an APH import (e.g. a
   // duplicate same-named field that shared the wrong field's aphData bucket before that was
@@ -4935,6 +5121,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         <button onClick={()=>{setMainView("table");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
         {(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)&&<button onClick={()=>{setMainView("history");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
         {perms.canViewCosts&&<button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>}
+        {perms.canViewCosts&&<button onClick={()=>{setMainView("harvest");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="harvest"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Harvest</button>}
         <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
         {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
         {isFlatAcreTenant(tenantId)&&<button onClick={()=>setShowImportWorkbook(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import Workbook</button>}
@@ -5006,7 +5193,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
           :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} onApplyActualExpenses={applyActualExpenses} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
+          :mainView==="harvest"&&perms.canViewCosts?(<FarmHarvestView fields={fields} activeYear={activeYear} fieldHistory={fieldHistory} onApplyHarvest={applyHarvest} />)
+          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onSaveActualBushels={saveActualBushels} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
