@@ -67,7 +67,7 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
     actualExpensesTotal, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek,
     seasonBushels, loadsThisWeek,
-    openTodos, partsNeeded, lowStockItems, slVehicles, acres,
+    openTodos, partsNeeded, lowStockItems, slVehicles, guaranteeProgress, acres,
   } = computeFarmStats(d, year);
   const flFieldName = id => flFields.find(f => f.id === id)?.name || "Field";
 
@@ -145,6 +145,17 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
         {(showAgriPlan && fieldsWithActuals > 0) || (showAgriScale && seasonBushels > 0) ? (
           <Stat icon="⚖️" label="Bushels Harvested" val={Math.round(actualBushels || seasonBushels).toLocaleString()} sub={showAgriScale && loadsThisWeek > 0 ? `${loadsThisWeek} loads this week` : (fieldsWithActuals ? `${fieldsWithActuals} field${fieldsWithActuals !== 1 ? "s" : ""} reported` : "")} onClick={() => onNavigate(showAgriScale ? "agriScale" : "agriPlan")} />
         ) : null}
+        {showAgriScale && perms.canViewInsurance && guaranteeProgress.length > 0 && (() => {
+          const totalGuar = guaranteeProgress.reduce((s, u) => s + u.guaranteeBu, 0);
+          const totalHarv = guaranteeProgress.reduce((s, u) => s + u.harvestedBu, 0);
+          const pct = totalGuar > 0 ? Math.round((totalHarv / totalGuar) * 100) : 0;
+          const behind = guaranteeProgress.filter(u => u.pct < 100).length;
+          return (
+            <Stat icon="🛡" label="Guarantee Progress" val={`${pct}%`} color={behind > 0 ? T.warning : T.green}
+              sub={behind > 0 ? `${behind} unit${behind !== 1 ? "s" : ""} below guarantee pace so far` : "bushels logged so far"}
+              onClick={() => onNavigate("agriScale", "REPORT")} />
+          );
+        })()}
         {showFieldLog && <Stat icon="📋" label="Activity This Week" val={activitiesThisWeek} sub={`${flActivities.length} logged total`} onClick={() => onNavigate("fieldlog")} />}
         {showServiceLog && <Stat icon="☑️" label="Open To-Dos" val={openTodos.length} color={openTodos.length > 0 ? T.warning : T.text} sub={openTodos.length > 0 ? "click to view" : undefined} onClick={() => onNavigate("serviceLog", "todos")} />}
         {showServiceLog && partsNeeded > 0 && <Stat icon="🔩" label="Parts Needed" val={partsNeeded} color={T.warning} sub="click to view" onClick={() => onNavigate("serviceLog", "order")} />}

@@ -8,7 +8,7 @@
 // expense table.
 import { dbRead } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
-import { sumLoadsBushels } from "../../core/agriscale.js";
+import { sumLoadsBushels, buildGuaranteeProgress } from "../../core/agriscale.js";
 
 export const PRI_ORDER = { high: 0, medium: 1, low: 2 };
 
@@ -73,6 +73,13 @@ export function computeFarmStats(d, year) {
   const seasonBushels = asFieldsArr.reduce((s, f) => s + sumLoadsBushels(f.loads || []), 0);
   const loadsThisWeek = asFieldsArr.reduce((s, f) => s + (f.loads || []).filter(l => l?.ts && (Date.now() - l.ts) < 7 * 86400000).length, 0);
 
+  // Bushels logged so far vs. guarantee bushels, by insurance unit — same
+  // shared calc AgriScale's own Report tab uses (core/agriscale.js), so the
+  // numbers never drift between the two screens. Home only needs the count
+  // and the "any unit behind pace" flag for its summary card; the full
+  // per-unit breakdown (with the required disclaimer) lives in AgriScale.
+  const guaranteeProgress = buildGuaranteeProgress(asFieldsArr);
+
   const slVehicles = obj2arr(d.slData?.vehicles);
   const openTodos = slVehicles
     .flatMap(v => (v.todos || []).filter(t => !t.done).map(t => ({ ...t, vehicleName: v.name })))
@@ -89,7 +96,7 @@ export function computeFarmStats(d, year) {
     apFieldsArr, apAcres, revenueProjected, guarantee, actualBushels, actualRevenue, fieldsWithActuals,
     actualExpensesTotal, fieldsWithActualExpenses, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek, flAcres,
-    asFieldsArr, seasonBushels, loadsThisWeek,
+    asFieldsArr, seasonBushels, loadsThisWeek, guaranteeProgress,
     slVehicles, openTodos, partsNeeded, lowStockItems,
     acres: apAcres || flAcres,
     fieldCount: apFieldsArr.length || flFields.length,
