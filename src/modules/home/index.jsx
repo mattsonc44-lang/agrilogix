@@ -34,6 +34,8 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
   const perms = getPerms(userProfile);
   const [loading, setLoading] = useState(true);
   const [d, setD] = useState(null);
+  // "⚡ Quick Log" picker — null (closed), {step:"action"}, or {step:"entity", type}
+  const [quickLog, setQuickLog] = useState(null);
   const year = String(new Date().getFullYear());
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
     actualExpensesTotal, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek,
     seasonBushels, loadsThisWeek,
-    openTodos, partsNeeded, lowStockItems, acres,
+    openTodos, partsNeeded, lowStockItems, slVehicles, acres,
   } = computeFarmStats(d, year);
   const flFieldName = id => flFields.find(f => f.id === id)?.name || "Field";
 
@@ -74,6 +76,22 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
   const showAgriScale = enabledModules.includes("agriScale");
   const showServiceLog = enabledModules.includes("serviceLog");
   const firstName = (userProfile?.displayName || userProfile?.name || userProfile?.email || "").split(/[\s@]/)[0];
+
+  // "⚡ Quick Log" — one tap from Home straight into an add-form for a
+  // specific field/vehicle, skipping module → navigate → pick-entity.
+  const canLogActivity = showFieldLog && flFields.length > 0;
+  const canLogService = showServiceLog && slVehicles.length > 0;
+  const quickLogAvailable = canLogActivity || canLogService;
+  const quickActionBtnStyle = {
+    display: "flex", alignItems: "center", gap: "12px", textAlign: "left", width: "100%",
+    background: T.bg, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "12px 14px",
+    cursor: "pointer", fontFamily: "'Barlow',sans-serif",
+  };
+  const quickEntityBtnStyle = {
+    textAlign: "left", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${T.border}`,
+    background: T.bg, cursor: "pointer", fontFamily: "'Barlow',sans-serif", fontSize: "13px",
+    fontWeight: 600, color: T.text,
+  };
 
   const Stat = ({ icon, label, val, sub, color, onClick }) => (
     <div
@@ -105,6 +123,18 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
           {farmName || "Your farm"} · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
         </div>
       </div>
+
+      {/* Quick Log — one tap into an add-form, for whoever's actually out in the field */}
+      {quickLogAvailable && (
+        <button onClick={() => setQuickLog({ step: "action" })} style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", width: "100%",
+          background: T.brand, color: "#FFFFFF", border: "none", borderRadius: "10px",
+          padding: "14px 18px", marginBottom: "20px", cursor: "pointer",
+          fontFamily: "'Barlow',sans-serif", fontSize: "15px", fontWeight: 700,
+        }}>
+          <span style={{ fontSize: "18px" }}>⚡</span> Quick Log
+        </button>
+      )}
 
       {/* Stat cards — only what's naturally already tracked, nothing implying daily upkeep */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "22px" }}>
@@ -201,6 +231,69 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
           <button onClick={onHideHome} style={{ background: "none", border: "none", color: T.faint, fontSize: "11px", cursor: "pointer", textDecoration: "underline" }}>
             Skip this screen next time — go straight to my modules
           </button>
+        </div>
+      )}
+
+      {/* Quick Log picker */}
+      {quickLog && (
+        <div onClick={() => setQuickLog(null)} style={{
+          position: "fixed", inset: 0, background: "rgba(30,20,8,.45)", zIndex: 500,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "16px",
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: T.card, borderRadius: "12px", width: "100%", maxWidth: "420px",
+            maxHeight: "80vh", overflowY: "auto", padding: "22px",
+          }}>
+            {quickLog.step === "action" && (
+              <>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "18px", color: T.brand, marginBottom: "2px" }}>⚡ Quick Log</div>
+                <div style={{ fontSize: "12px", color: T.muted, marginBottom: "16px" }}>What are you logging?</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {canLogActivity && (
+                    <button onClick={() => setQuickLog({ step: "entity", type: "addActivity" })} style={quickActionBtnStyle}>
+                      <span style={{ fontSize: "20px" }}>🌾</span>
+                      <div><div style={{ fontWeight: 700, fontSize: "14px", color: T.text }}>Field Activity</div><div style={{ fontSize: "11px", color: T.muted }}>Seeding, spraying, scouting, harvest…</div></div>
+                    </button>
+                  )}
+                  {canLogService && (
+                    <button onClick={() => setQuickLog({ step: "entity", type: "logService" })} style={quickActionBtnStyle}>
+                      <span style={{ fontSize: "20px" }}>🔧</span>
+                      <div><div style={{ fontWeight: 700, fontSize: "14px", color: T.text }}>Service / Repair</div><div style={{ fontSize: "11px", color: T.muted }}>Log work done on a vehicle or piece of equipment</div></div>
+                    </button>
+                  )}
+                  {canLogService && (
+                    <button onClick={() => setQuickLog({ step: "entity", type: "addTodo" })} style={quickActionBtnStyle}>
+                      <span style={{ fontSize: "20px" }}>☑️</span>
+                      <div><div style={{ fontWeight: 700, fontSize: "14px", color: T.text }}>To-Do</div><div style={{ fontSize: "11px", color: T.muted }}>Note something that needs attention later</div></div>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            {quickLog.step === "entity" && (() => {
+              const isField = quickLog.type === "addActivity";
+              const list = [...(isField ? flFields : slVehicles)].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+              return (
+                <>
+                  <button onClick={() => setQuickLog({ step: "action" })} style={{ background: "none", border: "none", color: T.muted, fontSize: "12px", cursor: "pointer", padding: 0, marginBottom: "10px" }}>← Back</button>
+                  <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "18px", color: T.brand, marginBottom: "12px" }}>
+                    {isField ? "Which field?" : quickLog.type === "logService" ? "Which vehicle?" : "To-do for which vehicle?"}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {list.map(item => (
+                      <button key={item.id} onClick={() => {
+                        setQuickLog(null);
+                        if (isField) onNavigate("fieldlog", null, { type: "addActivity", fieldId: item.id });
+                        else onNavigate("serviceLog", "fleet", { type: quickLog.type, vehicleId: item.id });
+                      }} style={quickEntityBtnStyle}>
+                        {item.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>
