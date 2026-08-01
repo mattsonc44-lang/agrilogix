@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
 import { getPerms, REDACTED } from "../../core/permissions.js";
+import { evaluateReminder } from "../../core/maintenance.js";
 
 // ── CSS matching standalone exactly ───────────────────────────────
 const SL_CSS = `
@@ -384,6 +385,16 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   // ── Mutations ──────────────────────────────────────────────────
   const saveVehicle=f=>{let nv;if(editTarget){nv=D.vehicles.map(v=>v.id===editTarget.id?{...editTarget,...f}:v);}else{const x={id:genId(),todos:[],...f};nv=[...D.vehicles,x];setSelVeh(x.id);}save({vehicles:nv});setModal(null);setEdit(null);};
   const deleteVehicle=id=>{if(!confirm("Delete vehicle and all records?"))return;save({vehicles:D.vehicles.filter(v=>v.id!==id),records:D.records.filter(r=>r.vehicleId!==id)});if(selVehId===id)setSelVeh(null);};
+  // Resets a reminder's baseline to the vehicle's current hours/today — the
+  // one-click "I just did this" action. Reminders are entirely self-set-up
+  // (label + interval) in the Edit Equipment modal; this is the only other
+  // touchpoint, kept intentionally simple rather than trying to auto-detect
+  // a matching service record by name.
+  const markReminderDone=(vid,rid)=>{
+    const v=D.vehicles.find(v=>v.id===vid); if(!v) return;
+    const nv=D.vehicles.map(v=>v.id===vid?{...v,maintReminders:(v.maintReminders||[]).map(r=>r.id===rid?{...r,baselineHours:v.hours||"0",baselineDate:today()}:r)}:v);
+    save({vehicles:nv});
+  };
   const saveRecord=f=>{let nv=D.vehicles;if(f.hours){const h=parseFloat(f.hours),v=D.vehicles.find(v=>v.id===selVehId);if(v&&h>(parseFloat(v.hours)||0))nv=D.vehicles.map(v=>v.id===selVehId?{...v,hours:String(h)}:v);}let nr;if(editTarget){nr=D.records.map(r=>r.id===editTarget.id?{...editTarget,...f}:r);}else{nr=[...D.records,{id:genId(),vehicleId:selVehId,...f}];}save({vehicles:nv,records:nr});setModal(null);setEdit(null);setSelRecs(new Set());};
   const deleteRecord=id=>{save({records:D.records.filter(r=>r.id!==id)});setSelRecs(s=>{const n=new Set(s);n.delete(id);return n;});};
   const saveCustomer=f=>{let nc;if(editTarget){nc=D.customers.map(c=>c.id===editTarget.id?{...editTarget,...f}:c);}else{const x={id:genId(),...f};nc=[...D.customers,x];setSelCust(x.id);}save({customers:nc});setModal(null);setEdit(null);};
@@ -611,7 +622,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
               <div aria-hidden="true" className="main-watermark"/>
 
               {/* ── FLEET ── */}
-              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory} perms={perms} highlightRecId={highlightRecId}/>}
+              {tab==="fleet"&&<FleetView D={D} selVeh={selVeh} selCust={selCust} selCustId={selCustId} setSelVeh={setSelVeh} setSelCust={setSelCust} vRecords={vRecords} selRecIds={selRecIds} setSelRecs={setSelRecs} setModal={setModal} setEdit={setEdit} deleteVehicle={deleteVehicle} deleteRecord={deleteRecord} toggleTodo={toggleTodo} deleteTodo={deleteTodo} markReminderDone={markReminderDone} custName={custName} ICONS={ICONS} printServiceHistory={printServiceHistory} perms={perms} highlightRecId={highlightRecId}/>}
               {tab==="report"&&<ReportView D={D} reportFil={reportFil} setRepFil={setRepFil} custName={custName} vehName={vehName} perms={perms}/>}
               {tab==="costs"&&perms.canViewCosts&&<CostView D={D} custName={custName}/>}
               {tab==="invoices"&&perms.canViewCosts&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
@@ -646,7 +657,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
 }
 
 // ── Fleet View ────────────────────────────────────────────────────
-function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,custName,ICONS,printServiceHistory,perms,highlightRecId}){
+function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,selRecIds,setSelRecs,setModal,setEdit,deleteVehicle,deleteRecord,toggleTodo,deleteTodo,markReminderDone,custName,ICONS,printServiceHistory,perms,highlightRecId}){
   const canCost=perms?perms.canViewCosts:true;
   const [partsMenu, setPartsMenu] = useState(false);
 
@@ -724,10 +735,11 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
       )}
       <div className="fleet-grid">
         {cvs.length===0&&<div className="empty" style={{gridColumn:"1/-1"}}><div className="empty-icon">🔧</div><div className="empty-title">No Equipment</div></div>}
-        {cvs.map(v=>{const recs=D.records.filter(r=>r.vehicleId===v.id);return(<div key={v.id} className="vehicle-card" onClick={()=>setSelVeh(v.id)}>
+        {cvs.map(v=>{const recs=D.records.filter(r=>r.vehicleId===v.id);const dueCount=(v.maintReminders||[]).filter(r=>evaluateReminder(r,v.hours).due).length;return(<div key={v.id} className="vehicle-card" onClick={()=>setSelVeh(v.id)}>
           <div className="vc-type">{ICONS[v.type]} {v.type}</div><div className="vc-name">{v.name}</div>
           <div className="vc-sub">{[v.year,v.make,v.model].filter(Boolean).join(" · ")}</div>
           <div className="vc-meta"><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{recs.length}</div></div>{canCost&&<div><div className="vc-stat-lbl">Cost</div><div className="vc-stat-val">${sumCost(recs).toLocaleString()}</div></div>}{v.hours&&<div><div className="vc-stat-lbl">Hrs/Mi</div><div className="vc-stat-val">{Number(v.hours).toLocaleString()}</div></div>}</div>
+          {dueCount>0&&<div className="vc-last" style={{color:"#dc2626",fontWeight:600}}>🔧 {dueCount} maintenance item{dueCount>1?"s":""} due</div>}
           {recs[0]&&<div className="vc-last">Last: {recs[0].type} — {recs[0].date}</div>}
         </div>);})}
       </div>
@@ -790,6 +802,35 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
 
         {selVeh.notes&&<div className="vic-notes">📝 {selVeh.notes}</div>}
       </div>
+
+      {/* Maintenance Reminders — optional, set up per-vehicle in Edit Equipment */}
+      {(selVeh.maintReminders||[]).length>0&&(()=>{
+        const reminders=(selVeh.maintReminders||[]).map(r=>({r,ev:evaluateReminder(r,selVeh.hours)}));
+        const dueCount=reminders.filter(x=>x.ev.due).length;
+        return(<>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"8px"}}>
+            <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:"15px",fontWeight:700,color:"var(--text-bright)"}}>
+              🔧 Maintenance Reminders {dueCount>0&&<span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"11px",padding:"2px 7px",borderRadius:"10px",background:"rgba(220,38,38,.1)",color:"#dc2626",marginLeft:"6px"}}>{dueCount} due</span>}
+            </span>
+            <button className="btn btn-ghost btn-sm" onClick={()=>{setEdit(selVeh);setModal("vehicle");}}>Edit</button>
+          </div>
+          {reminders.map(({r,ev})=>(
+            <div key={r.id} className="todo-item" style={{borderLeftColor:ev.due?"#dc2626":"#16a34a"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-bright)"}}>{r.label||"Reminder"}</div>
+                <div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>
+                  {[r.intervalHours?`every ${r.intervalHours} hrs`:null,r.intervalMonths?`every ${r.intervalMonths} mo`:null].filter(Boolean).join(" or ")}
+                  {ev.due
+                    ?(ev.dueByHours?` — ${ev.hoursOver.toFixed(0)} hrs over`:` — time's up`)
+                    :(r.intervalHours?` — ${Math.max(0,r.intervalHours-ev.hoursSince).toFixed(0)} hrs left`:"")}
+                </div>
+              </div>
+              <span style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"10px",letterSpacing:"1px",padding:"1px 6px",borderRadius:"3px",background:ev.due?"rgba(220,38,38,.12)":"rgba(22,163,74,.12)",color:ev.due?"#dc2626":"#16a34a",flexShrink:0}}>{ev.due?"DUE":"OK"}</span>
+              <button className="btn btn-ghost btn-sm" style={{padding:"2px 7px",fontSize:"11px"}} onClick={()=>markReminderDone(selVeh.id,r.id)}>✓ Done</button>
+            </div>
+          ))}
+        </>);
+      })()}
 
       {/* Todos */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"8px"}}>
@@ -1364,12 +1405,19 @@ function ImportMaintenanceModal({ vehicles, records, onImport, onRepair, onClose
 }
 
 function VehicleMo({initial,customers,onSave,onClose}){
-  const[f,setF]=useState({name:initial?.name||"",type:initial?.type||"Tractor",customerId:initial?.customerId||"",year:initial?.year||"",make:initial?.make||"",model:initial?.model||"",vin:initial?.vin||"",engine:initial?.engine||"",hp:initial?.hp||"",hours:initial?.hours||"",notes:initial?.notes||""});
+  const[f,setF]=useState({name:initial?.name||"",type:initial?.type||"Tractor",customerId:initial?.customerId||"",year:initial?.year||"",make:initial?.make||"",model:initial?.model||"",vin:initial?.vin||"",engine:initial?.engine||"",hp:initial?.hp||"",hours:initial?.hours||"",notes:initial?.notes||"",maintReminders:initial?.maintReminders||[]});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const addReminder=()=>setF(p=>({...p,maintReminders:[...p.maintReminders,{id:genId(),label:"",intervalHours:"",intervalMonths:"",baselineHours:p.hours||"0",baselineDate:today()}]}));
+  const updReminder=(i,k,v)=>setF(p=>({...p,maintReminders:p.maintReminders.map((r,ii)=>ii===i?{...r,[k]:v}:r)}));
+  const remReminder=i=>setF(p=>({...p,maintReminders:p.maintReminders.filter((_,ii)=>ii!==i)}));
   return(<Mo title={initial?"Edit Equipment":"Add Equipment"} onClose={onClose} onSave={()=>{if(!f.name.trim())return alert("Name required.");onSave(f);}} saveLabel={initial?"Save Changes":"Add Equipment"} large>
     <Fr><Fg label="Name *" full><Fi value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. JD 9620R"/></Fg></Fr>
     <Fr><Fg label="Type"><Fs value={f.type} onChange={e=>s("type",e.target.value)}>{["Truck","Tractor","Combine","Grain Cart","Semi","Trailer","Sprayer","Pickup","ATV/UTV","Generator","Other"].map(t=><option key={t}>{t}</option>)}</Fs></Fg><Fg label="Customer"><Fs value={f.customerId} onChange={e=>s("customerId",e.target.value)}><option value="">— No customer —</option>{[...customers].sort((a,b)=>a.name.localeCompare(b.name)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Fs></Fg></Fr>
     <Fr><Fg label="Year"><Fi value={f.year} onChange={e=>s("year",e.target.value)} placeholder="2021"/></Fg><Fg label="Make"><Fi value={f.make} onChange={e=>s("make",e.target.value)} placeholder="John Deere"/></Fg><Fg label="Model"><Fi value={f.model} onChange={e=>s("model",e.target.value)}/></Fg><Fg label="VIN/Serial"><Fi value={f.vin} onChange={e=>s("vin",e.target.value)}/></Fg><Fg label="Engine"><Fi value={f.engine} onChange={e=>s("engine",e.target.value)} placeholder="C15 475"/></Fg><Fg label="HP"><Fi type="number" value={f.hp} onChange={e=>s("hp",e.target.value)}/></Fg><Fg label="Current Hrs/Miles"><Fi type="number" value={f.hours} onChange={e=>s("hours",e.target.value)}/></Fg></Fr>
+    <div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Maintenance Reminders (optional)</label><button className="btn btn-ghost btn-xs" onClick={addReminder}>+ Add Reminder</button></div>
+    {f.maintReminders.map((r,i)=>(<div key={r.id||i} className="part-entry"><Fi placeholder="e.g. Oil Change" value={r.label} onChange={e=>updReminder(i,"label",e.target.value)}/><Fi type="number" placeholder="Every N hrs" value={r.intervalHours} onChange={e=>updReminder(i,"intervalHours",e.target.value)}/><Fi type="number" placeholder="Or N months" value={r.intervalMonths} onChange={e=>updReminder(i,"intervalMonths",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remReminder(i)}>✕</button></div>))}
+    {f.maintReminders.length>0&&<div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>Starts counting from {initial?"the current":"the"} hours reading and today's date — use "✓ Done" on the vehicle page to reset after you actually do the work.</div>}
+    </div>
     <Fg label="Notes" full><textarea className="form-textarea" value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
 }
