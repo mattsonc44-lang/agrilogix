@@ -19,6 +19,7 @@ import ServiceLogModule from "./modules/serviceLog/index.jsx";
 import AgriScaleModule  from "./modules/agriScale/index.jsx";
 import AgriPlanModule  from "./modules/agriPlan/index.jsx";
 import HomeModule from "./modules/home/index.jsx";
+import MultiFarmModule from "./modules/multiFarm/index.jsx";
 
 // ── Farm colors ───────────────────────────────────────────────────
 const FARM_COLORS = [
@@ -359,6 +360,10 @@ export default function App() {
   const customDefaultFarm = farms.find(f => f.id === "default");
   const effectiveDefaultFarm = customDefaultFarm || { ...DEFAULT_FARM, name: tenantProfile.name || DEFAULT_FARM.name };
   const allFarms = [effectiveDefaultFarm, ...farms.filter(f => f.id !== "default")];
+  // Side-by-side farm comparison only makes sense once there's more than one
+  // real farm, and (like Org settings) is an owner/manager-level view — an
+  // operator only needs their own farm's numbers, not a cross-farm rollup.
+  const canCompareFarms = allFarms.length > 1 && (impersonatedProfile?.role === "owner" || impersonatedProfile?.role === "manager");
 
   // ── Trial expiration enforcement ──────────────────────────────────
   // Only "trial" plans ever expire — "paid" and "comp" tenants are never gated
@@ -410,6 +415,19 @@ export default function App() {
               fontFamily:"'Barlow',sans-serif", whiteSpace:"nowrap", transition:"all .15s",
             }}>
               <span>🏠</span><span>Home</span>
+            </button>
+          )}
+          {canCompareFarms && (
+            <button onClick={()=>{ window.location.hash = "multiFarm"; setModule("multiFarm"); setPendingTab(null); }} style={{
+              display:"flex", alignItems:"center", gap:"6px", padding:"14px 16px",
+              border:"none", cursor:"pointer",
+              background: module==="multiFarm" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: module==="multiFarm" ? "#FFFFFF" : "rgba(255,255,255,0.65)",
+              fontSize:"13px", fontWeight: module==="multiFarm" ? 700 : 400,
+              borderBottom: module==="multiFarm" ? "2px solid #FFFFFF" : "2px solid transparent",
+              fontFamily:"'Barlow',sans-serif", whiteSpace:"nowrap", transition:"all .15s",
+            }}>
+              <span>⇄</span><span>All Farms</span>
             </button>
           )}
           {enabledModules.map(mid => {
@@ -542,6 +560,7 @@ export default function App() {
       {/* ── Modules ── */}
       <div>
         {module === "home"        && <HomeModule        key={`home-${activeFarm.id}`} farmId={activeFarm.id} farmName={activeFarm.name} tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} enabledModules={enabledModules} onNavigate={(mid,tab)=>{ window.location.hash=mid; setModule(mid); setPendingTab(tab||null); }} onHideHome={toggleHomeScreen}/>}
+        {module === "multiFarm"   && canCompareFarms && <MultiFarmModule tenantId={effectiveTenantId} token={session.idToken} userProfile={impersonatedProfile} farms={allFarms} enabledModules={enabledModules} onOpenFarm={(f)=>{ setActiveFarm(f); window.location.hash="home"; setModule("home"); setPendingTab(null); }}/>}
         {module === "fieldlog"   && <FieldLogModule   key={`fl-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.fieldlog   || impersonatedProfile.role}} persist={persist}/>}
         {module === "agriScale"  && <AgriScaleModule  key={`as-${activeFarm.id}`}  farmId={activeFarm.id}  farmName={activeFarm.name}  tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.agriScale   || impersonatedProfile.role}} persist={persist}/>}
         {module === "serviceLog" && <ServiceLogModule tenantId={effectiveTenantId} token={session.idToken} userProfile={{...impersonatedProfile, role: impersonatedProfile.moduleRoles?.serviceLog  || impersonatedProfile.role}} persist={persist} initialTab={pendingTab}/>}
