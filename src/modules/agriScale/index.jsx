@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary } from "../../core/agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch } from "../../core/agriscale.js";
 import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -817,6 +817,8 @@ setRawInput(p=>{ const n=p==="0"?String(k):p+k; return n.length>5?p:n; });
 // ── Record load ───────────────────────────────────────────────
 const recordLoad = () => {
 if(!canRecord) return;
+const mismatch = detectCropMismatch(safeFields, safeBins, activeBinId, grain.name);
+if(mismatch && !confirm(`⚠ Crop mismatch: ${mismatch.binName} already has ${mismatch.existing} recorded in it. You're about to add ${grain.name}. Continue and mix grains in this bin?`)) return;
 const now = new Date();
 const load = {
 id:nextId.current++, net:netLbs, ts:now.getTime(),
@@ -841,6 +843,15 @@ const updateLoad = (updatedLoad) => {
 const owner = findLoadOwner(updatedLoad.id);
 if(!owner) return;
 const oldLoad = owner.loads.find(l=>l.id===updatedLoad.id);
+// Same crop-mismatch guard as recording a new load — catches reassigning an
+// existing load to a different bin (or correcting its grain) in a way that
+// would mix crops. Excludes this load's own prior entry from the "already
+// in the bin" check so fixing a typo on the bin's only load doesn't warn
+// against itself.
+if((updatedLoad.binId!==oldLoad.binId || updatedLoad.grainName!==oldLoad.grainName)){
+const mismatch = detectCropMismatch(safeFields, safeBins, updatedLoad.binId, updatedLoad.grainName, updatedLoad.id);
+if(mismatch && !confirm(`⚠ Crop mismatch: ${mismatch.binName} already has ${mismatch.existing} recorded in it. You're about to save this load as ${updatedLoad.grainName}. Continue and mix grains in this bin?`)) return;
+}
 const nb = safeBins.map(b=>{
 let s = b.storedLbs;
 if(b.id===oldLoad.binId) s = Math.max(0, s - oldLoad.net);
