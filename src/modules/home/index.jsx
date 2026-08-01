@@ -62,6 +62,7 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
   // duplication.
   const {
     apFieldsArr, revenueProjected, guarantee, actualBushels, actualRevenue, fieldsWithActuals,
+    actualExpensesTotal, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek,
     seasonBushels, loadsThisWeek,
     openTodos, partsNeeded, acres,
@@ -108,7 +109,8 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
       {/* Stat cards — only what's naturally already tracked, nothing implying daily upkeep */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "22px" }}>
         {(showAgriPlan || showFieldLog) && <Stat icon="🌾" label="Acres" val={acres ? acres.toLocaleString() : "—"} sub={`${(apFieldsArr.length || flFields.length)} fields`} onClick={() => onNavigate(showAgriPlan ? "agriPlan" : "fieldlog")} />}
-        {showAgriPlan && perms.canViewCosts && <Stat icon="💵" label="Projected Revenue" val={fmtMoney(revenueProjected)} color={T.green} sub={fieldsWithActuals > 0 ? `${fmtMoney(actualRevenue)} actual so far` : "based on current plan"} onClick={() => onNavigate("agriPlan")} />}
+        {showAgriPlan && perms.canViewCosts && <Stat icon="💵" label="Projected Revenue" val={fmtMoney(revenueProjected)} color={T.green} sub={actualNet != null ? `${fmtMoney(actualNet)} net actual so far` : fieldsWithActuals > 0 ? `${fmtMoney(actualRevenue)} actual so far` : "based on current plan"} onClick={() => onNavigate("agriPlan")} />}
+        {showAgriPlan && perms.canViewCosts && actualExpensesTotal > 0 && <Stat icon="🧾" label="Actual Expenses" val={fmtMoney(actualExpensesTotal)} color={T.warning} sub={actualNet != null ? `${fmtMoney(actualNet)} net so far` : "entered so far"} onClick={() => onNavigate("agriPlan")} />}
         {showAgriPlan && perms.canViewInsurance && <Stat icon="🛡" label="Ins. Guarantee" val={fmtMoney(guarantee)} color={T.gold} onClick={() => onNavigate("agriPlan")} />}
         {(showAgriPlan && fieldsWithActuals > 0) || (showAgriScale && seasonBushels > 0) ? (
           <Stat icon="⚖️" label="Bushels Harvested" val={Math.round(actualBushels || seasonBushels).toLocaleString()} sub={showAgriScale && loadsThisWeek > 0 ? `${loadsThisWeek} loads this week` : (fieldsWithActuals ? `${fieldsWithActuals} field${fieldsWithActuals !== 1 ? "s" : ""} reported` : "")} onClick={() => onNavigate(showAgriScale ? "agriScale" : "agriPlan")} />
