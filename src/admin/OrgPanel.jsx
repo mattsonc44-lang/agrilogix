@@ -7,11 +7,21 @@ import InviteModal from "./InviteModal.jsx";
 
 const ROLE_COLOR = { owner:"#C07010", manager:"#2563EB", operator:"#16A34A" };
 
-export default function OrgPanel({ session, profile, tenant, onClose }) {
+export default function OrgPanel({ session, profile, tenant, effectiveTenantId, onClose }) {
   const [users,      setUsers]      = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [err,        setErr]        = useState("");
+
+  // Under Admin View, `tenant` (and therefore everything this panel displays,
+  // like tenantProfile.name below) already reflects the IMPERSONATED org via
+  // effectiveTenantId — but every read/write in this file used to key off
+  // profile.tenantId, the admin's own real tenant. That meant the panel could
+  // show "Mattson Bros" at the top while silently reading/writing the admin's
+  // own account underneath (e.g. billing info entered here would land on the
+  // wrong tenant and never show up on that org's invoice). This must match
+  // what's on screen.
+  const tenantId = effectiveTenantId || profile?.tenantId;
 
   const tenantProfile = tenant?.profile || {};
   const token = session?.idToken;
@@ -29,11 +39,11 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
   }, [tenantProfile.billingAddress, tenantProfile.billingCity]);
 
   const saveBilling = async () => {
-    if (!profile?.tenantId) return;
+    if (!tenantId) return;
     setBillingSaving(true);
     try {
-      await dbWrite(`tenants/${profile.tenantId}/profile/billingAddress`, billingAddress.trim(), token);
-      await dbWrite(`tenants/${profile.tenantId}/profile/billingCity`, billingCity.trim(), token);
+      await dbWrite(`tenants/${tenantId}/profile/billingAddress`, billingAddress.trim(), token);
+      await dbWrite(`tenants/${tenantId}/profile/billingCity`, billingCity.trim(), token);
       setBillingSaved(true);
       setTimeout(() => setBillingSaved(false), 2500);
     } catch(e) { setErr(e.message); }
@@ -41,16 +51,16 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
   };
 
   useEffect(() => {
-    if (!profile?.tenantId) return;
-    dbRead(`tenants/${profile.tenantId}/users`, token)
+    if (!tenantId) return;
+    dbRead(`tenants/${tenantId}/users`, token)
       .then(data => setUsers(obj2arr(data || {})))
       .catch(() => setUsers([]))
       .finally(() => setLoading(false));
-  }, [profile?.tenantId, token]);
+  }, [tenantId, token]);
 
   const changeRole = async (uid, newRole) => {
     try {
-      await dbWrite(`tenants/${profile.tenantId}/users/${uid}/role`, newRole, token);
+      await dbWrite(`tenants/${tenantId}/users/${uid}/role`, newRole, token);
       await dbWrite(`users/${uid}/role`, newRole, token);
       setUsers(u => u.map(u2 => u2.uid===uid ? {...u2, role:newRole} : u2));
     } catch(e) { setErr(e.message); }
@@ -61,7 +71,7 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
     const current = u.moduleRoles || {};
     const cleaned = Object.fromEntries(Object.entries({...current,[moduleId]:newRole}).filter(([,v])=>v));
     try {
-      await dbWrite(`tenants/${profile.tenantId}/users/${uid}/moduleRoles`, cleaned, token);
+      await dbWrite(`tenants/${tenantId}/users/${uid}/moduleRoles`, cleaned, token);
       await dbWrite(`users/${uid}/moduleRoles`, cleaned, token);
       setUsers(u => u.map(u2 => u2.uid===uid ? {...u2,moduleRoles:cleaned} : u2));
     } catch(e) { setErr(e.message); }
@@ -69,7 +79,7 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
 
   const deactivateUser = async (uid) => {
     try {
-      await dbWrite(`tenants/${profile.tenantId}/users/${uid}/active`, false, token);
+      await dbWrite(`tenants/${tenantId}/users/${uid}/active`, false, token);
       setUsers(u => u.map(u2 => u2.uid===uid ? {...u2, active:false} : u2));
     } catch(e) { setErr(e.message); }
   };
@@ -83,7 +93,7 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
       : [...current, moduleId];
     try {
       await dbWrite(`users/${uid}/modules`, next, token);
-      await dbWrite(`tenants/${profile.tenantId}/users/${uid}/modules`, next, token);
+      await dbWrite(`tenants/${tenantId}/users/${uid}/modules`, next, token);
       setUsers(u => u.map(u2 => u2.uid===uid ? {...u2, modules:next} : u2));
     } catch(e) { setErr(e.message); }
   };
@@ -91,7 +101,7 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
   const grantAllModules = async (uid) => {
     try {
       await dbWrite(`users/${uid}/modules`, null, token);
-      await dbWrite(`tenants/${profile.tenantId}/users/${uid}/modules`, null, token);
+      await dbWrite(`tenants/${tenantId}/users/${uid}/modules`, null, token);
       setUsers(u => u.map(u2 => u2.uid===uid ? {...u2, modules:null} : u2));
     } catch(e) { setErr(e.message); }
   };
@@ -255,7 +265,7 @@ export default function OrgPanel({ session, profile, tenant, onClose }) {
 
       {showInvite && (
         <InviteModal
-          tenantId={profile.tenantId}
+          tenantId={tenantId}
           tenantName={tenantProfile.name}
           sentBy={session.localId}
           token_auth={token}
