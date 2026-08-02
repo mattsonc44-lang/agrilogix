@@ -414,6 +414,10 @@ return (
 );
 }
 
+// Module-level (not just inside ProductsModal) so ChemicalPickerModal — a
+// separate top-level component — can also read it.
+const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
+
 // ── Common Hi-Line Herbicide Database (sourced from EPA labels & ND Weed Guide) ──
 const COMMON_CHEMICALS_DB = [
 // One entry per real-world brand name (see GLYPHOSATE_BRANDS above) so the
@@ -3535,7 +3539,6 @@ const delPresetChem = (pid,cid) => setItems(p=>({...p, tankMixPresets:p.tankMixP
 
 const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","gal/100 gal","g/ac"];
 const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
-const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
 
 const add = (cat, defaults) => setItems(p => ({ ...p, [cat]: [...p[cat], { id: genId(), ...defaults }] }));
 const upd = (cat, id, k, v) => setItems(p => ({ ...p, [cat]: p[cat].map(x => x.id === id ? { ...x, [k]: v } : x) }));
