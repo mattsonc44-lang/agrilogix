@@ -88,8 +88,11 @@ describe("toGallons", () => {
     expect(toGallons(3.785411784, "L")).toBeCloseTo(1);
   });
 
-  it("returns null for dry-weight units (no gallon equivalent)", () => {
-    expect(toGallons(16, "oz")).toBeNull();
+  it("converts plain oz to gallons too (assuming fluid ounces), flagged ambiguous at the calcTankMixTotals level", () => {
+    expect(toGallons(128, "oz")).toBeCloseTo(1);
+  });
+
+  it("returns null for true dry-weight units (no gallon equivalent)", () => {
     expect(toGallons(5, "lbs")).toBeNull();
     expect(toGallons(50, "g")).toBeNull();
   });
@@ -114,5 +117,20 @@ describe("calcTankMixTotals — totalGal", () => {
     const { items } = calcTankMixTotals(tankMix, 10, 10);
     expect(items[0].total).toBe(75);
     expect(items[0].totalGal).toBeNull();
+  });
+
+  it("computes totalGal for plain oz/ac too, but flags it ambiguous (could be dry-weight)", () => {
+    const tankMix = [{ id: "c1", chemical: "Glyphosate (Roundup PowerMax)", oz: "16", unit: "oz/ac" }];
+    // 16 oz/ac * 80 ac = 1280 oz -> 10 gal, assuming fluid ounces
+    const { items } = calcTankMixTotals(tankMix, 80, 10);
+    expect(items[0].total).toBe(1280);
+    expect(items[0].totalGal).toBeCloseTo(10);
+    expect(items[0].totalGalAmbiguous).toBe(true);
+  });
+
+  it("does not flag unambiguous liquid units (fl oz, qt, pt, L) as ambiguous", () => {
+    const tankMix = [{ id: "c1", chemical: "X", oz: "16", unit: "fl oz/ac" }];
+    const { items } = calcTankMixTotals(tankMix, 80, 10);
+    expect(items[0].totalGalAmbiguous).toBe(false);
   });
 });

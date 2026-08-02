@@ -27,18 +27,26 @@ const PER_ACRE_SUFFIX = "/ac";
 const PER_100GAL_SUFFIX = "/100 gal";
 
 // Liquid-volume units convert cleanly to gallons — handy since a total like
-// "1280 fl oz" means a lot less at the shop than "10 gal". Dry-weight units
-// ("oz" meaning dry ounces here, as distinct from "fl oz"; also "lbs", "g")
-// have no gallon equivalent and are intentionally left out, so a WDG/dry
-// product's total never gets a bogus gallons figure.
+// "1280 fl oz" means a lot less at the shop than "10 gal". Plain "oz" is
+// genuinely ambiguous in this app's own chemical database: liquid products
+// (Roundup, 2,4-D, Spartan 4F) use it to mean fluid ounces, but true WDG/
+// dry-flowable products (Ally XP, Glean, Finesse) use it to mean dry-weight
+// ounces, where a gallons figure would be meaningless. We still compute a
+// gallons equivalent for "oz" (assuming fluid ounces) so growers can opt
+// into it, but flag it `totalGalAmbiguous` so the UI can default those
+// specifically to the native unit and only convert on request — unlike
+// fl oz/pt/qt/L/mL, which are unambiguous and default to gallons already.
+// True dry-weight units ("lbs", "g") never get a gallons figure at all.
 const GAL_PER_UNIT = {
   "fl oz": 1 / 128,
+  "oz": 1 / 128,
   "pt": 1 / 8,
   "qt": 1 / 4,
   "gal": 1,
   "L": 0.264172,
   "ml": 0.264172 / 1000,
 };
+const AMBIGUOUS_UNITS = new Set(["oz"]);
 
 export function toGallons(amount, unit) {
   const factor = GAL_PER_UNIT[unit];
@@ -72,7 +80,8 @@ export function calcTankMixTotals(tankMix, acres, waterVolGalAc, actualWaterGal)
       }
     }
     const totalGal = total != null ? toGallons(total, totalUnit) : null;
-    return { id: c.id, name, rate: c.oz, unit, total, totalUnit, totalGal };
+    const totalGalAmbiguous = totalUnit != null && AMBIGUOUS_UNITS.has(totalUnit);
+    return { id: c.id, name, rate: c.oz, unit, total, totalUnit, totalGal, totalGalAmbiguous };
   });
 
   return { totalWaterGal, effectiveAcres, items };
