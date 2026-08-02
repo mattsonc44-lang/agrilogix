@@ -3713,7 +3713,7 @@ return(
 <div style={row}>
 <div>
 <div style={{fontWeight:600,fontSize:"13px"}}>Enable AgriScale Connection</div>
-<div style={desc}>Connect to the Mattson Bros grain cart app to sync harvest data</div>
+<div style={desc}>Connect to the Agri Logix Solutions grain cart app to sync harvest data</div>
 </div>
 <Switch on={!!s.agriScaleEnabled} onChange={()=>toggle("agriScaleEnabled")}/>
 </div>
@@ -3722,7 +3722,7 @@ return(
 <div style={{...S.row,paddingTop:"10px"}}>
 <label style={S.label}>AgriScale Firebase URL</label>
 <input style={S.input} type="text"
-placeholder="https://mattson-bros-grain-cart-default-rtdb.firebaseio.com"
+placeholder="https://agri-logix-solutions-grain-cart-default-rtdb.firebaseio.com"
 value={s.agriScaleUrl||""}
 onChange={e=>upd("agriScaleUrl",e.target.value)}/>
 <p style={{margin:"4px 0 0",fontSize:"11px",color:T.muted}}>⚠️ Ensure Firebase rules on this project are not expired</p>
@@ -3798,7 +3798,7 @@ disabled={bulkLoading||!s.agriScaleUrl}>
 <div style={S.g2}>
 <div style={S.row}>
 <label style={S.label}>Farm / Operation Name</label>
-<input style={S.input} type="text" placeholder="e.g. Flat Acre Farms" value={s.farmName||""} onChange={e=>upd("farmName",e.target.value)}/>
+<input style={S.input} type="text" placeholder="e.g. Agri Logix Solutions" value={s.farmName||""} onChange={e=>upd("farmName",e.target.value)}/>
 </div>
 <div style={S.row}>
 <label style={S.label}>Operator Name</label>
