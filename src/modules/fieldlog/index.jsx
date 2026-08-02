@@ -691,6 +691,81 @@ plantback:[
 {crop:"Sunflowers", days:30},
 ]
 },
+// ── Mustard program herbicides ── condiment/oilseed mustard has very few
+// registered in-crop options, so these are worth calling out on their own.
+// Sourced from actual EPA label PDFs (not secondhand summaries) — see specific
+// citations below. NOTE: this database's existing "Centurion" and "Tundra"
+// entries (further up in CHEMICALS/BUILTIN_CHEM_DATA, not this list) were
+// checked while researching this — "Centurion" (clethodim) and "Tundra"
+// (bromoxynil+fenoxaprop-P-ethyl+pyrasulfotole) both appear to be Canada/PMRA
+// -only registrations, not EPA-registered brand names. Left as-is here rather
+// than silently changed since they predate this pass — flagged to Chris directly.
+{
+// EPA Reg. 5481-646 (AMVAC). Labeled via "Rapeseed Subgroup 20A," which
+// explicitly includes mustard seed. Postemergence grass control, needs COC
+// or NIS. 4–12 fl oz/ac depending on grass size/species; max 18 fl oz/ac
+// per crop year; 60-day PHI; don't apply within 14 days of crop bloom.
+// Corn intentionally left off labeledCrops — label only clears "Enlist corn"
+// specifically, not field corn generally, and this app doesn't distinguish traits.
+name:"Quizalofop (Assure II)", type:"Herbicide",
+defaultRate:"8", unit:"fl oz/ac",
+labeledCrops:["Canola","Flax","Peas","Lentils","Chickpeas","Soybeans","Sunflowers","Mustard"],
+plantback:[
+// Label's crop-rotation section: 120 days before ANY crop not on its
+// approved-rotation list — cereals aren't on that list ("highly susceptible").
+{crop:"Wheat", days:120},
+{crop:"Durum", days:120},
+{crop:"Barley", days:120},
+{crop:"Oats", days:120},
+{crop:"Corn", days:120}, // field corn; Enlist corn is cleared for immediate rotation per label
+{crop:"Canola", days:0},
+{crop:"Flax", days:0},
+{crop:"Peas", days:0},
+{crop:"Lentils", days:0},
+{crop:"Chickpeas", days:0},
+{crop:"Soybeans", days:0},
+{crop:"Sunflowers", days:0},
+{crop:"Mustard", days:0},
+]
+},
+{
+// EPA Reg. 070506-00481 "Clethodim 2EC AG Herbicide" — a US-registered
+// clethodim brand (unlike "Centurion," see note above). Explicitly lists
+// Canola/Flax/Mustard Seed. 75-day PHI on mustard seed; season max 16 fl
+// oz/ac on canola/mustard. Foliar grass herbicide — no soil residual, so
+// no rotational-crop plantback restriction.
+name:"Clethodim (Clethodim 2EC AG)", type:"Herbicide",
+defaultRate:"5", unit:"fl oz/ac",
+labeledCrops:["Canola","Flax","Mustard"],
+plantback:[]
+},
+{
+// EPA Reg. 10163-355, FIFRA §24(c) Special Local Need MT-17-0004 — valid
+// ONLY in Montana, expires 12/31/2027 (confirm it's been renewed before
+// relying on this). Fall application into standing stubble ahead of yellow
+// mustard on min-till/no-till ground, lightly incorporated. Rate varies by
+// soil texture: coarse 5.5 lb product/ac, medium 7.5, fine 9.5 (shown here
+// is the medium-soil default). Label states spring canola, crambe, chickpea,
+// pea, lentil, safflower, sunflower, barley, wheat or durum may follow the
+// mustard crop the next year with no extended wait.
+name:"Ethalfluralin (Sonalan 10G – MT Special Local Need)", type:"Herbicide",
+defaultRate:"7.5", unit:"lbs/ac",
+labeledCrops:["Mustard"],
+plantback:[]
+},
+{
+// EPA Reg. 62719-250 Treflan HFP — federal crop list explicitly includes
+// "Mustard Seed" and "Rapeseed" (preplant soil-incorporated, Group 3).
+// Rate intentionally left blank — couldn't find a mustard/rapeseed-specific
+// rate row on the label (other crops have their own tables); don't guess,
+// confirm against the current label before use. Label also cautions against
+// grass/small-grain crops for 12 months after a spring app or 14 after fall,
+// but not a mustard-specific rotational table — left out rather than guessed.
+name:"Trifluralin (Treflan HFP)", type:"Herbicide",
+defaultRate:"", unit:"pt/ac",
+labeledCrops:["Mustard"],
+plantback:[]
+},
 // ── Adjuvants ── these ride along with the actual pesticide rather than
 // being one themselves — no EPA-labeled crop list or rotational plantback
 // the way herbicides have, so labeledCrops/plantback are left empty on
