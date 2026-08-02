@@ -599,6 +599,84 @@ plantback:[
 {crop:"Flax", days:365},
 ]
 },
+{
+// Pulled from FMC's current Spartan 4F EPA label (sulfentrazone). Direct
+// spray label is Corn/Soybeans/Sunflower — everything below is a ROTATIONAL
+// crop planted into ground treated the prior season, not a spray target.
+// Durum isn't named anywhere on the label (only "Wheat" is) — rather than
+// guess whether it inherits Wheat's interval or the unlisted-crop minimum,
+// it's left out here; confirm against the current label before durum.
+// Lentils/Chickpeas also aren't named — label's "all other crops" rule
+// applies (12-month minimum PLUS a required field bioassay, not just a wait).
+name:"Spartan 4F", type:"Herbicide",
+defaultRate:"6", unit:"oz/ac",
+labeledCrops:["Corn","Soybeans","Sunflowers"],
+plantback:[
+{crop:"Wheat", days:120},
+{crop:"Barley", days:120},
+{crop:"Oats", days:360},
+{crop:"Canola", days:720},
+{crop:"Flax", days:0},
+{crop:"Peas", days:0},
+{crop:"Lentils", days:360}, // unlisted crop — 12-month minimum + bioassay required, verify against current label
+{crop:"Chickpeas", days:360}, // unlisted crop — 12-month minimum + bioassay required, verify against current label
+{crop:"Corn", days:300}, // field corn; pop/sweet corn is 540 days on the label
+{crop:"Soybeans", days:0},
+{crop:"Sunflowers", days:0},
+]
+},
+{
+// FMC Spartan Charge (sulfentrazone + carfentrazone-ethyl). Direct spray
+// label covers Flax/Peas/Chickpeas/Soybeans/Sunflower. Same Durum caveat as
+// Spartan 4F — not named on the label, left out rather than guessed.
+name:"Spartan Charge", type:"Herbicide",
+defaultRate:"6", unit:"oz/ac",
+labeledCrops:["Flax","Peas","Chickpeas","Soybeans","Sunflowers"],
+plantback:[
+{crop:"Wheat", days:120},
+{crop:"Barley", days:120},
+{crop:"Oats", days:360},
+{crop:"Canola", days:720},
+{crop:"Flax", days:0},
+{crop:"Peas", days:0},
+{crop:"Lentils", days:360}, // not named anywhere on this label — 12-month minimum + bioassay required
+{crop:"Chickpeas", days:0}, // labeled together with Dry Shell Peas
+{crop:"Corn", days:120},
+{crop:"Soybeans", days:0},
+{crop:"Sunflowers", days:0},
+]
+},
+{
+// Nufarm Panther SC (flumioxazin) — labeled MT/Hi-Line use is a no-till fall
+// burndown ahead of Barley, Field Pea, Flax, Lentil, Sunflower, and Spring
+// Wheat, at 2-4 fl oz/ac. IMPORTANT: unlike the entries above, this label's
+// rotational table is rate-tiered AND several intervals roughly double when
+// the ground isn't tilled before the rotational crop goes in — which is the
+// normal case for this program, since the labeled use is itself no-till.
+// The values below are the longer, more-conservative end of that range, but
+// this one genuinely depends on rate applied — always confirm against the
+// current label rather than treating this as exact. Canola and Chickpeas
+// aren't named on the label at all (8-month minimum + REQUIRED bioassay).
+// Durum is not a labeled crop for this product — a sibling Nufarm
+// flumioxazin label explicitly excludes durum — so it's left out entirely
+// rather than assigned an interval; verify before using anywhere near durum.
+name:"Panther SC", type:"Herbicide",
+defaultRate:"3", unit:"oz/ac",
+labeledCrops:["Wheat","Flax","Peas","Lentils","Corn","Soybeans","Sunflowers"],
+plantback:[
+{crop:"Wheat", days:30},
+{crop:"Barley", days:90},
+{crop:"Oats", days:240},
+{crop:"Canola", days:240}, // unlisted crop — 8-month minimum + bioassay required, verify against current label
+{crop:"Flax", days:90},
+{crop:"Peas", days:90},
+{crop:"Lentils", days:180},
+{crop:"Chickpeas", days:240}, // unlisted crop — 8-month minimum + bioassay required, verify against current label
+{crop:"Corn", days:7},
+{crop:"Soybeans", days:0},
+{crop:"Sunflowers", days:30},
+]
+},
 ];
 
 // ── Reusable "Save to Products?" prompt ───────────────────────────────────
