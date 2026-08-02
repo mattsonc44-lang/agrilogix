@@ -757,7 +757,7 @@ export default function AdminPanel({ user, token, onBack, onViewTenant, adminVie
           <div style={{ ...S.card, background:"#F0F8F0", border:`1px solid #A0C8A0`, marginBottom:"16px" }}>
             <h3 style={{ ...S.sh, color:T.brand }}>New Organization</h3>
             <div style={S.g2}>
-              <div style={S.row}><label style={S.label}>Organization Name *</label><input style={S.input} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Mattson Bros Inc."/></div>
+              <div style={S.row}><label style={S.label}>Organization Name *</label><input style={S.input} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Agri Logix Solutions"/></div>
               <div style={S.row}><label style={S.label}>Owner Email</label><input style={S.input} type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="owner@example.com"/></div>
             </div>
             <div style={S.row}>
