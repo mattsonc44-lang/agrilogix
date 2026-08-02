@@ -1444,7 +1444,7 @@ function CustomerMo({initial,onSave,onClose}){
   const[f,setF]=useState({name:initial?.name||"",businessName:initial?.businessName||"",contact:initial?.contact||"",phone:initial?.phone||"",email:initial?.email||"",address:initial?.address||"",notes:initial?.notes||""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   return(<Mo title={initial?"Edit Customer":"Add Customer"} onClose={onClose} onSave={()=>{if(!f.name.trim())return alert("Name required.");onSave(f);}} saveLabel={initial?"Save Changes":"Add Customer"}>
-    <Fg label="Customer Name *" full><Fi value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. Mattson Bros Inc."/></Fg>
+    <Fg label="Customer Name *" full><Fi value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. Agri Logix Solutions"/></Fg>
     <Fr><Fg label="Business Name"><Fi value={f.businessName} onChange={e=>s("businessName",e.target.value)}/></Fg><Fg label="Contact Name"><Fi value={f.contact} onChange={e=>s("contact",e.target.value)}/></Fg><Fg label="Phone"><Fi type="tel" value={f.phone} onChange={e=>s("phone",e.target.value)}/></Fg><Fg label="Email"><Fi type="email" value={f.email} onChange={e=>s("email",e.target.value)}/></Fg></Fr>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
