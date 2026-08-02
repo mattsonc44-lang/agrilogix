@@ -687,6 +687,41 @@ plantback:[
 {crop:"Sunflowers", days:30},
 ]
 },
+// ── Adjuvants ── these ride along with the actual pesticide rather than
+// being one themselves — no EPA-labeled crop list or rotational plantback
+// the way herbicides have, so labeledCrops/plantback are left empty on
+// purpose here instead of guessed. Rates are typical label starting points
+// (verified against manufacturer/label sources) — always confirm against
+// the adjuvant's own product label and the label of whatever it's mixed with.
+{ name:"Nonionic Surfactant (Activator 90)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Nonionic Surfactant (Induce)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Nonionic Surfactant (Preference)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Crop Oil Concentrate (Agri-Dex)", type:"Adjuvant", defaultRate:"1", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Crop Oil Concentrate (Herbimax)", type:"Adjuvant", defaultRate:"1", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Methylated Seed Oil (MSO Concentrate)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Methylated Seed Oil (Destiny HC)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Penetrating Surfactant (LI 700)", type:"Adjuvant", defaultRate:"1", unit:"pt/ac", labeledCrops:[], plantback:[] },
+{ name:"AMS + Surfactant Blend (Class Act NG)", type:"Adjuvant", defaultRate:"2.5", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Ammonium Sulfate / Water Conditioner (N-Pak AMS)", type:"Adjuvant", defaultRate:"2.5", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Deposition / Drift Control Agent (InterLock)", type:"Adjuvant", defaultRate:"5", unit:"oz/ac", labeledCrops:[], plantback:[] },
+// ── Fungicides & Insecticides ── already selectable elsewhere in the app
+// (CHEMICALS/BUILTIN_CHEM_DATA below) but weren't in this common-products
+// database yet, so they never showed up in "Load Common Chemicals." Generic
+// active ingredients confirmed via EPA label / manufacturer data. Unlike the
+// herbicides above, labeledCrops/plantback are intentionally left empty —
+// fungicides/insecticides don't carry the same rotational plantback concern
+// (they target disease/insects, not weeds), and rather than guess at their
+// full labeled-crop list, use the "🔍 Look up label" button after adding one
+// to pull real registered-crop/rate data for it. PHI (preharvest interval)
+// and REI (re-entry interval) are separate label values this app doesn't
+// track — always confirm both on the actual product label.
+{ name:"Prothioconazole + Trifloxystrobin (Stratego YLD)", type:"Fungicide", defaultRate:"4", unit:"fl oz/ac", labeledCrops:[], plantback:[] },
+{ name:"Pyraclostrobin (Headline)", type:"Fungicide", defaultRate:"6", unit:"fl oz/ac", labeledCrops:[], plantback:[] },
+{ name:"Fluxapyroxad + Pyraclostrobin (Priaxor)", type:"Fungicide", defaultRate:"4", unit:"fl oz/ac", labeledCrops:[], plantback:[] },
+{ name:"Azoxystrobin + Propiconazole + Benzovindiflupyr (Trivapro)", type:"Fungicide", defaultRate:"13.7", unit:"fl oz/ac", labeledCrops:[], plantback:[] },
+{ name:"Propiconazole (Bumper 418 EC)", type:"Fungicide", defaultRate:"4", unit:"fl oz/ac", labeledCrops:[], plantback:[] },
+{ name:"Dimethoate", type:"Insecticide", defaultRate:"0.5", unit:"pt/ac", labeledCrops:[], plantback:[] },
+{ name:"Lambda-Cyhalothrin (Matador)", type:"Insecticide", defaultRate:"34", unit:"ml/ac", labeledCrops:[], plantback:[] },
 ];
 
 // ── Reusable "Save to Products?" prompt ───────────────────────────────────
@@ -3344,9 +3379,94 @@ Import {importCount} Field{importCount!==1?"s":""}
 
 // ── Settings Modal ────────────────────────────────────────────────────
 
+// ── Chemical Picker Modal ──────────────────────────────────────────────
+// Browsable, checkbox-select version of "Load Common Chemicals" — the whole
+// COMMON_CHEMICALS_DB list (herbicides, adjuvants, fungicides, insecticides)
+// grouped by type with a search box, so the grower can pick exactly which
+// ones to add instead of getting every entry dumped in at once.
+function ChemicalPickerModal({ existingNames, onAdd, onClose }) {
+const [query, setQuery] = useState("");
+const [checked, setChecked] = useState(() => new Set());
+
+const available = COMMON_CHEMICALS_DB.filter(c => !existingNames.has(c.name));
+const q = query.trim().toLowerCase();
+const filtered = q ? available.filter(c => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) : available;
+
+const groups = CHEM_TYPES.filter(t=>t!=="Other").map(type => ({
+type,
+items: filtered.filter(c => c.type === type),
+})).filter(g => g.items.length > 0);
+
+const toggle = (name) => setChecked(p => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
+const toggleGroup = (items, allOn) => setChecked(p => {
+const n = new Set(p);
+items.forEach(c => allOn ? n.delete(c.name) : n.add(c.name));
+return n;
+});
+
+const doAdd = () => {
+const toAdd = COMMON_CHEMICALS_DB.filter(c => checked.has(c.name)).map(c => ({...c, id: genId()}));
+if(toAdd.length === 0) { onClose(); return; }
+onAdd(toAdd);
+};
+
+const TYPE_COLOR = { Herbicide:"#2563EB", Adjuvant:"#7A3090", Fungicide:"#C07010", Insecticide:"#C04040" };
+
+return (
+<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:410,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 12px",overflowY:"auto" }}>
+<div style={{ background:"#FDFAF4",border:"1px solid #D8C090",borderRadius:"12px",width:"100%",maxWidth:"640px",padding:"22px",marginTop:"10px",maxHeight:"90vh",display:"flex",flexDirection:"column" }}>
+<div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px" }}>
+<h3 style={{ fontFamily:"'Playfair Display',serif",fontSize:"18px",color:"#7A3090",margin:0 }}>📥 Add Common Chemicals</h3>
+<button style={{ background:"none",border:"none",cursor:"pointer",fontSize:"16px",color:"#888" }} onClick={onClose}>✕</button>
+</div>
+<div style={{ fontSize:"12px",color:"#7A6858",marginBottom:"10px" }}>
+Herbicides, adjuvants, fungicides & insecticides — generic name shown with the common brand name. Check the ones you want, then add.
+</div>
+<input
+type="text" placeholder="🔍 Search by name or type…" value={query} onChange={e=>setQuery(e.target.value)}
+style={{ width:"100%",boxSizing:"border-box",padding:"8px 10px",fontSize:"13px",border:"1px solid #D8C090",borderRadius:"6px",marginBottom:"12px",fontFamily:"inherit" }}
+/>
+<div style={{ overflowY:"auto",flex:1,paddingRight:"4px" }}>
+{groups.length === 0 && (
+<div style={{ textAlign:"center",padding:"20px",color:"#A89880",fontSize:"13px" }}>
+{available.length===0 ? "Every common chemical is already in your list." : "No matches."}
+</div>
+)}
+{groups.map(g => {
+const allOn = g.items.every(c => checked.has(c.name));
+return (
+<div key={g.type} style={{ marginBottom:"14px" }}>
+<div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${TYPE_COLOR[g.type]}33`,paddingBottom:"4px",marginBottom:"6px" }}>
+<span style={{ fontSize:"12px",fontWeight:700,color:TYPE_COLOR[g.type],textTransform:"uppercase",letterSpacing:"0.06em" }}>{g.type} ({g.items.length})</span>
+<button onClick={()=>toggleGroup(g.items, allOn)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"11px",color:TYPE_COLOR[g.type],textDecoration:"underline",fontFamily:"inherit" }}>
+{allOn ? "Unselect all" : "Select all"}
+</button>
+</div>
+{g.items.map(c => (
+<label key={c.name} style={{ display:"flex",alignItems:"center",gap:"8px",padding:"5px 6px",borderRadius:"5px",cursor:"pointer",fontSize:"13px",background:checked.has(c.name)?`${TYPE_COLOR[g.type]}14`:"transparent" }}>
+<input type="checkbox" checked={checked.has(c.name)} onChange={()=>toggle(c.name)} style={{ accentColor:TYPE_COLOR[g.type],width:"14px",height:"14px",flexShrink:0 }}/>
+<span>{c.name}</span>
+</label>
+))}
+</div>
+);
+})}
+</div>
+<div style={{ display:"flex",gap:"8px",marginTop:"14px",paddingTop:"12px",borderTop:"1px solid #E8DCC4" }}>
+<button onClick={onClose} style={{ ...mkBtn("ghost"),flex:1,justifyContent:"center",fontSize:"13px" }}>Cancel</button>
+<button onClick={doAdd} disabled={checked.size===0} style={{ ...mkBtn("primary"),flex:1,justifyContent:"center",fontSize:"13px",opacity:checked.size===0?0.5:1,background:"#7A3090",borderColor:"#7A3090" }}>
+Add {checked.size>0?checked.size:""} Selected
+</button>
+</div>
+</div>
+</div>
+);
+}
+
 // ── Products Library Modal ────────────────────────────────────────────────────
 function ProductsModal({ products, onSave, onClose, token }) {
 const [tab, setTab] = useState("seeds");
+const [pickerOpen, setPickerOpen] = useState(false);
 const [items, setItems] = useState({
 seeds: (products?.seeds || []).map(x=>({...x})),
 chemicals: (products?.chemicals || []).map(x=>({...x})),
@@ -3413,7 +3533,7 @@ const addPresetChem = (pid) => setItems(p=>({...p, tankMixPresets:p.tankMixPrese
 const updPresetChem = (pid,cid,k,v) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:x.chemicals.map(c=>c.id===cid?{...c,[k]:v}:c)}:x)}));
 const delPresetChem = (pid,cid) => setItems(p=>({...p, tankMixPresets:p.tankMixPresets.map(x=>x.id===pid?{...x,chemicals:x.chemicals.filter(c=>c.id!==cid)}:x)}));
 
-const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","g/ac"];
+const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","gal/100 gal","g/ac"];
 const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
 const CHEM_TYPES = ["Herbicide","Fungicide","Insecticide","Adjuvant","Other"];
 
@@ -3584,15 +3704,10 @@ lookupState[c.id]==="error" ? "✗ Error" :
 style={{ ...mkBtn("ghost"),flex:1,justifyContent:"center",borderColor:"#A8C0E8",color:"#2563EB",fontSize:"12px" }}>
 + Add Chemical
 </button>
-<button onClick={()=>{
-const existing = new Set(items.chemicals.map(c=>c.name));
-const toAdd = COMMON_CHEMICALS_DB.filter(c=>!existing.has(c.name)).map(c=>({...c,id:genId()}));
-if(toAdd.length===0){ alert("All common chemicals are already in your list."); return; }
-setItems(p=>({...p,chemicals:[...p.chemicals,...toAdd]}));
-}}
+<button onClick={()=>setPickerOpen(true)}
 style={{ ...mkBtn("ghost"),justifyContent:"center",borderColor:"#7A3090",color:"#7A3090",fontSize:"12px",whiteSpace:"nowrap" }}
-title="Pre-fill with common Hi-Line herbicides including label info and plantback restrictions">
-📥 Load Common Chemicals
+title="Browse common herbicides, adjuvants, fungicides & insecticides and pick which to add">
+📥 Browse & Add Chemicals
 </button>
 <button onClick={()=>{
 if(!window.confirm("Clear all saved chemicals and reload common defaults?")) return;
@@ -3751,6 +3866,13 @@ No presets yet. Create your first tank mix below.
 <button style={mkBtn("primary", T.brand)} onClick={save}>💾 Save Products</button>
 </div>
 </div>
+{pickerOpen && (
+<ChemicalPickerModal
+existingNames={new Set(items.chemicals.map(c=>c.name))}
+onAdd={toAdd => { setItems(p=>({...p, chemicals:[...p.chemicals,...toAdd]})); setPickerOpen(false); }}
+onClose={()=>setPickerOpen(false)}
+/>
+)}
 </div>
 );
 }
