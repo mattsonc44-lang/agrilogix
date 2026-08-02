@@ -1391,6 +1391,10 @@ const add=()=>set({...v,tankMix:[...mix,{id:genId(),chemical:"",oz:"",unit:"oz/a
 const upd=(id,f,val)=>set({...v,tankMix:mix.map(c=>c.id===id?{...c,[f]:val}:c)});
 const del=(id)=>set({...v,tankMix:mix.filter(c=>c.id!==id)});
 const [savePrompt, setSavePrompt] = useState({});
+// Liquid product totals default to gallons (more useful at the shop than raw
+// oz/qt/pt); toggle to see the exact unit instead. Dry-weight products
+// (oz/lbs/g) have no gallons equivalent and always show their native unit.
+const [showGal, setShowGal] = useState(true);
 const handleAddToProducts = (c) => {
 if(onAddChemical) onAddChemical({ name:c.chemicalName, type:"", defaultRate:c.oz||"", unit:c.unit||"L/ac" });
 setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
@@ -1540,16 +1544,24 @@ if(totalWaterGal==null && totalItems.length===0) return null;
 // have used, purely as a savings reference — clearly separate from the
 // actual total above since it's an estimate, not what happened.
 const blanketGal = spotSpray && ac>0 && parseFloat(v.waterVol)>0 ? ac*parseFloat(v.waterVol) : null;
+const anyConvertible = totalItems.some(it=>it.totalGal!=null);
 return (
 <div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #C0D0E8"}}>
-<div style={{fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700,marginBottom:"6px"}}>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}>
+<div style={{fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700}}>
 {spotSpray?"🎯 Spot-spray totals (actual)":`🧮 Bring to the field${ac>0?` — ${ac} ac`:""}`}
+</div>
+{anyConvertible && (
+<button type="button" onClick={()=>setShowGal(g=>!g)} style={{background:"none",border:"1px solid #A8C0DC",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",cursor:"pointer",color:"#2A5080",fontFamily:"inherit"}}>
+{showGal?"Show exact units":"Show gallons"}
+</button>
+)}
 </div>
 {totalWaterGal!=null && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Total spray solution:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{blanketGal!=null&&blanketGal>totalWaterGal&&<span style={{color:T.muted}}> (vs. ~{Math.round(blanketGal).toLocaleString()} gal for a full-field pass)</span>}</div>}
 {totalItems.map(it=>(
 <div key={it.id} style={{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"2px 0"}}>
 <span>{it.name}</span>
-<strong style={{color:"#1E5078"}}>{Number(it.total.toFixed(2))} {it.totalUnit}</strong>
+<strong style={{color:"#1E5078"}}>{showGal&&it.totalGal!=null?`${Number(it.totalGal.toFixed(2))} gal`:`${Number(it.total.toFixed(2))} ${it.totalUnit}`}</strong>
 </div>
 ))}
 </div>
@@ -2706,6 +2718,10 @@ const[sortBy,setSortBy] =useState("field");
 const[yearFilter,setYearFilter]=useState("all");
 const[dateFrom,setDateFrom] =useState("");
 const[dateTo,setDateTo] =useState("");
+// Spraying "Total Applied" defaults to gallons for liquid products (more
+// useful than raw oz/qt/pt); toggle to see the exact logged unit. Dry-weight
+// products (oz/lbs/g) have no gallons equivalent and always show as-is.
+const[showGal,setShowGal] =useState(true);
 
 const isFieldReport = !!filterFieldId;
 const filterField = isFieldReport ? fields.find(f=>f.id===filterFieldId) : null;
@@ -2784,7 +2800,7 @@ return(
 <tr key={i} style={{borderBottom:`1px solid ${T.border}`}}>
 <td style={{padding:"5px 8px"}}>{c.chemical==="Other"?(c.chemicalName||"—"):c.chemical}</td>
 <td style={{padding:"5px 8px",textAlign:"right",fontWeight:600,color:T.gold}}>{c.oz} {c.unit}</td>
-<td style={{padding:"5px 8px",textAlign:"right",fontWeight:600}}>{tot?.total!=null?`${Number(tot.total.toFixed(2))} ${tot.totalUnit}`:"—"}</td>
+<td style={{padding:"5px 8px",textAlign:"right",fontWeight:600}}>{tot?.total!=null?(showGal&&tot.totalGal!=null?`${Number(tot.totalGal.toFixed(2))} gal`:`${Number(tot.total.toFixed(2))} ${tot.totalUnit}`):"—"}</td>
 </tr>
 );
 })}
@@ -2875,6 +2891,9 @@ return(
 <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:"22px",margin:0,flex:1}}>
 {isFieldReport ? `${filterField?.name||"Field"} — Report` : "Reports"}
 </h2>
+{results.some(a=>a.type==="spraying")&&(
+<button style={{...mkBtn("ghost"),padding:"7px 14px",fontSize:"13px"}} onClick={()=>setShowGal(g=>!g)}>{showGal?"Totals: gal":"Totals: exact units"}</button>
+)}
 <button style={{...mkBtn("ghost"),padding:"7px 14px",fontSize:"13px"}} onClick={print}>🖨 Print</button>
 </div>
 
