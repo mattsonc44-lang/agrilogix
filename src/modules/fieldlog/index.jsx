@@ -1391,10 +1391,19 @@ const add=()=>set({...v,tankMix:[...mix,{id:genId(),chemical:"",oz:"",unit:"oz/a
 const upd=(id,f,val)=>set({...v,tankMix:mix.map(c=>c.id===id?{...c,[f]:val}:c)});
 const del=(id)=>set({...v,tankMix:mix.filter(c=>c.id!==id)});
 const [savePrompt, setSavePrompt] = useState({});
-// Liquid product totals default to gallons (more useful at the shop than raw
-// oz/qt/pt); toggle to see the exact unit instead. Dry-weight products
-// (oz/lbs/g) have no gallons equivalent and always show their native unit.
-const [showGal, setShowGal] = useState(true);
+// Per-chemical unit display: unambiguous liquid units (fl oz/pt/qt/L/mL)
+// default to gallons since that's what most growers think in. Plain "oz" is
+// ambiguous in this app's chemical DB — could be fluid ounces of a liquid
+// (Roundup, 2,4-D) or dry-weight ounces of a WDG product (Ally XP, Glean) —
+// so it defaults to its native unit instead of guessing. Either way, each
+// line has its own toggle so a grower can switch it either direction.
+const [unitOverride, setUnitOverride] = useState({}); // { [itemId]: "gal" | "native" }
+const showingGal = (it) => {
+const ov = unitOverride[it.id];
+if (ov) return ov === "gal";
+return it.totalGal != null && !it.totalGalAmbiguous;
+};
+const toggleUnit = (it) => setUnitOverride(u => ({ ...u, [it.id]: showingGal(it) ? "native" : "gal" }));
 const handleAddToProducts = (c) => {
 if(onAddChemical) onAddChemical({ name:c.chemicalName, type:"", defaultRate:c.oz||"", unit:c.unit||"L/ac" });
 setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
@@ -1562,7 +1571,6 @@ if(totalWaterGal==null && totalItems.length===0) return null;
 const blanketGal = mode==="spotspray" && ac>0 && galAc>0 ? ac*galAc : null;
 // Tank mode: how many of these tank loads the whole field will take.
 const tankLoads = mode==="tank" && effectiveAcres>0 && ac>0 ? ac/effectiveAcres : null;
-const anyConvertible = totalItems.some(it=>it.totalGal!=null);
 
 let label;
 if(mode==="spotspray") label = "🎯 Spot-spray totals (actual)";
@@ -1571,24 +1579,27 @@ else label = `🧮 Bring to the field${ac>0?` — ${ac} ac`:""}`;
 
 return (
 <div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #C0D0E8"}}>
-<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}>
-<div style={{fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700}}>
+<div style={{fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700,marginBottom:"6px"}}>
 {label}
-</div>
-{anyConvertible && (
-<button type="button" onClick={()=>setShowGal(g=>!g)} style={{background:"none",border:"1px solid #A8C0DC",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",cursor:"pointer",color:"#2A5080",fontFamily:"inherit"}}>
-{showGal?"Show exact units":"Show gallons"}
-</button>
-)}
 </div>
 {totalWaterGal!=null && mode==="tank" && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Tank volume:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{tankLoads!=null&&<span style={{color:T.muted}}> — ≈{tankLoads<10?Number(tankLoads.toFixed(1)):Math.round(tankLoads)} load{tankLoads>1.05?"s":""} to cover this field ({ac} ac)</span>}</div>}
 {totalWaterGal!=null && mode!=="tank" && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Total spray solution:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{blanketGal!=null&&blanketGal>totalWaterGal&&<span style={{color:T.muted}}> (vs. ~{Math.round(blanketGal).toLocaleString()} gal for a full-field pass)</span>}</div>}
-{totalItems.map(it=>(
-<div key={it.id} style={{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"2px 0"}}>
+{totalItems.map(it=>{
+const gal = showingGal(it);
+return (
+<div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:"13px",padding:"2px 0"}}>
 <span>{it.name}</span>
-<strong style={{color:"#1E5078"}}>{showGal&&it.totalGal!=null?`${Number(it.totalGal.toFixed(2))} gal`:`${Number(it.total.toFixed(2))} ${it.totalUnit}`}</strong>
+<span style={{display:"flex",alignItems:"center",gap:"6px"}}>
+<strong style={{color:"#1E5078"}}>{gal?`${Number(it.totalGal.toFixed(2))} gal`:`${Number(it.total.toFixed(2))} ${it.totalUnit}`}</strong>
+{it.totalGal!=null && (
+<button type="button" onClick={()=>toggleUnit(it)} title="Switch units" style={{background:"none",border:"1px solid #C0D0E8",borderRadius:"3px",padding:"1px 6px",fontSize:"10px",cursor:"pointer",color:"#6A85A8",fontFamily:"inherit"}}>
+{gal?it.totalUnit:"gal"}
+</button>
+)}
+</span>
 </div>
-))}
+);
+})}
 </div>
 );
 })()}
@@ -2825,7 +2836,11 @@ return(
 <tr key={i} style={{borderBottom:`1px solid ${T.border}`}}>
 <td style={{padding:"5px 8px"}}>{c.chemical==="Other"?(c.chemicalName||"—"):c.chemical}</td>
 <td style={{padding:"5px 8px",textAlign:"right",fontWeight:600,color:T.gold}}>{c.oz} {c.unit}</td>
-<td style={{padding:"5px 8px",textAlign:"right",fontWeight:600}}>{tot?.total!=null?(showGal&&tot.totalGal!=null?`${Number(tot.totalGal.toFixed(2))} gal`:`${Number(tot.total.toFixed(2))} ${tot.totalUnit}`):"—"}</td>
+{/* The global toggle only converts unambiguous liquid units (fl oz/pt/qt/L/mL).
+    Plain "oz" (totalGalAmbiguous) stays in its logged unit here, since a
+    printed record shouldn't guess whether a dry-weight WDG product was
+    meant as fluid ounces. */}
+<td style={{padding:"5px 8px",textAlign:"right",fontWeight:600}}>{tot?.total!=null?(showGal&&tot.totalGal!=null&&!tot.totalGalAmbiguous?`${Number(tot.totalGal.toFixed(2))} gal`:`${Number(tot.total.toFixed(2))} ${tot.totalUnit}`):"—"}</td>
 </tr>
 );
 })}
