@@ -4,6 +4,7 @@ import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr } from "../../core/helpers.js";
 import { degToCompass, fmtWeather, evaluateSprayWindow, HIGH_WIND_MPH, LOW_WIND_MPH, RAIN_PROB_PCT, HIGH_TEMP_F } from "../../core/weather.js";
 import { getPerms, REDACTED } from "../../core/permissions.js";
+import { calcTankMixTotals } from "../../core/fieldlog.js";
 
 // ── Google Fonts ──────────────────────────────────────────────────────
 if (!document.getElementById("fl-fonts")) {
@@ -1384,7 +1385,7 @@ return(
 }
 
 // ── Spraying Form ─────────────────────────────────────────────────────
-function SprayingForm({v,set,products={},onAddChemical}){
+function SprayingForm({v,set,products={},onAddChemical,acres}){
 const mix=v.tankMix||[];
 const add=()=>set({...v,tankMix:[...mix,{id:genId(),chemical:"",oz:"",unit:"oz/ac"}]});
 const upd=(id,f,val)=>set({...v,tankMix:mix.map(c=>c.id===id?{...c,[f]:val}:c)});
@@ -1400,6 +1401,17 @@ return(
 <div style={S.row}><label style={S.label}>Water Volume (gal / ac)</label><input style={S.input} type="number" step="0.5" placeholder="e.g. 10" value={v.waterVol||""} onChange={e=>set({...v,waterVol:e.target.value})}/></div>
 <div style={S.row}><label style={S.label}>Sprayer / Equipment</label><input style={S.input} type="text" placeholder="e.g. Case 4430" value={v.equipment||""} onChange={e=>set({...v,equipment:e.target.value})}/></div>
 </div>
+<div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:v.spotSpray?"8px":"14px"}}>
+<input type="checkbox" id="spotSprayChk" checked={!!v.spotSpray} onChange={e=>set({...v,spotSpray:e.target.checked})} style={{width:"16px",height:"16px"}}/>
+<label htmlFor="spotSprayChk" style={{fontSize:"13px",cursor:"pointer"}}>🎯 Spot-spray system (WeedIt, GreenSeeker, See &amp; Spray, etc.)</label>
+</div>
+{v.spotSpray && (
+<div style={{...S.row,marginBottom:"14px"}}>
+<label style={S.label}>Actual Gallons Applied (from system readout)</label>
+<input style={S.input} type="number" step="0.5" placeholder="e.g. 145" value={v.actualGal||""} onChange={e=>set({...v,actualGal:e.target.value})}/>
+<div style={{fontSize:"11px",color:T.muted,marginTop:"2px"}}>These systems only spray where they sense green, so total volume is usually well under a full-field rate. Enter the actual number off your system's display rather than estimating.</div>
+</div>
+)}
 <div style={{background:"#EEF3FA",border:`1px solid #A8C0DC`,borderRadius:"8px",padding:"14px",marginBottom:"14px"}}>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
 <p style={{margin:0,fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>💧 Tank Mix</p>
@@ -1510,6 +1522,39 @@ setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
 </div>
 </div>
 ))}
+{mix.length>0 && (()=>{
+const ac = parseFloat(acres)||0;
+const spotSpray = !!v.spotSpray;
+const actualGal = spotSpray ? v.actualGal : undefined;
+if(spotSpray && !(parseFloat(actualGal)>0)) {
+return (
+<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #C0D0E8",fontSize:"12px",color:T.muted}}>
+🎯 Enter actual gallons applied above to calculate product totals for this spot-sprayed pass.
+</div>
+);
+}
+const { totalWaterGal, items } = calcTankMixTotals(mix, ac, v.waterVol, actualGal);
+const totalItems = items.filter(it=>it.total!=null);
+if(totalWaterGal==null && totalItems.length===0) return null;
+// For a spot-sprayed pass, also show what a full blanket application would
+// have used, purely as a savings reference — clearly separate from the
+// actual total above since it's an estimate, not what happened.
+const blanketGal = spotSpray && ac>0 && parseFloat(v.waterVol)>0 ? ac*parseFloat(v.waterVol) : null;
+return (
+<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #C0D0E8"}}>
+<div style={{fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700,marginBottom:"6px"}}>
+{spotSpray?"🎯 Spot-spray totals (actual)":`🧮 Bring to the field${ac>0?` — ${ac} ac`:""}`}
+</div>
+{totalWaterGal!=null && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Total spray solution:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{blanketGal!=null&&blanketGal>totalWaterGal&&<span style={{color:T.muted}}> (vs. ~{Math.round(blanketGal).toLocaleString()} gal for a full-field pass)</span>}</div>}
+{totalItems.map(it=>(
+<div key={it.id} style={{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"2px 0"}}>
+<span>{it.name}</span>
+<strong style={{color:"#1E5078"}}>{Number(it.total.toFixed(2))} {it.totalUnit}</strong>
+</div>
+))}
+</div>
+);
+})()}
 </div>
 <div style={S.row}><label style={S.label}>Target / Purpose</label><input style={S.input} type="text" placeholder="e.g. Pre-seed burnoff, broadleaf weeds" value={v.purpose||""} onChange={e=>set({...v,purpose:e.target.value})}/></div>
 </div>
@@ -2075,7 +2120,7 @@ Dismiss
 )}
 </>}
 {type==="spraying" &&<>
-<SprayingForm v={data} set={setData} products={products} onAddChemical={onAddChemical}/>
+<SprayingForm v={data} set={setData} products={products} onAddChemical={onAddChemical} acres={field?.acres}/>
 <div style={{background:"#F0F6FF",border:"2px solid #6090C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
 <div style={{fontWeight:700,color:"#1A3A5C",fontSize:"12px"}}>🌬️ SPRAY CONDITIONS</div>
@@ -2653,7 +2698,7 @@ Analyzing map image…
 }
 
 // ── Reports View ──────────────────────────────────────────────────────
-function ReportsView({fields,activities,onBack,filterFieldId=null,perms}){
+function ReportsView({fields,activities,onBack,filterFieldId=null,perms,operatorName}){
 const canCost=perms?perms.canViewCosts:true;
 const[type,setType] =useState("all");
 const[fieldFilter,setFField]=useState(filterFieldId||"all");
@@ -2694,7 +2739,7 @@ acts:results.filter(a=>a.fieldId===fid),
 const print=()=>{
 const style=document.createElement("style");
 style.id="print-style";
-style.textContent=`@media print{body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif;} .no-print{display:none!important;} .print-card{border:1px solid #ccc!important;background:#fff!important;break-inside:avoid;margin-bottom:8px;padding:10px;} h1,h2,h3{color:#000!important;}}`;
+style.textContent=`@media print{body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif;} .no-print{display:none!important;} .print-header{display:block!important;} .print-card{border:1px solid #ccc!important;background:#fff!important;break-inside:avoid;margin-bottom:8px;padding:10px;} h1,h2,h3{color:#000!important;}}`;
 document.head.appendChild(style);
 window.print();
 setTimeout(()=>document.getElementById("print-style")?.remove(),1000);
@@ -2702,10 +2747,24 @@ setTimeout(()=>document.getElementById("print-style")?.remove(),1000);
 
 const renderDetail=(a)=>{
 const d=a.data||{};
-if(a.type==="spraying") return(
+if(a.type==="spraying") {
+// Field acres + calcTankMixTotals (core/fieldlog.js) turn the per-acre
+// rates logged in the moment into the actual total amount applied — the
+// number an audit or insurance claim actually wants, not just the rate.
+const sprayField = fields.find(f=>f.id===a.fieldId);
+const sprayAcres = parseFloat(sprayField?.acres)||0;
+// Spot-spray systems (WeedIt/GreenSeeker/See & Spray) only trigger on
+// sensed green, so d.actualGal — the real number off the system's
+// display — stands in for the acres*rate estimate calcTankMixTotals
+// would otherwise compute.
+const {totalWaterGal, items:tmTotals} = calcTankMixTotals(d.tankMix, sprayAcres, d.waterVol, d.spotSpray ? d.actualGal : undefined);
+return(
 <div>
 <div style={{display:"flex",gap:"20px",flexWrap:"wrap",marginBottom:"8px",fontSize:"13px"}}>
-{d.waterVol&&<span><span style={{color:T.muted}}>Water:</span> {d.waterVol} gal/ac</span>}
+{sprayAcres>0&&<span><span style={{color:T.muted}}>Acres:</span> {sprayAcres}</span>}
+{d.spotSpray
+? <span><span style={{color:T.muted}}>🎯 Spot-sprayed:</span> {totalWaterGal!=null?`${Math.round(totalWaterGal).toLocaleString()} gal actual`:"actual gallons not recorded"}</span>
+: d.waterVol&&<span><span style={{color:T.muted}}>Water:</span> {d.waterVol} gal/ac{totalWaterGal!=null?` (${Math.round(totalWaterGal).toLocaleString()} gal total)`:""}</span>}
 {d.equipment&&<span><span style={{color:T.muted}}>Equipment:</span> {d.equipment}</span>}
 {d.purpose&&<span><span style={{color:T.muted}}>Purpose:</span> {d.purpose}</span>}
 </div>
@@ -2715,20 +2774,26 @@ if(a.type==="spraying") return(
 <tr style={{background:T.panel}}>
 <th style={{textAlign:"left",padding:"5px 8px",color:T.muted,fontWeight:600,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.7px"}}>Chemical</th>
 <th style={{textAlign:"right",padding:"5px 8px",color:T.muted,fontWeight:600,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.7px"}}>Rate</th>
+<th style={{textAlign:"right",padding:"5px 8px",color:T.muted,fontWeight:600,fontSize:"11px",textTransform:"uppercase",letterSpacing:"0.7px"}}>Total Applied</th>
 </tr>
 </thead>
 <tbody>
-{d.tankMix.map((c,i)=>(
+{d.tankMix.map((c,i)=>{
+const tot = tmTotals[i];
+return(
 <tr key={i} style={{borderBottom:`1px solid ${T.border}`}}>
 <td style={{padding:"5px 8px"}}>{c.chemical==="Other"?(c.chemicalName||"—"):c.chemical}</td>
 <td style={{padding:"5px 8px",textAlign:"right",fontWeight:600,color:T.gold}}>{c.oz} {c.unit}</td>
+<td style={{padding:"5px 8px",textAlign:"right",fontWeight:600}}>{tot?.total!=null?`${Number(tot.total.toFixed(2))} ${tot.totalUnit}`:"—"}</td>
 </tr>
-))}
+);
+})}
 </tbody>
 </table>
 )}
 </div>
 );
+}
 if(a.type==="seeding"){
 const crops = d.crops || (d.crop ? [{crop:d.crop,seedRate:d.seedRate,totalSeed:d.totalSeed}] : []);
 const ferts = d.ferts || (d.fertBlend ? [{blend:d.fertBlend,custom:d.fertCustom,rate:d.fertRate,total:d.totalFert,placement:"Seed-placed"}] : []);
@@ -2901,7 +2966,7 @@ border:`1px solid ${type===k?m.color:T.border}`,
 {/* Print header (only shows when printing) */}
 <div style={{display:"none"}} className="print-header">
 <h1 style={{fontFamily:"'Playfair Display',serif",marginBottom:"4px"}}>{meta.icon} {meta.label} Report{isFieldReport?` — ${filterField?.name}`:""}</h1>
-<p style={{color:T.muted,fontSize:"13px",marginBottom:"16px"}}>Generated {new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})} · {results.length} record{results.length!==1?"s":""}</p>
+<p style={{color:T.muted,fontSize:"13px",marginBottom:"16px"}}>Generated {new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})} · {results.length} record{results.length!==1?"s":""}{operatorName?` · Applied by ${operatorName}`:""}</p>
 </div>
 
 {/* Summary bar */}
@@ -4585,7 +4650,7 @@ return(
 <div style={{...S.content,flex:1,padding:0,margin:0,maxWidth:"1100px",position:"relative",overflow:"hidden"}}>
 <div aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
-{view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId} perms={perms}/>}
+{view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId} perms={perms} operatorName={settings.operatorName}/>}
 {view==="rotation" &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
 {view==="addField" &&<AddFieldView onBack={()=>setView("home")} onSave={addField}/>}
 {view==="fieldDetail" &&curField&&<FieldDetailView field={curField} activities={activities} onBack={()=>setView("home")} onAddActivity={()=>setShowAdd(true)} onDeleteActivity={delActivity} onEditActivity={editActivity} onUpdateField={updateField} onDeleteField={deleteField} onReport={()=>{setRFId(curField.id);setView("reports");}} perms={perms}/>}
