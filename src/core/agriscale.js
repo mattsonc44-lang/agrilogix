@@ -117,6 +117,38 @@ export function detectBinOverfill(bin, grain, netLbs) {
   return { binName: bin.name, capacityBu, wouldBeBu, overBy: wouldBeBu - capacityBu };
 }
 
+// ── Multi-farm save merge ── AgriScale keeps ALL of a tenant's farms' fields
+// and bins in ONE shared tenant-wide Firebase node (each record tagged with
+// `farmId`), but a given AgriScaleModule instance only ever holds ITS OWN
+// farm's filtered subset in state (see isFieldInFarm/isBinInFarm below —
+// these mirror the exact filters the module uses to build that subset on
+// load). The Firebase write is a full overwrite of that shared node, not a
+// merge, so saving the filtered subset directly would silently delete every
+// OTHER farm's fields/bins. mergeFarmFields/mergeFarmBins pull out what
+// belongs to other farms from the last-synced full set and merge the current
+// farm's edits back in, so a save while on Farm A never touches Farm B's data.
+// This was the actual cause of fields disappearing when importing on one
+// farm (e.g. Flat Acre) right after having imported on another (Via Terra).
+export function isFieldInFarm(field, farmId) {
+  return (!farmId || farmId === "default")
+    ? (!field?.farmId || field.farmId === "default")
+    : field?.farmId === farmId;
+}
+
+export function isBinInFarm(bin, farmId) {
+  return !bin?.farmId || bin.farmId === farmId || bin.farmId === "shared";
+}
+
+export function mergeFarmFields(allFields, currentFarmFields, farmId) {
+  const others = (allFields || []).filter(f => !isFieldInFarm(f, farmId));
+  return [...others, ...(currentFarmFields || [])];
+}
+
+export function mergeFarmBins(allBins, currentFarmBins, farmId) {
+  const others = (allBins || []).filter(b => !isBinInFarm(b, farmId));
+  return [...others, ...(currentFarmBins || [])];
+}
+
 // ── Bin summary for the Report tab / printable report — grouped by which
 // bin each load's binId points to. The displayed crop is derived from the
 // grain(s) actually recorded into the bin, NOT bin.grainName: that field is
