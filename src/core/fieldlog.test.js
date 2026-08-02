@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTankMixTotals } from "./fieldlog.js";
+import { calcTankMixTotals, toGallons } from "./fieldlog.js";
 
 describe("calcTankMixTotals", () => {
   it("scales a per-acre rate by field acres", () => {
@@ -77,5 +77,42 @@ describe("calcTankMixTotals", () => {
     const { effectiveAcres, totalWaterGal } = calcTankMixTotals([], 80, 0, 145);
     expect(totalWaterGal).toBe(145);
     expect(effectiveAcres).toBeNull();
+  });
+});
+
+describe("toGallons", () => {
+  it("converts liquid-volume units to gallons", () => {
+    expect(toGallons(128, "fl oz")).toBeCloseTo(1);
+    expect(toGallons(4, "qt")).toBeCloseTo(1);
+    expect(toGallons(8, "pt")).toBeCloseTo(1);
+    expect(toGallons(3.785411784, "L")).toBeCloseTo(1);
+  });
+
+  it("returns null for dry-weight units (no gallon equivalent)", () => {
+    expect(toGallons(16, "oz")).toBeNull();
+    expect(toGallons(5, "lbs")).toBeNull();
+    expect(toGallons(50, "g")).toBeNull();
+  });
+
+  it("returns null for missing/invalid amounts", () => {
+    expect(toGallons(null, "fl oz")).toBeNull();
+    expect(toGallons(undefined, "qt")).toBeNull();
+  });
+});
+
+describe("calcTankMixTotals — totalGal", () => {
+  it("includes a gallons figure for a liquid (fl oz/ac) chemical's total", () => {
+    const tankMix = [{ id: "c1", chemical: "Glyphosate (Roundup PowerMax)", oz: "16", unit: "fl oz/ac" }];
+    // 16 fl oz/ac * 80 ac = 1280 fl oz = 10 gal
+    const { items } = calcTankMixTotals(tankMix, 80, 10);
+    expect(items[0].total).toBe(1280);
+    expect(items[0].totalGal).toBeCloseTo(10);
+  });
+
+  it("leaves totalGal null for a dry-weight (lbs/ac) chemical's total", () => {
+    const tankMix = [{ id: "c1", chemical: "Sonalan 10G", oz: "7.5", unit: "lbs/ac" }];
+    const { items } = calcTankMixTotals(tankMix, 10, 10);
+    expect(items[0].total).toBe(75);
+    expect(items[0].totalGal).toBeNull();
   });
 });

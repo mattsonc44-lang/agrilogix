@@ -26,6 +26,26 @@
 const PER_ACRE_SUFFIX = "/ac";
 const PER_100GAL_SUFFIX = "/100 gal";
 
+// Liquid-volume units convert cleanly to gallons — handy since a total like
+// "1280 fl oz" means a lot less at the shop than "10 gal". Dry-weight units
+// ("oz" meaning dry ounces here, as distinct from "fl oz"; also "lbs", "g")
+// have no gallon equivalent and are intentionally left out, so a WDG/dry
+// product's total never gets a bogus gallons figure.
+const GAL_PER_UNIT = {
+  "fl oz": 1 / 128,
+  "pt": 1 / 8,
+  "qt": 1 / 4,
+  "gal": 1,
+  "L": 0.264172,
+  "ml": 0.264172 / 1000,
+};
+
+export function toGallons(amount, unit) {
+  const factor = GAL_PER_UNIT[unit];
+  if (factor == null || amount == null || isNaN(amount)) return null;
+  return amount * factor;
+}
+
 export function calcTankMixTotals(tankMix, acres, waterVolGalAc, actualWaterGal) {
   const ac = parseFloat(acres) || 0;
   const galAc = parseFloat(waterVolGalAc) || 0;
@@ -51,7 +71,8 @@ export function calcTankMixTotals(tankMix, acres, waterVolGalAc, actualWaterGal)
         totalUnit = unit.slice(0, -PER_100GAL_SUFFIX.length);
       }
     }
-    return { id: c.id, name, rate: c.oz, unit, total, totalUnit };
+    const totalGal = total != null ? toGallons(total, totalUnit) : null;
+    return { id: c.id, name, rate: c.oz, unit, total, totalUnit, totalGal };
   });
 
   return { totalWaterGal, effectiveAcres, items };
