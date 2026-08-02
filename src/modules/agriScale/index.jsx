@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill } from "../../core/agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill, mergeFarmFields, mergeFarmBins } from "../../core/agriscale.js";
 import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -567,6 +567,16 @@ const [showReport, setShowReport] = useState(false);
 
 const skipRef = useRef(false);
 const nextId = useRef(Date.now());
+// Full (ALL farms') copy of fields/bins as last synced from Firebase. The
+// `fields`/`bins` state above only ever holds the CURRENT farm's filtered
+// subset (for display) — save() must merge edits back into this full set
+// rather than writing the filtered subset as if it were everything, or
+// saving while on one farm silently wipes every OTHER farm's fields/bins
+// from the shared tenant-wide node (dbWrite is a full overwrite at that
+// path, not a merge). This is the root cause of fields disappearing when
+// you import for one farm, switch farms, then import/save on the other.
+const allFieldsRef = useRef([]);
+const allBinsRef = useRef([]);
 
 // ── Load ──────────────────────────────────────────────────────
 useEffect(()=>{
@@ -578,10 +588,11 @@ const bl=obj2arr(d.bins||{}).filter(Boolean);
 const gl=obj2arr(d.customGrains||{}).filter(Boolean);
 const tl=obj2arr(d.trucks||{}).filter(Boolean);
 if(fl.length){
+allFieldsRef.current = fl;
 const farmFields = (!farmId||farmId==="default") ? fl.filter(f=>!f.farmId||f.farmId==="default") : fl.filter(f=>f.farmId===farmId);
 setFields(farmFields); setAFId(farmFields[0]?.id||null);
 }
-if(bl.length){ setBins(bl); setABId(bl[0].id); }
+if(bl.length){ allBinsRef.current = bl; setBins(bl); setABId(bl[0].id); }
 if(gl.length) setGrains(gl);
 if(tl.length) setTrucks(tl.filter(Boolean)); else setTrucks(DEFAULT_TRUCKS);
 asSaveCache(d);
@@ -597,8 +608,8 @@ const fl=obj2arr(cached.fields||{}).filter(Boolean);
 const bl=obj2arr(cached.bins||{}).filter(Boolean);
 const gl=obj2arr(cached.customGrains||{}).filter(Boolean);
 const tl=obj2arr(cached.trucks||{}).filter(Boolean);
-if(fl.length){ const ff=(!farmId||farmId==="default")?fl.filter(f=>!f.farmId||f.farmId==="default"):fl.filter(f=>f.farmId===farmId); setFields(ff); setAFId(ff[0]?.id||null); }
-if(bl.length){ setBins(bl); setABId(bl[0].id); }
+if(fl.length){ allFieldsRef.current = fl; const ff=(!farmId||farmId==="default")?fl.filter(f=>!f.farmId||f.farmId==="default"):fl.filter(f=>f.farmId===farmId); setFields(ff); setAFId(ff[0]?.id||null); }
+if(bl.length){ allBinsRef.current = bl; setBins(bl); setABId(bl[0].id); }
 if(gl.length) setGrains(gl);
 if(tl.length) setTrucks(tl.filter(Boolean));
 setSyncStatus("offline");
@@ -614,11 +625,13 @@ return dbListen(BASE,token,({data:d})=>{
 if(skipRef.current||!d) return;
 if(d.fields){
 const allF = obj2arr(d.fields).filter(Boolean);
+allFieldsRef.current = allF;
 const farmFields = (!farmId||farmId==="default") ? allF.filter(f=>!f.farmId||f.farmId==="default") : allF.filter(f=>f.farmId===farmId);
 setFields(farmFields);
 }
 if(d.bins){
 const allB = obj2arr(d.bins).filter(Boolean);
+allBinsRef.current = allB;
 const farmBins = allB.filter(b => !b.farmId || b.farmId === farmId || b.farmId === "shared");
 setBins(farmBins);
 }
@@ -666,10 +679,12 @@ const merged = remote ? mergeWithRemote(remote, q.data) : q.data;
 await dbSafeWrite(BASE, merged, token);
 if(merged.fields){
 const allF = obj2arr(merged.fields).filter(Boolean);
+allFieldsRef.current = allF;
 setFields((!farmId||farmId==="default") ? allF.filter(f=>!f.farmId||f.farmId==="default") : allF.filter(f=>f.farmId===farmId));
 }
 if(merged.bins){
 const allB = obj2arr(merged.bins).filter(Boolean);
+allBinsRef.current = allB;
 setBins(allB.filter(b => !b.farmId || b.farmId === farmId || b.farmId === "shared"));
 }
 if(merged.customGrains) setGrains(obj2arr(merged.customGrains).filter(Boolean));
@@ -691,9 +706,19 @@ const nextBins = nb||bins;
 // Safety guard: never write if we'd be wiping fields/bins that exist in current state
 if(fields.length > 0 && nextFields.length === 0) { console.warn("AgriScale save blocked: would wipe fields"); return; }
 if(bins.length > 0 && nextBins.length === 0) { console.warn("AgriScale save blocked: would wipe bins"); return; }
+// nextFields/nextBins only ever contain the CURRENT farm's subset (fields/
+// bins state is always farm-filtered). dbWrite below is a full overwrite of
+// the shared tenant-wide node, not a merge — so writing that subset directly
+// would delete every OTHER farm's fields/bins. mergeFarmFields/mergeFarmBins
+// (core/agriscale.js) pull out what belongs to other farms and merge this
+// farm's edits back in.
+const mergedFields = mergeFarmFields(allFieldsRef.current, nextFields, farmId);
+const mergedBins = mergeFarmBins(allBinsRef.current, nextBins, farmId);
+allFieldsRef.current = mergedFields;
+allBinsRef.current = mergedBins;
 const payload = {
-fields: Object.fromEntries(nextFields.map(f=>[f.id,f])),
-bins: Object.fromEntries(nextBins.map(b=>[b.id,b])),
+fields: Object.fromEntries(mergedFields.map(f=>[f.id,f])),
+bins: Object.fromEntries(mergedBins.map(b=>[b.id,b])),
 customGrains:Object.fromEntries((ng||grains).map((g,i)=>[i,g])),
 trucks: Object.fromEntries((nt||trucks).map((t,i)=>[i,t])),
 };
@@ -710,7 +735,7 @@ setSyncStatus("live");
 setSyncStatus("queued");
 }
 setTimeout(()=>{ skipRef.current=false; }, 1500);
-},[fields,bins,grains,trucks,token,BASE]);
+},[fields,bins,grains,trucks,token,BASE,farmId]);
 
 // ── Scale computed (null-safe) ────────────────────────────────
 const safeArr = a => (Array.isArray(a)?a:[]).filter(Boolean);
@@ -1320,6 +1345,27 @@ style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily
 <option key={f.id} value={String(f.id)}>{f.name} ({(f.loads||[]).length})</option>
 ))}
 </select>
+{/* Live off-field bushels + avg bu/ac — same math the REPORT tab's per-field
+cards use (sumLoadsBushels), just surfaced right where the loads are being
+logged so whoever's running the scale can see it climb load by load without
+switching tabs. Recomputes automatically since activeField comes straight
+from state, which recordLoad() updates on every "Log load." */}
+{activeField && (activeField.loads||[]).length > 0 && (()=>{
+const fieldTotalBu = sumLoadsBushels(activeField.loads);
+const fieldAcres = parseFloat(activeField.acres) || 0;
+return (
+<div style={{display:"flex",gap:"10px",marginTop:"9px",paddingTop:"9px",borderTop:"1px solid rgba(255,255,255,.6)"}}>
+<div style={{flex:1}}>
+<div style={{fontSize:"9px",letterSpacing:"0.08em",color:AS.greenText,opacity:0.65,fontFamily:"'Barlow',sans-serif"}}>OFF FIELD</div>
+<div style={{fontSize:"16px",fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:AS.greenText}}>{fieldTotalBu.toFixed(0)} bu</div>
+</div>
+<div style={{flex:1}}>
+<div style={{fontSize:"9px",letterSpacing:"0.08em",color:AS.greenText,opacity:0.65,fontFamily:"'Barlow',sans-serif"}}>AVG</div>
+<div style={{fontSize:"16px",fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:AS.greenText}}>{fieldAcres>0?(fieldTotalBu/fieldAcres).toFixed(1)+" bu/ac":"—"}</div>
+</div>
+</div>
+);
+})()}
 </div>
 {/* Insurance Unit — pulled from the active field's Insurance Unit(s) set in AgriPlan; defaults to None. */}
 <div style={{background:AS.blueBg,borderRadius:"12px",padding:"10px 12px"}}>
