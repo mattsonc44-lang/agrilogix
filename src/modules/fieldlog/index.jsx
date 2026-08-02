@@ -17,15 +17,22 @@ document.head.appendChild(l);
 const CROPS = ["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Mustard","Corn","Soybeans","Sunflowers","Alfalfa","Hay","Other"];
 let _flCrops = null; // set from tenant AgriPlan crop list; falls back to CROPS
 const FERT_BLENDS = ["28-0-0 (UAN)","46-0-0 (Urea)","11-52-0 (MAP)","18-46-0 (DAP)","0-0-60 (Potash)","10-26-26","34-0-0 (AN)","12-40-0","Custom Blend"];
-const CHEMICALS = ["Glyphosate (Roundup)","2,4-D Amine","MCPA Amine","Lontrel 360","Infinity","Odyssey","Axial","Puma Super","Buctril M","Muster 75DF","Centurion","Tundra","Refine M","Bumper 418 EC","Stratego YLD","Headline","Priaxor","Trivapro","Dimethoate","Matador","Other"];
+// Glyphosate is off-patent — the same active ingredient is sold under many
+// trade names, and which one a grower actually has in the shed varies by
+// retailer/co-op. Listed once here (not hand-duplicated per brand) so every
+// brand shares identical compliance data — add a name to this list and it
+// automatically gets its own selectable entry everywhere below.
+const GLYPHOSATE_BRANDS = ["Roundup PowerMax","Roundup WeatherMax","Touchdown Total","Duramax","RT3","Bronco","Cornerstone Plus","Credit Xtreme","Buccaneer Plus"];
+const CHEMICALS = [...GLYPHOSATE_BRANDS.map(b=>`Glyphosate (${b})`),"2,4-D Amine","MCPA Amine","Lontrel 360","Infinity","Odyssey","Axial","Puma Super","Buctril M","Muster 75DF","Centurion","Tundra","Refine M","Bumper 418 EC","Stratego YLD","Headline","Priaxor","Trivapro","Dimethoate","Matador","Other"];
 // ── Built-in chemical compliance data (always active, no setup needed) ────────
 // Source: EPA labels, ND/MT Weed Control Guides. Always verify actual label.
-const BUILTIN_CHEM_DATA = {
-"Glyphosate (Roundup)": {
 // Non-selective — any standing crop is a concern. Label allows preharvest/burndown only.
+const GLYPHOSATE_DATA = {
 labeledCrops: [], // Empty = warn for every crop (crops can't have glyphosate in-season)
 note: "Non-selective. Only labeled for preharvest/burndown — not safe on growing crops."
-},
+};
+const BUILTIN_CHEM_DATA = {
+...Object.fromEntries(GLYPHOSATE_BRANDS.map(b=>[`Glyphosate (${b})`, GLYPHOSATE_DATA])),
 "2,4-D Amine": {
 labeledCrops: ["Wheat","Durum","Barley","Oats","Flax","Peas","Corn"],
 plantback: { Canola:30, Lentils:30, Chickpeas:30, Mustard:30, Alfalfa:30, Soybeans:15 }
@@ -125,7 +132,7 @@ const DEMO_FIELDS = [
 ];
 const DEMO_ACTIVITIES = [
 {id:"a1",fieldId:"demo1",type:"seeding", date:"2025-05-10T07:30",data:{crop:"Wheat",seedRate:"90",totalSeed:"14400",fertBlend:"11-52-0 (MAP)",fertRate:"40",totalFert:"6400",equipment:"JD 1910 Air Cart",depth:"1.5"},notes:"Good conditions, 12°C, calm wind"},
-{id:"a2",fieldId:"demo1",type:"spraying", date:"2025-05-06T06:00",data:{waterVol:"10",equipment:"Case 4430",purpose:"Pre-seed burnoff",tankMix:[{id:"c1",chemical:"Glyphosate (Roundup)",oz:"16",unit:"oz/ac"},{id:"c2",chemical:"2,4-D Amine",oz:"12",unit:"oz/ac"}]},notes:"Wind NW 8 km/h"},
+{id:"a2",fieldId:"demo1",type:"spraying", date:"2025-05-06T06:00",data:{waterVol:"10",equipment:"Case 4430",purpose:"Pre-seed burnoff",tankMix:[{id:"c1",chemical:"Glyphosate (Roundup PowerMax)",oz:"16",unit:"oz/ac"},{id:"c2",chemical:"2,4-D Amine",oz:"12",unit:"oz/ac"}]},notes:"Wind NW 8 km/h"},
 {id:"a3",fieldId:"demo2",type:"rockPicking",date:"2025-04-22T09:15",data:{details:"Full pass with rock picker and rock cart"},notes:"Removed 6 loads"},
 {id:"a4",fieldId:"demo1",type:"seeding", date:"2024-05-08T07:00",data:{crop:"Peas",seedRate:"160",totalSeed:"25600",fertBlend:"11-52-0 (MAP)",fertRate:"20",totalFert:"3200",inoculantProduct:"Nodulator PRO",inoculantRate:"4 oz/cwt",equipment:"JD 1910 Air Cart",depth:"2"},notes:""},
 ];
@@ -409,15 +416,18 @@ return (
 
 // ── Common Hi-Line Herbicide Database (sourced from EPA labels & ND Weed Guide) ──
 const COMMON_CHEMICALS_DB = [
-{
-name:"Glyphosate (Roundup)", type:"Herbicide",
+// One entry per real-world brand name (see GLYPHOSATE_BRANDS above) so the
+// Settings "Add missing common chemicals" button offers all of them, not
+// just "Roundup" — same shared data for every brand, no hand-duplication.
+...GLYPHOSATE_BRANDS.map(b => ({
+name:`Glyphosate (${b})`, type:"Herbicide",
 defaultRate:"1.2", unit:"L/ac",
 labeledCrops:["Wheat","Durum","Barley","Oats","Canola","Flax","Peas","Lentils","Chickpeas","Corn","Soybeans","Sunflowers","Alfalfa"],
 plantback:[
 // Glyphosate is non-residual — minimal plantback (hours for annual weeds, 72h for perennials)
 // Label: 30 days for any crop NOT listed
 ]
-},
+})),
 {
 name:"2,4-D LV6 (Ester)", type:"Herbicide",
 defaultRate:"0.75", unit:"pt/ac",
