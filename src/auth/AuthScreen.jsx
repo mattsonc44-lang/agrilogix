@@ -448,7 +448,7 @@ export default function AuthScreen({ onAuth }) {
                 <div className="sl-record">
                   <span className="sl-record-cost">$847</span>
                   <div className="sl-record-type">Hydraulic Service — Filter change</div>
-                  <div className="sl-record-meta">MAY 12 · 7,841 HRS · J. MATTSON</div>
+                  <div className="sl-record-meta">MAY 12 · 7,841 HRS · SELF</div>
                 </div>
               </div>
             </div>
