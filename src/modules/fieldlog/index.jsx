@@ -1405,6 +1405,10 @@ return(
 <div style={S.row}><label style={S.label}>Water Volume (gal / ac)</label><input style={S.input} type="number" step="0.5" placeholder="e.g. 10" value={v.waterVol||""} onChange={e=>set({...v,waterVol:e.target.value})}/></div>
 <div style={S.row}><label style={S.label}>Sprayer / Equipment</label><input style={S.input} type="text" placeholder="e.g. Case 4430" value={v.equipment||""} onChange={e=>set({...v,equipment:e.target.value})}/></div>
 </div>
+<div style={S.g2}>
+<div style={S.row}><label style={S.label}>Tank Size (gal)</label><input style={S.input} type="number" step="10" placeholder="e.g. 1000" value={v.tankSize||""} onChange={e=>set({...v,tankSize:e.target.value})}/></div>
+<div style={{...S.row,display:"flex",alignItems:"flex-end"}}><div style={{fontSize:"11px",color:T.muted,paddingBottom:"9px"}}>Fill this in to see how much of each product goes in one tank load, instead of a whole-field total.</div></div>
+</div>
 <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:v.spotSpray?"8px":"14px"}}>
 <input type="checkbox" id="spotSprayChk" checked={!!v.spotSpray} onChange={e=>set({...v,spotSpray:e.target.checked})} style={{width:"16px",height:"16px"}}/>
 <label htmlFor="spotSprayChk" style={{fontSize:"13px",cursor:"pointer"}}>🎯 Spot-spray system (WeedIt, GreenSeeker, See &amp; Spray, etc.)</label>
@@ -1528,28 +1532,48 @@ setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
 ))}
 {mix.length>0 && (()=>{
 const ac = parseFloat(acres)||0;
+const galAc = parseFloat(v.waterVol)||0;
+const tankSize = parseFloat(v.tankSize)||0;
 const spotSpray = !!v.spotSpray;
-const actualGal = spotSpray ? v.actualGal : undefined;
-if(spotSpray && !(parseFloat(actualGal)>0)) {
+if(spotSpray && !(parseFloat(v.actualGal)>0)) {
 return (
 <div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #C0D0E8",fontSize:"12px",color:T.muted}}>
 🎯 Enter actual gallons applied above to calculate product totals for this spot-sprayed pass.
 </div>
 );
 }
-const { totalWaterGal, items } = calcTankMixTotals(mix, ac, v.waterVol, actualGal);
+// Three mutually-exclusive modes for the override passed to calcTankMixTotals:
+//  - spotspray: job's done, actual gallons off the system readout is the
+//    real total for the whole pass (retrospective).
+//  - tank: nothing's happened yet — tank size tells us how much product
+//    goes in THIS tank load, not a whole-field total (prospective mixing).
+//  - field (fallback, no tank size entered): the original whole-field
+//    acres*rate estimate, unchanged from before tank sizing existed.
+let mode, override;
+if(spotSpray) { mode="spotspray"; override=v.actualGal; }
+else if(tankSize>0 && galAc>0) { mode="tank"; override=tankSize; }
+else { mode="field"; override=undefined; }
+
+const { totalWaterGal, effectiveAcres, items } = calcTankMixTotals(mix, ac, v.waterVol, override);
 const totalItems = items.filter(it=>it.total!=null);
 if(totalWaterGal==null && totalItems.length===0) return null;
-// For a spot-sprayed pass, also show what a full blanket application would
-// have used, purely as a savings reference — clearly separate from the
-// actual total above since it's an estimate, not what happened.
-const blanketGal = spotSpray && ac>0 && parseFloat(v.waterVol)>0 ? ac*parseFloat(v.waterVol) : null;
+// Spot-spray: show what a full blanket application would've used, purely as
+// a savings reference — clearly separate from the actual total above.
+const blanketGal = mode==="spotspray" && ac>0 && galAc>0 ? ac*galAc : null;
+// Tank mode: how many of these tank loads the whole field will take.
+const tankLoads = mode==="tank" && effectiveAcres>0 && ac>0 ? ac/effectiveAcres : null;
 const anyConvertible = totalItems.some(it=>it.totalGal!=null);
+
+let label;
+if(mode==="spotspray") label = "🎯 Spot-spray totals (actual)";
+else if(mode==="tank") label = `🧮 Mix for this tank${effectiveAcres!=null?` — covers ~${Number(effectiveAcres.toFixed(1))} ac`:""}`;
+else label = `🧮 Bring to the field${ac>0?` — ${ac} ac`:""}`;
+
 return (
 <div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #C0D0E8"}}>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}>
 <div style={{fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700}}>
-{spotSpray?"🎯 Spot-spray totals (actual)":`🧮 Bring to the field${ac>0?` — ${ac} ac`:""}`}
+{label}
 </div>
 {anyConvertible && (
 <button type="button" onClick={()=>setShowGal(g=>!g)} style={{background:"none",border:"1px solid #A8C0DC",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",cursor:"pointer",color:"#2A5080",fontFamily:"inherit"}}>
@@ -1557,7 +1581,8 @@ return (
 </button>
 )}
 </div>
-{totalWaterGal!=null && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Total spray solution:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{blanketGal!=null&&blanketGal>totalWaterGal&&<span style={{color:T.muted}}> (vs. ~{Math.round(blanketGal).toLocaleString()} gal for a full-field pass)</span>}</div>}
+{totalWaterGal!=null && mode==="tank" && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Tank volume:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{tankLoads!=null&&<span style={{color:T.muted}}> — ≈{tankLoads<10?Number(tankLoads.toFixed(1)):Math.round(tankLoads)} load{tankLoads>1.05?"s":""} to cover this field ({ac} ac)</span>}</div>}
+{totalWaterGal!=null && mode!=="tank" && <div style={{fontSize:"13px",marginBottom:"4px"}}><span style={{color:T.muted}}>Total spray solution:</span> <strong>{Math.round(totalWaterGal).toLocaleString()} gal</strong>{blanketGal!=null&&blanketGal>totalWaterGal&&<span style={{color:T.muted}}> (vs. ~{Math.round(blanketGal).toLocaleString()} gal for a full-field pass)</span>}</div>}
 {totalItems.map(it=>(
 <div key={it.id} style={{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"2px 0"}}>
 <span>{it.name}</span>
