@@ -697,17 +697,29 @@ plantback:[
 // purpose here instead of guessed. Rates are typical label starting points
 // (verified against manufacturer/label sources) — always confirm against
 // the adjuvant's own product label and the label of whatever it's mixed with.
-{ name:"Nonionic Surfactant (Activator 90)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+// Brands below are each confirmed as belonging to one of the three
+// retailers/suppliers active in the Hi-Line area (CHS, Helena Agri-
+// Enterprises, Nutrien Ag Solutions/Loveland Products) rather than a
+// generic industry list — some well-known adjuvant names (e.g. Class Act
+// NG, InterLock, Preference) were deliberately left out because they're
+// WinField United brands, not carried by these three.
+// — Helena Agri-Enterprises —
 { name:"Nonionic Surfactant (Induce)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
-{ name:"Nonionic Surfactant (Preference)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
 { name:"Crop Oil Concentrate (Agri-Dex)", type:"Adjuvant", defaultRate:"1", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Methylated Seed Oil (MSO Premium)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"AMS Replacer / Water Conditioner (Quest)", type:"Adjuvant", defaultRate:"2.5", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+// — Nutrien Ag Solutions (Loveland Products) —
+{ name:"Nonionic Surfactant (Activator 90)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
 { name:"Crop Oil Concentrate (Herbimax)", type:"Adjuvant", defaultRate:"1", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
 { name:"Methylated Seed Oil (MSO Concentrate)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
-{ name:"Methylated Seed Oil (Destiny HC)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
 { name:"Penetrating Surfactant (LI 700)", type:"Adjuvant", defaultRate:"1", unit:"pt/ac", labeledCrops:[], plantback:[] },
-{ name:"AMS + Surfactant Blend (Class Act NG)", type:"Adjuvant", defaultRate:"2.5", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
-{ name:"Ammonium Sulfate / Water Conditioner (N-Pak AMS)", type:"Adjuvant", defaultRate:"2.5", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
-{ name:"Deposition / Drift Control Agent (InterLock)", type:"Adjuvant", defaultRate:"5", unit:"oz/ac", labeledCrops:[], plantback:[] },
+{ name:"Deposition / Drift & Water Conditioner (Weather Gard Complete)", type:"Adjuvant", defaultRate:"3", unit:"oz/ac", labeledCrops:[], plantback:[] },
+// — CHS —
+{ name:"90% Nonionic Surfactant (Prefer 90)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Crop Oil Concentrate (CHS Crop Oil)", type:"Adjuvant", defaultRate:"1", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Methylated Seed Oil (Upland MSO)", type:"Adjuvant", defaultRate:"1", unit:"qt/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Liquid Ammonium Sulfate (CHS Liquid AMS)", type:"Adjuvant", defaultRate:"2.5", unit:"gal/100 gal", labeledCrops:[], plantback:[] },
+{ name:"Deposition / Drift Control Agent (Petrichor)", type:"Adjuvant", defaultRate:"3", unit:"oz/ac", labeledCrops:[], plantback:[] },
 // ── Fungicides & Insecticides ── already selectable elsewhere in the app
 // (CHEMICALS/BUILTIN_CHEM_DATA below) but weren't in this common-products
 // database yet, so they never showed up in "Load Common Chemicals." Generic
