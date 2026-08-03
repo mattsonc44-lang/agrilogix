@@ -86,3 +86,35 @@ export function calcTankMixTotals(tankMix, acres, waterVolGalAc, actualWaterGal)
 
   return { totalWaterGal, effectiveAcres, items };
 }
+
+// ── Active plantback restrictions, for a "does anything need attention right
+// now" view (Home's needs-attention feed) — deliberately different from
+// AgriPlan's getPlantbackWarnings (agriPlan/index.jsx), which needs a
+// specific candidate crop ("if I plant Canola here, is anything still
+// restricting me"). This instead answers "what's currently restricted on
+// this field, across every crop the chemical restricts" with no target crop
+// in mind, by walking every crop key in each chemical's plantback map
+// instead of looking up just one.
+//
+// `fieldRestrictions` is the raw tenant-wide Firebase node FieldLog writes to
+// (tenants/{tenantId}/fieldRestrictions/{safeKey}), shaped:
+//   { fieldName, chemicals: { [chemName]: { date, plantback: {crop:days} } } }
+export function findActivePlantbackRestrictions(fieldRestrictions, today = new Date()) {
+  const out = [];
+  const t = today.getTime();
+  Object.values(fieldRestrictions || {}).forEach(fieldData => {
+    if (!fieldData?.chemicals) return;
+    Object.entries(fieldData.chemicals).forEach(([chemName, entry]) => {
+      const appliedTs = new Date(entry?.date).getTime();
+      if (isNaN(appliedTs)) return;
+      const daysAgo = Math.floor((t - appliedTs) / 86400000);
+      Object.entries(entry.plantback || {}).forEach(([crop, days]) => {
+        const daysRemaining = (Number(days) || 0) - daysAgo;
+        if (daysRemaining > 0) {
+          out.push({ fieldName: fieldData.fieldName, chemName, crop, daysRemaining, appliedDate: entry.date });
+        }
+      });
+    });
+  });
+  return out.sort((a, b) => a.daysRemaining - b.daysRemaining);
+}
