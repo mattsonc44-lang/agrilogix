@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
 import { obj2arr, genId } from "../../core/helpers.js";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill, mergeFarmFields, mergeFarmBins } from "../../core/agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill, mergeFarmFields, mergeFarmBins, buildMarketingSummary, contractDeliveryStatus } from "../../core/agriscale.js";
 import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
@@ -92,6 +92,48 @@ const AS = {
   logoGold:      "#C9A227",
   logoGoldSoft:  "#E4C468",
 };
+
+// ── Grain marketing contract form — shared for both "+ Add Contract" and
+// editing an existing one (pass `initial` to pre-fill). Price is only shown
+// to roles with canViewCosts — bushels/buyer/delivery aren't $ figures, but
+// price and any $ value derived from it are gated the same way AgriPlan and
+// ServiceLog already gate their own cost data.
+function ContractForm({ initial, grains, canViewCosts, onSave, onCancel }) {
+const [buyer, setBuyer] = useState(initial?.buyer || "");
+const [crop, setCrop] = useState(initial?.crop || grains[0]?.name || "");
+const [bushels, setBushels] = useState(initial?.bushels || "");
+const [price, setPrice] = useState(initial?.price || "");
+const [delivery, setDelivery] = useState(initial?.delivery || "");
+const [notes, setNotes] = useState(initial?.notes || "");
+const inputStyle = {width:"100%",boxSizing:"border-box",padding:"6px 8px",fontSize:"12px",fontFamily:"'IBM Plex Mono',monospace",border:"1px solid #ccc4b8",borderRadius:"4px",background:"#fff",color:"#2a2a26"};
+const labelStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em",marginBottom:"2px"};
+const submit = () => {
+if(!crop || !(parseFloat(bushels)>0)) return;
+onSave({ id: initial?.id || genId(), farmId: initial?.farmId, buyer: buyer.trim(), crop, bushels, price, delivery: delivery.trim(), notes: notes.trim() });
+};
+return (
+<div style={{background:"#fbf9f5",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"8px"}}>
+<div><div style={labelStyle}>BUYER / ELEVATOR</div><input value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="e.g. CHS Big Sandy" style={inputStyle}/></div>
+<div><div style={labelStyle}>CROP</div>
+<select value={crop} onChange={e=>setCrop(e.target.value)} style={inputStyle}>
+{grains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}
+</select>
+</div>
+<div><div style={labelStyle}>BUSHELS</div><input type="number" value={bushels} onChange={e=>setBushels(e.target.value)} placeholder="e.g. 5000" style={inputStyle}/></div>
+{canViewCosts && <div><div style={labelStyle}>PRICE ($/bu)</div><input type="number" step="0.01" value={price} onChange={e=>setPrice(e.target.value)} placeholder="e.g. 6.25" style={inputStyle}/></div>}
+<div><div style={labelStyle}>DELIVERY BY</div><input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(delivery)?delivery:""} onChange={e=>setDelivery(e.target.value)} style={inputStyle}/>
+{delivery && !/^\d{4}-\d{2}-\d{2}$/.test(delivery) && <div style={{fontSize:"9px",color:"#8a8478",marginTop:"2px"}}>Existing value "{delivery}" — pick a date above to enable delivery reminders</div>}
+</div>
+<div style={{gridColumn:canViewCosts?"auto":"1 / -1"}}><div style={labelStyle}>NOTES</div><input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Contract #, terms, etc." style={inputStyle}/></div>
+</div>
+<div style={{display:"flex",gap:"6px"}}>
+<button onClick={submit} disabled={!crop||!(parseFloat(bushels)>0)} style={{cursor:"pointer",flex:1,padding:"7px",fontSize:"10px",fontWeight:700,letterSpacing:"0.08em",borderRadius:"4px",border:"none",background:(!crop||!(parseFloat(bushels)>0))?"#ccc4b8":"#4a7535",color:"#fff"}}>SAVE</button>
+<button onClick={onCancel} style={{cursor:"pointer",padding:"7px 14px",fontSize:"10px",fontWeight:700,letterSpacing:"0.08em",borderRadius:"4px",border:"1px solid #ccc4b8",background:"#fff",color:"#6a7280"}}>CANCEL</button>
+</div>
+</div>
+);
+}
 
 // ── BinGauge SVG (matches original exactly) ───────────────────────
 function BinGauge({ bin, grains, small }) {
@@ -505,6 +547,11 @@ const [fields, setFields] = useState(DEFAULT_FIELDS);
 const [bins, setBins] = useState(DEFAULT_BINS);
 const [grains, setGrains] = useState([FALLBACK_GRAIN]);
 const [trucks, setTrucks] = useState(DEFAULT_TRUCKS);
+// Grain marketing contracts — unlike fields/bins these are written one at a
+// time to their own sub-path (see addOrUpdateContract/deleteContract below),
+// never via the whole-list save(), so there's no risk of one farm's save
+// overwriting another farm's contracts the way fields/bins could before.
+const [contracts, setContracts] = useState([]);
 const [loading, setLoading] = useState(true);
 const [syncStatus, setSyncStatus] = useState("init");
 
@@ -564,6 +611,8 @@ const [editTruck, setET] = useState(null);
 const [addTruck, setAT] = useState(false);
 const [editLoad, setEL] = useState(null);
 const [showReport, setShowReport] = useState(false);
+const [addingContract, setAddingContract] = useState(false);
+const [editingContractId, setEditingContractId] = useState(null);
 
 const skipRef = useRef(false);
 const nextId = useRef(Date.now());
@@ -587,6 +636,7 @@ const fl=obj2arr(d.fields||{}).filter(Boolean);
 const bl=obj2arr(d.bins||{}).filter(Boolean);
 const gl=obj2arr(d.customGrains||{}).filter(Boolean);
 const tl=obj2arr(d.trucks||{}).filter(Boolean);
+const cl=obj2arr(d.contracts||{}).filter(Boolean);
 if(fl.length){
 allFieldsRef.current = fl;
 const farmFields = (!farmId||farmId==="default") ? fl.filter(f=>!f.farmId||f.farmId==="default") : fl.filter(f=>f.farmId===farmId);
@@ -595,6 +645,7 @@ setFields(farmFields); setAFId(farmFields[0]?.id||null);
 if(bl.length){ allBinsRef.current = bl; setBins(bl); setABId(bl[0].id); }
 if(gl.length) setGrains(gl);
 if(tl.length) setTrucks(tl.filter(Boolean)); else setTrucks(DEFAULT_TRUCKS);
+setContracts((!farmId||farmId==="default") ? cl.filter(c=>!c.farmId||c.farmId==="default") : cl.filter(c=>c.farmId===farmId));
 asSaveCache(d);
 } else {
 setAFId(DEFAULT_FIELDS[0].id);
@@ -608,10 +659,12 @@ const fl=obj2arr(cached.fields||{}).filter(Boolean);
 const bl=obj2arr(cached.bins||{}).filter(Boolean);
 const gl=obj2arr(cached.customGrains||{}).filter(Boolean);
 const tl=obj2arr(cached.trucks||{}).filter(Boolean);
+const cl=obj2arr(cached.contracts||{}).filter(Boolean);
 if(fl.length){ allFieldsRef.current = fl; const ff=(!farmId||farmId==="default")?fl.filter(f=>!f.farmId||f.farmId==="default"):fl.filter(f=>f.farmId===farmId); setFields(ff); setAFId(ff[0]?.id||null); }
 if(bl.length){ allBinsRef.current = bl; setBins(bl); setABId(bl[0].id); }
 if(gl.length) setGrains(gl);
 if(tl.length) setTrucks(tl.filter(Boolean));
+if(cl.length) setContracts((!farmId||farmId==="default") ? cl.filter(c=>!c.farmId||c.farmId==="default") : cl.filter(c=>c.farmId===farmId));
 setSyncStatus("offline");
 } else {
 setSyncStatus("error");
@@ -637,6 +690,10 @@ setBins(farmBins);
 }
 if(d.customGrains) setGrains(obj2arr(d.customGrains).filter(Boolean));
 if(d.trucks) setTrucks(obj2arr(d.trucks).filter(Boolean));
+if(d.contracts){
+const allC = obj2arr(d.contracts).filter(Boolean);
+setContracts((!farmId||farmId==="default") ? allC.filter(c=>!c.farmId||c.farmId==="default") : allC.filter(c=>c.farmId===farmId));
+}
 asSaveCache(d);
 });
 },[loading,tenantId,token]);
@@ -920,6 +977,60 @@ setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
 setEL(null);
 };
 
+// ── Grain marketing contracts ── written one record at a time to its own
+// sub-path (tenants/{tenantId}/agriScale/contracts/{id}) rather than through
+// the whole-list save() above — so, unlike fields/bins before the farm-merge
+// fix, there's no full-node overwrite involved at all and no way for one
+// farm's contract edit to touch another farm's contracts.
+const addOrUpdateContract = async (contract) => {
+const stamped = {...contract, farmId: contract.farmId || farmId || "default"};
+setContracts(cs => cs.some(c=>c.id===stamped.id) ? cs.map(c=>c.id===stamped.id?stamped:c) : [...cs, stamped]);
+try { await dbWrite(`${BASE}/contracts/${stamped.id}`, stamped, token); } catch(e) { console.warn("AgriScale contract save failed", e); }
+};
+const deleteContract = async (id) => {
+setContracts(cs => cs.filter(c=>c.id!==id));
+try { await dbWrite(`${BASE}/contracts/${id}`, null, token); } catch(e) { console.warn("AgriScale contract delete failed", e); }
+};
+
+// Mirror a crop-level contract summary into AgriPlan so contracted revenue
+// shows up in its Actual vs Projected reports alongside actual (realized)
+// revenue — kept as its own node (not merged into fieldHistory's actual
+// bushels) since a contract is a forward commitment, not yet-realized
+// production. Written under the current calendar year; contracts don't
+// carry their own year field, so this reflects "this marketing season's
+// contracts" rather than trying to infer a year from delivery dates that
+// may themselves be free text (see contractDeliveryStatus in core/agriscale.js).
+const mirrorContractsToAgriPlan = useCallback(async (list) => {
+if (!tenantId || !token) return;
+const year = new Date().getFullYear();
+const byCrop = {};
+(list || []).forEach(c => {
+const bu = parseFloat(c.bushels) || 0;
+const price = parseFloat(c.price) || 0;
+if (!c.crop || bu <= 0) return;
+if (!byCrop[c.crop]) byCrop[c.crop] = { contractedBu: 0, pricedBu: 0, contractedRevenue: 0 };
+byCrop[c.crop].contractedBu += bu;
+if (price > 0) { byCrop[c.crop].pricedBu += bu; byCrop[c.crop].contractedRevenue += bu * price; }
+});
+const payload = {};
+Object.entries(byCrop).forEach(([crop, v]) => {
+payload[crop] = { ...v, lastUpdated: new Date().toISOString(), source: "agriscale" };
+});
+try {
+await fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/contracts/${year}.json?auth=${token}`, {
+method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+});
+} catch (e) { console.warn("Contract mirror to AgriPlan failed", e); }
+}, [tenantId, token, AP_BASE]);
+
+// Re-mirror whenever contracts change (add/edit/delete) — gated on !loading
+// so the initial empty state before contracts finish loading doesn't briefly
+// overwrite AgriPlan's copy with nothing.
+useEffect(() => {
+if (loading) return;
+mirrorContractsToAgriPlan(contracts);
+}, [contracts, loading, mirrorContractsToAgriPlan]);
+
 const splitLoad = ({ load, splitA, splitB, binAId, binBId, labelBase }) => {
 const owner = findLoadOwner(load.id);
 if(!owner) return;
@@ -950,6 +1061,7 @@ const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
 const unitBreakdown = useMemo(()=>buildUnitBreakdown(safeFields), [safeFields]);
 const guaranteeProgress = useMemo(()=>buildGuaranteeProgress(safeFields), [safeFields]);
 const binSummary = useMemo(()=>buildBinSummary(safeFields, safeBins, safeGrains), [safeFields, safeBins, safeGrains]);
+const marketingSummary = useMemo(()=>buildMarketingSummary(safeFields, contracts), [safeFields, contracts]);
 const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
 const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
 const btnBase = {cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
@@ -1249,7 +1361,7 @@ alert("Export failed: " + e.message);
 } finally { setFLExporting(false); }
 };
 
-const TABS = ["SCALE","BINS","FIELDS","COMM",...(perms.canReport?["REPORT"]:[])];
+const TABS = ["SCALE","BINS","FIELDS","MARKET","COMM",...(perms.canReport?["REPORT"]:[])];
 if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'IBM Plex Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
 
 return (
@@ -1538,6 +1650,77 @@ return(<div key={l.id} style={{display:"flex",gap:"7px",alignItems:"center",font
 )}
 </div>);
 })}
+</>)}
+
+{/* ── MARKET TAB ── */}
+{tab==="MARKET"&&(<>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"12px"}}>GRAIN MARKETING</div>
+{marketingSummary.length===0 && (
+<div style={{fontSize:"10px",color:"#b0a870",textAlign:"center",padding:"14px 0",marginBottom:"12px"}}>No harvested bushels or contracts logged yet</div>
+)}
+{marketingSummary.map(m=>{
+const over = m.uncommittedBu < 0;
+return (
+<div key={m.crop} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"12px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"6px"}}>{m.crop}</div>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px",textAlign:"center"}}>
+<div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",color:"#4a7535"}}>{m.harvestedBu.toFixed(0)}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em"}}>HARVESTED</div>
+</div>
+<div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",color:"#1E5078"}}>{m.contractedBu.toFixed(0)}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em"}}>CONTRACTED</div>
+</div>
+<div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",color:over?"#c47d0a":"#4a5568"}}>{Math.abs(m.uncommittedBu).toFixed(0)}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em"}}>{over?"FORWARD SOLD":"UNCOMMITTED"}</div>
+</div>
+</div>
+</div>
+);
+})}
+
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"10px",marginTop:"20px"}}>CONTRACTS</div>
+{contracts.length===0 && !addingContract && (
+<div style={{fontSize:"10px",color:"#b0a870",textAlign:"center",padding:"14px 0",marginBottom:"8px"}}>No contracts logged yet</div>
+)}
+{[...contracts].sort((a,b)=>(a.crop||"").localeCompare(b.crop||"")).map(c=>{
+const ds = contractDeliveryStatus(c.delivery);
+const deliveryLabel = /^\d{4}-\d{2}-\d{2}$/.test(c.delivery)
+? new Date(c.delivery+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})
+: c.delivery;
+return editingContractId===c.id ? (
+<ContractForm key={c.id} initial={c} grains={safeGrains} canViewCosts={perms.canViewCosts}
+onSave={ct=>{addOrUpdateContract(ct);setEditingContractId(null);}} onCancel={()=>setEditingContractId(null)}/>
+) : (
+<div key={c.id} style={{background:"#f5f3ef",border:`1px solid ${ds.status==="overdue"?"#e0c0c0":ds.status==="soon"?"#e0cf9a":"#ddd8d0"}`,borderRadius:"4px",padding:"10px 12px",marginBottom:"6px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+<div style={{minWidth:0}}>
+<div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
+<div style={{fontWeight:700,fontSize:"11px",color:"#4a5568"}}>{c.crop} — {parseFloat(c.bushels||0).toLocaleString()} bu</div>
+{ds.status==="overdue"&&<span style={{fontSize:"8px",fontWeight:700,letterSpacing:"0.06em",padding:"2px 6px",borderRadius:"3px",background:"#fdeaea",color:"#c03030",border:"1px solid #e0c0c0"}}>⚠ {Math.abs(ds.daysUntil)}D OVERDUE</span>}
+{ds.status==="soon"&&<span style={{fontSize:"8px",fontWeight:700,letterSpacing:"0.06em",padding:"2px 6px",borderRadius:"3px",background:"#fff6e0",color:"#8a5a00",border:"1px solid #e0cf9a"}}>⏰ {ds.daysUntil===0?"DUE TODAY":`${ds.daysUntil}D LEFT`}</span>}
+</div>
+<div style={{fontSize:"9px",color:"#6a7280",marginTop:"2px"}}>
+{c.buyer||"—"}{deliveryLabel?` · ${deliveryLabel}`:""}{perms.canViewCosts&&c.price?` · $${parseFloat(c.price).toFixed(2)}/bu`:""}
+</div>
+{c.notes&&<div style={{fontSize:"9px",color:"#8a8478",marginTop:"2px",fontStyle:"italic"}}>{c.notes}</div>}
+</div>
+<div style={{display:"flex",gap:"4px",flexShrink:0}}>
+<button onClick={()=>setEditingContractId(c.id)} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+<button onClick={()=>{if(confirm("Delete this contract?"))deleteContract(c.id);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>
+</div>
+</div>
+</div>
+);
+})}
+{addingContract ? (
+<ContractForm grains={safeGrains} canViewCosts={perms.canViewCosts}
+onSave={ct=>{addOrUpdateContract(ct);setAddingContract(false);}} onCancel={()=>setAddingContract(false)}/>
+) : (
+<button onClick={()=>setAddingContract(true)} style={{...btnBase,cursor:"pointer",width:"100%",padding:"8px",fontSize:"10px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD CONTRACT</button>
+)}
 </>)}
 
 {/* ── COMM TAB ── */}
