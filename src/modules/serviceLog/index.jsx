@@ -10,7 +10,7 @@ const SL_CSS = `
   .sl *,.sl *::before,.sl *::after{box-sizing:border-box;}
   .sl{--bg:linear-gradient(160deg, #182420 0%, #101815 55%, #0B120F 100%);--bg2:#ffffff;--bg3:#e8eaed;--panel:#ffffff;--border:#d1d5db;--border2:#b8bec8;--amber:#d97706;--amber-dim:#b45309;--red:#dc2626;--green:#16a34a;--text:#374151;--text-dim:#6b7280;--text-bright:#111827;--text-on-dark:#F2F0E8;--text-on-dark-dim:#9BA79C;background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font-size:14px;display:flex;flex-direction:column;min-height:calc(100vh - 50px);}
   .sl .accent-bar{height:4px;flex-shrink:0;background:linear-gradient(90deg, #4FA95C, #C9A227);}
-  .sl .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);flex-shrink:0;gap:12px;background:#fff;}
+  .sl .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:56px;box-sizing:border-box;border-bottom:1px solid var(--border);flex-shrink:0;gap:12px;background:#fff;}
   .sl .topbar-brand{display:flex;align-items:baseline;gap:10px;}
   .sl .topbar-eyebrow{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--amber);text-transform:uppercase;}
   .sl .topbar-title{font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;color:var(--text-bright);letter-spacing:1px;line-height:1;}
