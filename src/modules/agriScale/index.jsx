@@ -1409,7 +1409,7 @@ return(
 <select
 value={activeBinId!=null?String(activeBinId):""}
 onChange={e=>{ const picked=sortedBins.find(b=>String(b.id)===e.target.value); if(picked) setABId(picked.id); }}
-style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,border:"none",borderRadius:"8px",color:AS.text,outline:"none",marginBottom:"7px"}}
+style={{width:"100%",padding:"11px 12px",fontSize:"15px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,border:"none",borderRadius:"8px",color:AS.text,outline:"none",marginBottom:"7px"}}
 >
 {sortedBins.map(b=>{
 const bg=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
@@ -1429,7 +1429,7 @@ return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.loc
 {/* Unit toggle */}
 <div style={{display:"flex",gap:"5px",background:AS.cardAlt,borderRadius:"10px",padding:"4px"}}>
 {UNITS.map(u=>(
-<button key={u} onClick={()=>setUnit(u)} style={{cursor:"pointer",flex:1,padding:"7px 0",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"7px",background:unit===u?AS.card:"transparent",border:"none",color:unit===u?AS.text:AS.textSoft,boxShadow:unit===u?`0 0 0 1px ${AS.border}`:"none"}}>
+<button key={u} onClick={()=>setUnit(u)} style={{cursor:"pointer",flex:1,padding:"10px 0",fontSize:"14px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"7px",background:unit===u?AS.card:"transparent",border:"none",color:unit===u?AS.text:AS.textSoft,boxShadow:unit===u?`0 0 0 1px ${AS.border}`:"none"}}>
 {u}
 </button>
 ))}
@@ -1439,7 +1439,7 @@ return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.loc
 <div style={{fontSize:"11px",color:AS.amberText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Commodity · {grain.bushel_lbs} lbs/bu</div>
 <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
 {safeGrains.map((g,i)=>(
-<button key={i} onClick={()=>setGrainIdx(i)} style={{cursor:"pointer",padding:"6px 12px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",border:"none",background:grainIdx===i?(g.color||AS.amber):"rgba(255,255,255,.55)",color:grainIdx===i?"#fff":AS.amberText}}>
+<button key={i} onClick={()=>setGrainIdx(i)} style={{cursor:"pointer",padding:"9px 16px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",border:"none",background:grainIdx===i?(g.color||AS.amber):"rgba(255,255,255,.55)",color:grainIdx===i?"#fff":AS.amberText}}>
 {g.name}
 </button>
 ))}
@@ -1451,7 +1451,7 @@ return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.loc
 <select
 value={activeFieldId!=null?String(activeFieldId):""}
 onChange={e=>{ const picked=sortedFields.find(f=>String(f.id)===e.target.value); if(picked) setAFId(picked.id); }}
-style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.greenText,outline:"none"}}
+style={{width:"100%",padding:"11px 12px",fontSize:"15px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.greenText,outline:"none"}}
 >
 {sortedFields.map(f=>(
 <option key={f.id} value={String(f.id)}>{f.name} ({(f.loads||[]).length})</option>
@@ -1485,7 +1485,7 @@ return (
 <select
 value={activeUnit||""}
 onChange={e=>setActiveUnit(e.target.value)}
-style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.blueText,outline:"none"}}
+style={{width:"100%",padding:"11px 12px",fontSize:"15px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.blueText,outline:"none"}}
 >
 <option value="">None</option>
 {fieldInsUnits.map(u=>(<option key={u} value={u}>{u}</option>))}
@@ -1496,7 +1496,7 @@ style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily
 <div style={{fontSize:"11px",color:AS.textFaint,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Truck</div>
 <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
 {safeTrucks.map(t=>(
-<button key={t.id} onClick={()=>setTruckColor(t.id)} style={{cursor:"pointer",padding:"6px 12px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",background:t.hex,color:t.text,border:"none",boxShadow:truckColor===t.id?`0 0 0 2px ${AS.text}`:"none"}}>
+<button key={t.id} onClick={()=>setTruckColor(t.id)} style={{cursor:"pointer",padding:"9px 16px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",background:t.hex,color:t.text,border:"none",boxShadow:truckColor===t.id?`0 0 0 2px ${AS.text}`:"none"}}>
 {t.name}
 </button>
 ))}
@@ -1527,7 +1527,7 @@ commodity's own color so it visually ties back to the Commodity card above. */}
 </div>
 
 {/* Tare button */}
-<button onClick={()=>setTare(rawLbs)} style={{cursor:"pointer",width:"100%",padding:"11px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"10px",marginBottom:"7px"}}>
+<button onClick={()=>setTare(rawLbs)} style={{cursor:"pointer",width:"100%",padding:"13px",fontSize:"14px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"10px",marginBottom:"7px"}}>
 Set tare — {fmtWt(rawLbs,unit,grain.bushel_lbs).value} {fmtWt(rawLbs,unit,grain.bushel_lbs).label}
 </button>
 
@@ -2079,10 +2079,10 @@ onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL
 // ── Modal helpers ─────────────────────────────────────────────────
 const moStyle = {position:"fixed",inset:0,background:"rgba(20,30,10,.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"};
 const cardStyle = {background:"#fff",border:"2px solid #b0a08a",borderRadius:"8px",padding:"24px",width:"100%",maxWidth:"340px",fontFamily:"'IBM Plex Mono',monospace"};
-const lblStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px",textAlign:"left"};
-const inStyle = {width:"100%",padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"13px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
+const lblStyle = {fontSize:"11px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px",textAlign:"left"};
+const inStyle = {width:"100%",padding:"13px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
 const seStyle = {...inStyle,cursor:"pointer"};
-const MoBtn = ({children,onClick,variant="ghost",disabled})=><button onClick={onClick} disabled={disabled} style={{flex:1,padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:disabled?"#f0f0f0":variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:disabled?"#b0a870":variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:disabled?"not-allowed":"pointer"}}>{children}</button>;
+const MoBtn = ({children,onClick,variant="ghost",disabled})=><button onClick={onClick} disabled={disabled} style={{flex:1,padding:"12px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"12px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:disabled?"#f0f0f0":variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:disabled?"#b0a870":variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:disabled?"not-allowed":"pointer"}}>{children}</button>;
 const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
 
 function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
