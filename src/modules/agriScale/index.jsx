@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { initAgriPlan, fbSaveYears, fbSaveFields, fbSaveHistRevenue, fbLoadYears, fbLoadFields, fbLoadHistRevenue, fbLoadVersion, fbSaveVersion, fbWatchFields, fbWatchFieldHistory, fbWatchContracts, fbSaveRotationRules, fbLoadRotationRules } from "./firebase.js";
-import { csvEscape, csvParseLine, parseCSV, downloadTextFile } from "../../core/csv.js";
-import { getPerms, PERMS, REDACTED } from "../../core/permissions.js";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { dbRead, dbWrite, dbSafeWrite, dbListen } from "../../core/firebase.js";
+import { obj2arr, genId } from "../../core/helpers.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill, mergeFarmFields, mergeFarmBins, buildMarketingSummary, contractDeliveryStatus } from "../../core/agriscale.js";
+import { getPerms } from "../../core/permissions.js";
 
 // ── Decimal-safe numeric text input sanitizer ────────────────────────────────
 // Plain <input type="number"> is a native browser control whose typing behavior
@@ -11,5228 +12,2276 @@ import { getPerms, PERMS, REDACTED } from "../../core/permissions.js";
 // sanitizer sidesteps that: it strips anything that isn't a digit or a single
 // decimal point, so acres like "156.2" always type normally everywhere.
 function decOnly(v) {
-  let x = (v || "").replace(/[^0-9.]/g, "");
-  const parts = x.split(".");
-  if (parts.length > 2) x = parts[0] + "." + parts.slice(1).join("");
-  return x;
+let x = (v || "").replace(/[^0-9.]/g, "");
+const parts = x.split(".");
+if (parts.length > 2) x = parts[0] + "." + parts.slice(1).join("");
+return x;
 }
 
-// ── Farm-scoped path helpers ────────────────────────────────────────────────
-// AgriPlan supports multiple farming entities per tenant (e.g. "Flat Acre Farms"
-// and "Via Terra") the same way FieldLog and AgriScale already do: the "default"
-// farm keeps the original unscoped path for backward compatibility, any other
-// farm gets its own tenants/{tenantId}/farms/{farmId}/ subtree.
-function apBase(tenantId, farmId) {
-  const seg = (farmId && farmId !== "default") ? `farms/${farmId}/` : "";
-  return `tenants/${tenantId}/${seg}agriPlan`;
-}
-function flBase(tenantId, farmId) {
-  const seg = (farmId && farmId !== "default") ? `farms/${farmId}/` : "";
-  return `tenants/${tenantId}/${seg}fieldlog`;
-}
+// ── Permission mapping from Agri Logix roles — now shared across modules,
+// see core/permissions.js (was previously local to just this file).
 
-const HISTORY_DATA = {
-  "Akey Yard|1,2":{"common":"Akey Yard","farm":"Nuxoll Land","fieldNum":"1,2","acres":11.83,"history":{"2025":"CC WW","2026":"Austrians"}},
-  "Akey yard E|2":{"common":"Akey yard E","farm":"Nuxoll Land","fieldNum":"2","acres":136.29,"history":{"2025":"CC WW","2026":"Austrians"}},
-  "Akey yard W|1":{"common":"Akey yard W","farm":"Nuxoll Land","fieldNum":"1","acres":157.92,"history":{"2025":"CC WW","2026":"Quinoa"}},
-  "BOR|1,1,2":{"common":"BOR","farm":"Ray","fieldNum":"1,1,2","acres":32.65,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Chem-Fallow","2018":"CC HAD","2019":"Austrians","2020":"CC WW","2021":"Mustard","2022":"Austrians","2023":"Spring Wheat","2024":"Mustard","2025":"Chickpeas","2026":"Spring Wheat"}},
-  "Barn|1,2,3,4,5,6":{"common":"Barn","farm":"Ray","fieldNum":"1,2,3,4,5,6","acres":159.38,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"Chickpeas","2018":"CC HAD","2019":"CC WW","2020":"Green Peas","2021":"CC WW","2022":"Chickpeas","2023":"Spring Wheat","2024":"Austrians","2025":"Mustard","2026":"Chickpeas"}},
-  "Beulow Rd|4":{"common":"Beulow Rd","farm":"Beulow Rd","fieldNum":"4","acres":161.57,"history":{"2021":"Chickpeas","2022":"Spring Wheat","2023":"Lentils","2024":"Spring Wheat","2025":"Chickpeas","2026":"CC HAD"}},
-  "Beulow Rd|6":{"common":"Beulow Rd","farm":"Beulow Rd","fieldNum":"6","acres":484.02,"history":{"2021":"Chickpeas","2022":"Spring Wheat","2023":"Lentils","2024":"Spring Wheat","2025":"Chickpeas","2026":"CC HAD"}},
-  "Block|":{"common":"Block","farm":"Duncan","fieldNum":"","acres":589.0,"history":{"2026":"Chickpeas"}},
-  "Blow Field|1":{"common":"Blow Field","farm":"Ray","fieldNum":"1","acres":159.37,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Chickpeas","2018":"CC HAD","2019":"CC WW","2020":"Lentils","2021":"Chickpeas","2022":"Spring Wheat","2023":"Lentils","2024":"Mustard","2025":"Chickpeas","2026":"Quinoa"}},
-  "Cabin East|1":{"common":"Cabin East","farm":"Ray","fieldNum":"1","acres":29.84,"history":{"2017":"Chickpeas"}},
-  "Cabin East|1,5":{"common":"Cabin East","farm":"Ray","fieldNum":"1,5","acres":38.06,"history":{"2015":"CRP","2016":"Austrians","2018":"CC HAD","2019":"Austrians","2020":"CC WW","2021":"Mustard","2022":"Chickpeas","2023":"Spring Wheat","2024":"Austrians","2025":"Mustard","2026":"Chickpeas"}},
-  "Cabin East|2,3,4":{"common":"Cabin East","farm":"Ray","fieldNum":"2,3,4","acres":146.98,"history":{"2015":"Green Peas","2016":"CC HAD","2017":"Chickpeas","2018":"CC HAD","2019":"Austrians","2020":"CC WW","2021":"Mustard","2022":"Chickpeas","2023":"Spring Wheat","2024":"Austrians","2025":"Mustard","2026":"Chickpeas"}},
-  "Cedric Section 6|1":{"common":"Cedric Section 6","farm":"Kostad Trust","fieldNum":"1","acres":155.92,"history":{"2024":"Winter Wheat","2025":"Chickpeas","2026":"Spring Wheat"}},
-  "Cedric Section 6|2":{"common":"Cedric Section 6","farm":"Kostad Trust","fieldNum":"2","acres":150.82,"history":{"2024":"Chickpeas","2025":"CC HAD","2026":"Mustard"}},
-  "Cedric Section 6|3":{"common":"Cedric Section 6","farm":"Kostad Trust","fieldNum":"3","acres":52.76,"history":{"2024":"Spring Wheat","2025":"Austrians","2026":"Mustard"}},
-  "Cedric Section 6|4,6,8":{"common":"Cedric Section 6","farm":"Kostad Trust","fieldNum":"4,6,8","acres":153.22,"history":{"2024":"Spring Wheat","2025":"Austrians","2026":"Mustard"}},
-  "Cedric Section 6|5,7":{"common":"Cedric Section 6","farm":"Kostad Trust","fieldNum":"5,7","acres":103.26,"history":{"2024":"Winter Wheat","2025":"Austrians","2026":"Mustard"}},
-  "Decker Yard|1,2":{"common":"Decker Yard","farm":"Nuxoll Land","fieldNum":"1,2","acres":11.83,"history":{"2015":"CC WW","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Austrians","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Mustard","2024":"Chickpeas"}},
-  "Decker yard E|2":{"common":"Decker yard E","farm":"Nuxoll Land","fieldNum":"2","acres":136.29,"history":{"2015":"CC WW","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Austrians","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Mustard","2024":"Chickpeas"}},
-  "Decker yard W|1":{"common":"Decker yard W","farm":"Nuxoll Land","fieldNum":"1","acres":157.92,"history":{"2015":"CC WW","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Austrians","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Mustard","2024":"Chickpeas"}},
-  "East 320|":{"common":"East 320","farm":"Morkrid","fieldNum":"","acres":313.07,"history":{"2023":"Spring Wheat","2024":"Austrians","2025":"Spring Wheat","2026":"Mustard"}},
-  "East 320|1":{"common":"East 320","farm":"danrather (stanley)","fieldNum":"1","acres":318.28,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"CC WW","2025":"Mustard","2026":"Austrians"}},
-  "East 320|1,2":{"common":"East 320","farm":"Black Coulee","fieldNum":"1,2","acres":320.8,"history":{"2015":"CC HAD","2016":"Lentils","2017":"Chickpeas","2018":"CC HAD","2019":"Austrians","2020":"CC WW","2021":"yellow peas","2022":"CC WW","2023":"Chickpeas","2024":"Mustard","2025":"Lentils"}},
-  "East Section|1,3,5":{"common":"East Section","farm":"Englund","fieldNum":"1,3,5","acres":463.45,"history":{"2016":"Winter Wheat","2017":"Austrians","2018":"CC HAD","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Corn","2024":"Spring Wheat","2025":"Mustard","2026":"Chickpeas"}},
-  "East Section|2":{"common":"East Section","farm":"Englund","fieldNum":"2","acres":111.14,"history":{"2017":"Austrians","2018":"CC HAD","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Corn","2024":"Spring Wheat","2025":"Mustard","2026":"Chickpeas"}},
-  "East Section|2,4":{"common":"East Section","farm":"Englund","fieldNum":"2,4","acres":177.7,"history":{"2016":"Chem-Fallow"}},
-  "East Section|4":{"common":"East Section","farm":"Englund","fieldNum":"4","acres":66.56,"history":{"2017":"Austrians","2018":"CC HAD","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Corn","2024":"Spring Wheat","2025":"Mustard","2026":"Chickpeas"}},
-  "East Trues|1,3":{"common":"East Trues","farm":"Ray","fieldNum":"1,3","acres":245.34,"history":{"2015":"Winter Wheat","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"Spring Wheat","2020":"Green Peas","2021":"CC WW","2022":"yellow peas","2023":"Chickpeas","2024":"Mustard","2025":"CC WW","2026":"Lentils"}},
-  "East Trues|2":{"common":"East Trues","farm":"Ray","fieldNum":"2","acres":73.64,"history":{"2015":"Chem-Fallow","2016":"Chickpeas","2017":"CC HAD","2018":"Chem-Fallow","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"CC HAD","2023":"Lentils","2024":"Mustard","2025":"CC WW","2026":"Chickpeas"}},
-  "East Trues|4":{"common":"East Trues","farm":"Ray","fieldNum":"4","acres":159.62,"history":{"2015":"Lentils","2016":"CC WW","2017":"Chickpeas","2018":"CC HAD","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"CC HAD","2023":"Lentils","2024":"Mustard","2025":"CC WW","2026":"Chickpeas"}},
-  "Henke/Hill|1,3,4":{"common":"Henke/Hill","farm":"Hunnewell","fieldNum":"1,3,4","acres":15.08,"history":{"2015":"CC WW","2016":"Chem-Fallow","2017":"Chickpeas","2018":"Chem-Fallow","2019":"Winter Wheat","2020":"Austrians","2021":"CC WW","2022":"Lentils","2023":"Mustard","2024":"Chickpeas","2025":"Spring Wheat","2026":"Mustard"}},
-  "Home Place|1":{"common":"Home Place","farm":"underdal ent. (home)","fieldNum":"1","acres":149.87,"history":{"2019":"Spring Wheat","2020":"Flax","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"Barley","2026":"Lentils"}},
-  "Home Place|2":{"common":"Home Place","farm":"underdal ent. (home)","fieldNum":"2","acres":249.83,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"Spring Wheat","2025":"Barley","2026":"Lentils"}},
-  "House|1":{"common":"House","farm":"Home","fieldNum":"1","acres":163.56,"history":{"2015":"Green Peas","2016":"CC HAD","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Lentils","2021":"Barley","2022":"Chickpeas","2023":"Mustard","2024":"CC HAD","2025":"Lentils","2026":"Chickpeas"}},
-  "House|1,2,17":{"common":"House","farm":"Englund","fieldNum":"1,2,17","acres":38.25,"history":{"2016":"CRP","2017":"CRP","2018":"CRP","2019":"CRP","2020":"CRP","2021":"CRP","2022":"CRP","2023":"Chickpeas","2024":"Spring Wheat","2025":"Austrians","2026":"CC HAD"}},
-  "House|2":{"common":"House","farm":"Home","fieldNum":"2","acres":155.26,"history":{"2015":"CC HAD","2016":"Winter Wheat","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Lentils","2021":"Barley","2022":"Chickpeas","2023":"Mustard","2024":"CC HAD","2025":"Lentils","2026":"Chickpeas"}},
-  "House|2,4-16":{"common":"House","farm":"Englund","fieldNum":"2,4-16","acres":565.69,"history":{"2016":"Lentils","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Chickpeas","2020":"CC WW","2021":"Austrians","2022":"Spring Wheat","2023":"Chickpeas","2024":"Spring Wheat","2025":"Austrians","2026":"CC HAD"}},
-  "House|3":{"common":"House","farm":"Home","fieldNum":"3","acres":73.52,"history":{"2015":"Green Peas","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Lentils","2021":"Barley","2022":"Chickpeas","2023":"Mustard","2024":"CC HAD","2025":"Lentils","2026":"Chickpeas"}},
-  "House|4":{"common":"House","farm":"Home","fieldNum":"4","acres":120.0,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Lentils","2021":"Barley","2022":"Chickpeas","2023":"Mustard","2024":"CC HAD","2025":"Lentils","2026":"Chickpeas"}},
-  "Joplin Rd|1":{"common":"Joplin Rd","farm":"Hunnewell","fieldNum":"1","acres":107.42,"history":{"2015":"Chem-Fallow"}},
-  "Joplin Rd|1,2":{"common":"Joplin Rd","farm":"Hunnewell","fieldNum":"1,2","acres":395.64,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Austrians","2018":"Chickpeas","2019":"CC HAD","2020":"Mustard","2021":"CC WW","2022":"Lentils","2023":"Mustard"}},
-  "Lynch 40|1":{"common":"Lynch 40","farm":"Lynch","fieldNum":"1","acres":43.96,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"CC WW","2025":"Mustard","2026":"Austrians"}},
-  "Middle section|":{"common":"Middle section","farm":"Morkrid","fieldNum":"","acres":637.59,"history":{"2023":"Spring Wheat","2024":"Lentils","2025":"Chickpeas","2026":"Spring Wheat"}},
-  "N. 320|1,3":{"common":"N. 320","farm":"Englund","fieldNum":"1,3","acres":214.0,"history":{"2016":"Chem-Fallow","2017":"Chickpeas","2018":"Chem-Fallow","2019":"Winter Wheat","2020":"Green Peas","2021":"CC WW","2022":"Lentils","2023":"Mustard","2024":"Chickpeas","2025":"CC HAD","2026":"Austrians"}},
-  "N. 320|2":{"common":"N. 320","farm":"Englund","fieldNum":"2","acres":105.0,"history":{"2016":"Winter Wheat","2017":"Chickpeas","2018":"Chem-Fallow","2019":"Winter Wheat","2020":"Green Peas","2021":"CC WW","2022":"Lentils","2023":"Mustard","2024":"Chickpeas","2025":"CC HAD","2026":"Austrians"}},
-  "N1/2 St. Olaf|1":{"common":"N1/2 St. Olaf","farm":"danrather (home)","fieldNum":"1","acres":78.02,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Lentils"}},
-  "N1/2 St. Olaf|2":{"common":"N1/2 St. Olaf","farm":"danrather (home)","fieldNum":"2","acres":78.58,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "NE 320|1":{"common":"NE 320","farm":"Sharray","fieldNum":"1","acres":165.85,"history":{"2021":"Austrians","2022":"CC WW","2023":"Chickpeas"}},
-  "NE 320|2":{"common":"NE 320","farm":"Sharray","fieldNum":"2","acres":165.05,"history":{"2021":"Winter Wheat","2022":"yellow peas","2023":"Chickpeas"}},
-  "NW 320|1":{"common":"NW 320","farm":"Sharray","fieldNum":"1","acres":144.36,"history":{"2021":"Austrians","2022":"CC WW","2023":"Chickpeas"}},
-  "NW 320|2":{"common":"NW 320","farm":"Sharray","fieldNum":"2","acres":150.24,"history":{"2021":"Winter Wheat","2022":"yellow peas","2023":"Chickpeas"}},
-  "North 320|":{"common":"North 320","farm":"Morkrid","fieldNum":"","acres":320.75,"history":{"2023":"Mustard","2024":"Lentils","2025":"Chickpeas","2026":"Spring Wheat"}},
-  "North 320|1":{"common":"North 320","farm":"Nuxoll Land","fieldNum":"1","acres":313.61,"history":{"2015":"CC WW","2016":"Green Peas","2017":"CC HAD","2018":"Chickpeas","2019":"Oats"}},
-  "North 320|1,2,3":{"common":"North 320","farm":"Home","fieldNum":"1,2,3","acres":314.79,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat"}},
-  "North 320|1-2,1":{"common":"North 320","farm":"Black Coulee","fieldNum":"1-2,1","acres":322.89,"history":{"2015":"CC HAD","2016":"Chickpeas","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Lentils","2020":"CC WW","2021":"yellow peas","2022":"CC WW","2023":"Chickpeas","2024":"Mustard","2025":"Lentils"}},
-  "North Building site|1":{"common":"North Building site","farm":"underdal ent.(missile)","fieldNum":"1","acres":36.3,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Mustard"}},
-  "North Building site|1 (west 1)":{"common":"North Building site","farm":"underdal ent.(missile)","fieldNum":"1 (west 1)","acres":36.3,"history":{"2022":"CC WW","2023":"Austrians","2024":"Spring Wheat","2025":"Lentils","2026":"Spring Wheat"}},
-  "North Cabin|1,2,3,4,5":{"common":"North Cabin","farm":"Ray","fieldNum":"1,2,3,4,5","acres":315.25,"history":{"2015":"Winter Wheat","2016":"Chem-Fallow","2017":"Chickpeas","2018":"CC HAD","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"CC WW","2023":"Austrians","2024":"Spring Wheat","2025":"Chickpeas","2026":"CC HAD"}},
-  "North Hendrickson|1,2":{"common":"North Hendrickson","farm":"Home","fieldNum":"1,2","acres":159.42,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Lentils","2018":"Mustard","2019":"Chickpeas","2020":"CC WW","2021":"yellow peas","2022":"CC WW","2023":"Chickpeas","2024":"Mustard","2025":"Austrians","2026":"CC HAD"}},
-  "North Hendrickson|1,3":{"common":"North Hendrickson","farm":"Home","fieldNum":"1,3","acres":160.49,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Lentils","2018":"Mustard","2019":"Chickpeas","2020":"CC WW","2021":"yellow peas","2022":"CC WW","2023":"Chickpeas","2024":"Mustard","2025":"Austrians","2026":"CC HAD"}},
-  "North Henke|1,2":{"common":"North Henke","farm":"Hunnewell","fieldNum":"1,2","acres":15.04,"history":{"2015":"Winter Wheat","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Austrians","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Mustard","2023":"Spring Wheat","2024":"Chickpeas","2025":"Spring Wheat","2026":"Mustard"}},
-  "North Kammer|1":{"common":"North Kammer","farm":"Hunnewell","fieldNum":"1","acres":318.11,"history":{"2015":"Winter Wheat","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Yellow Peas","2021":"CC WW","2022":"Chickpeas","2023":"Spring Wheat","2024":"Lentils","2025":"Mustard","2026":"Chickpeas"}},
-  "North Kirby|1":{"common":"North Kirby","farm":"danrather (missile)","fieldNum":"1","acres":155.4,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Chickpeas"}},
-  "North Rd|1,2,1,2,3,1-3":{"common":"North Rd","farm":"Brown","fieldNum":"1,2,1,2,3,1-3","acres":383.18,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Chem-Fallow","2018":"Austrians","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Mustard","2023":"Spring Wheat","2024":"Chickpeas","2025":"Spring Wheat","2026":"Mustard"}},
-  "North Tiber Grade|1,2,3":{"common":"North Tiber Grade","farm":"Home","fieldNum":"1,2,3","acres":314.79,"history":{"2017":"Lentils","2018":"Chickpeas","2019":"CC WW","2020":"Yellow Peas","2021":"Barley","2022":"Chickpeas","2023":"Spring Wheat","2024":"Lentils","2025":"CC HAD","2026":"Chickpeas"}},
-  "North Wanken|1":{"common":"North Wanken","farm":"Home","fieldNum":"1","acres":317.98,"history":{"2015":"Yellow Peas","2016":"CC HAD","2017":"Chem-Fallow","2018":"Lentils","2019":"CC WW","2020":"Chickpeas","2021":"Barley","2022":"Austrians","2023":"Mustard","2024":"CC WW","2025":"Chickpeas","2026":"Flax"}},
-  "Northwest 640|1":{"common":"Northwest 640","farm":"Spingola","fieldNum":"1","acres":637.77,"history":{"2019":"Mustard","2020":"CC WW","2021":"Chickpeas"}},
-  "Old House West|1":{"common":"Old House West","farm":"danrather (missile)","fieldNum":"1","acres":159.24,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC WW","2026":"Chickpeas"}},
-  "Pivot CRP|1":{"common":"Pivot CRP","farm":"Ray","fieldNum":"1","acres":24.89,"history":{"2016":"Austrians","2017":"Chem-Fallow","2018":"Mustard","2019":"Austrians","2020":"Flax","2021":"Spring Wheat","2022":"yellow peas","2023":"Chem-Fallow","2024":"Corn","2025":"Austrians","2026":"Cover Crop"}},
-  "Pivot|1":{"common":"Pivot","farm":"Ray","fieldNum":"1","acres":24.89,"history":{"2015":"CRP"}},
-  "Pivot|2":{"common":"Pivot","farm":"Ray","fieldNum":"2","acres":69.96,"history":{"2015":"Green Peas","2016":"CC HAD","2017":"Chickpeas","2018":"Mustard","2019":"Austrians","2020":"Flax","2021":"Spring Wheat","2022":"Hemp","2023":"Corn","2024":"Corn","2025":"Austrians","2026":"Cover Crop"}},
-  "Rock Hilltop|1":{"common":"Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"1","acres":40.76,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat"}},
-  "Rock Hilltop|1 (west 6)":{"common":"Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"1 (west 6)","acres":40.76,"history":{"2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC WW","2026":"Austrians"}},
-  "Rock Hilltop|2":{"common":"Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"2","acres":40.66,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Chickpeas"}},
-  "Rock Hilltop|2 (west 5)":{"common":"Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"2 (west 5)","acres":40.66,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "S1/2 St. Olaf|1":{"common":"S1/2 St. Olaf","farm":"underdal ent. (home)","fieldNum":"1","acres":79.26,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Lentils"}},
-  "S1/2 St. Olaf|2":{"common":"S1/2 St. Olaf","farm":"underdal ent. (home)","fieldNum":"2","acres":80.92,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "SE 320|1,3":{"common":"SE 320","farm":"Sharray","fieldNum":"1,3","acres":157.68,"history":{"2021":"Austrians","2022":"CC WW","2023":"Spring Wheat"}},
-  "SE 320|2,4":{"common":"SE 320","farm":"Sharray","fieldNum":"2,4","acres":157.66,"history":{"2021":"Winter Wheat","2022":"yellow peas","2023":"Spring Wheat"}},
-  "STATE north|1,2":{"common":"STATE north","farm":"Brown","fieldNum":"1,2","acres":221.26,"history":{"2025":"Spring Wheat","2026":"Mustard"}},
-  "STATE|1,2":{"common":"STATE","farm":"Brown","fieldNum":"1,2","acres":72.99,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Sunflowers","2018":"CC HAD","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Mustard","2023":"Spring Wheat","2024":"Chickpeas","2025":"Spring Wheat","2026":"Mustard"}},
-  "STATE|1,2,3,4,5,6":{"common":"STATE","farm":"Ray","fieldNum":"1,2,3,4,5,6","acres":72.24,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"CC HAD","2018":"CC HAD","2019":"CC WW","2020":"Green Peas","2021":"CC WW","2022":"Chickpeas","2023":"Spring Wheat","2024":"Austrians","2025":"Mustard","2026":"Chickpeas"}},
-  "SW 320|1":{"common":"SW 320","farm":"Sharray","fieldNum":"1","acres":151.25,"history":{"2021":"Austrians","2022":"CC WW","2023":"Spring Wheat"}},
-  "SW 320|2,3":{"common":"SW 320","farm":"Sharray","fieldNum":"2,3","acres":140.79,"history":{"2021":"Winter Wheat","2022":"yellow peas","2023":"Spring Wheat"}},
-  "Shotgun Slough|1":{"common":"Shotgun Slough","farm":"danrather (stanley)","fieldNum":"1","acres":161.11,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"CC WW","2024":"Lentils","2025":"Mustard","2026":"Austrians"}},
-  "South 480|1":{"common":"South 480","farm":"Nuxoll Land","fieldNum":"1","acres":157.31,"history":{"2015":"CC WW","2016":"Lentils","2017":"Chickpeas","2018":"CC HAD","2019":"Flax"}},
-  "South House Section|1":{"common":"South House Section","farm":"underdal ent. (home)","fieldNum":"1","acres":306.79,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat","2022":"Austrians","2023":"CC WW","2024":"Chickpeas","2025":"CC HAD","2026":"Green Peas"}},
-  "South House Section|2":{"common":"South House Section","farm":"underdal ent. (home)","fieldNum":"2","acres":331.84,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"CC WW","2025":"Mustard","2026":"Spring Wheat"}},
-  "South House|1,2":{"common":"South House","farm":"Home","fieldNum":"1,2","acres":205.52,"history":{"2015":"Winter Wheat","2016":"Winter Wheat","2017":"Winter Wheat","2018":"Chickpeas","2019":"Spring Wheat","2020":"Lentils","2021":"CC WW","2022":"Flax","2023":"Chickpeas","2024":"Mustard","2025":"Spring Wheat","2026":"Oats"}},
-  "South House|3,4,5":{"common":"South House","farm":"Home","fieldNum":"3,4,5","acres":233.95,"history":{"2015":"Winter Wheat","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"Spring Wheat","2020":"Lentils","2021":"CC WW","2022":"Flax","2023":"Chickpeas","2024":"Mustard","2025":"Spring Wheat","2026":"Oats"}},
-  "South House|6":{"common":"South House","farm":"Home","fieldNum":"6","acres":156.62,"history":{"2015":"Yellow Peas"}},
-  "South Kirby corner|1":{"common":"South Kirby corner","farm":"danrather (missile)","fieldNum":"1","acres":75.57,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC WW","2026":"Chickpeas"}},
-  "South Poles|6":{"common":"South Poles","farm":"Home","fieldNum":"6","acres":156.62,"history":{"2016":"Chickpeas","2017":"CC HAD","2018":"Lentils","2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat","2022":"Flax","2023":"Lentils","2024":"Mustard","2025":"Spring Wheat","2026":"Oats"}},
-  "South Rd.|1-2,1-4":{"common":"South Rd.","farm":"Brown","fieldNum":"1-2,1-4","acres":287.43,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"Sunflowers","2018":"Austrians","2019":"CC WW","2020":"Chickpeas","2021":"CC WW","2022":"Lentils","2023":"Spring Wheat","2024":"Mustard","2025":"Chickpeas","2026":"Spring Wheat"}},
-  "South Rock Hilltop|1":{"common":"South Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"1","acres":79.34,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat"}},
-  "South Rock Hilltop|1 (west 6)":{"common":"South Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"1 (west 6)","acres":79.34,"history":{"2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC WW","2026":"Austrians"}},
-  "South Rock Hilltop|2":{"common":"South Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"2","acres":79.01,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Chickpeas"}},
-  "South Rock Hilltop|2 (west 5)":{"common":"South Rock Hilltop","farm":"underdal ent.(missile)","fieldNum":"2 (west 5)","acres":79.01,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "South Shotgun|1":{"common":"South Shotgun","farm":"danrather (stanley)","fieldNum":"1","acres":320.85,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat","2022":"Austrians","2023":"CC WW","2024":"Lentils","2025":"CC WW","2026":"Mustard"}},
-  "South Shotgun|2":{"common":"South Shotgun","farm":"danrather (stanley)","fieldNum":"2","acres":273.23,"history":{"2019":"Chickpeas","2020":"Spring Wheat","2021":"Green Peas","2022":"CC WW","2023":"Chickpeas","2024":"CC WW","2025":"Mustard","2026":"Austrians"}},
-  "Southwest 640|1":{"common":"Southwest 640","farm":"Spingola","fieldNum":"1","acres":621.71,"history":{"2019":"Flax","2020":"CC WW","2021":"Chickpeas"}},
-  "Trues|1":{"common":"Trues","farm":"Ray","fieldNum":"1","acres":191.27,"history":{"2016":"Chickpeas","2017":"CC HAD","2018":"Chem-Fallow","2019":"Winter Wheat","2020":"Austrians","2021":"Flax","2022":"CC HAD","2023":"Chickpeas","2024":"CC HAD","2025":"Lentils","2026":"Mustard"}},
-  "Trues|1,3,4":{"common":"Trues","farm":"Ray","fieldNum":"1,3,4","acres":62.0,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Chem-Fallow","2018":"Chickpeas","2019":"CC WW","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"Spring Wheat","2024":"Canola","2025":"Lentils","2026":"Chickpeas"}},
-  "Trues|2":{"common":"Trues","farm":"Ray","fieldNum":"2","acres":117.1,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Austrians","2021":"Flax","2022":"CC HAD","2023":"Chickpeas","2024":"CC HAD","2025":"Lentils","2026":"Mustard"}},
-  "Trues|3,4":{"common":"Trues","farm":"Ray","fieldNum":"3,4","acres":97.0,"history":{"2016":"CC HAD","2017":"Chem-Fallow","2018":"Chickpeas","2019":"CC WW","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"Spring Wheat","2024":"Canola","2025":"Lentils","2026":"Chickpeas"}},
-  "Watson NorthWest|1":{"common":"Watson NorthWest","farm":"Chris Kolstad","fieldNum":"1","acres":40.3,"history":{"2024":"Winter Wheat","2025":"Chickpeas","2026":"CC HAD"}},
-  "Watson North|1,3,5":{"common":"Watson North","farm":"Chris Kolstad","fieldNum":"1,3,5","acres":313.84,"history":{"2024":"Chickpeas","2025":"CC HAD"}},
-  "Watson North|123":{"common":"Watson North","farm":"Chris Kolstad","fieldNum":"123","acres":313.84,"history":{"2026":"Barley"}},
-  "Watson North|2,4,6":{"common":"Watson North","farm":"Chris Kolstad","fieldNum":"2,4,6","acres":314.12,"history":{"2024":"Winter Wheat","2025":"Chickpeas"}},
-  "Watson North|456":{"common":"Watson North","farm":"Chris Kolstad","fieldNum":"456","acres":314.12,"history":{"2026":"Spring Wheat"}},
-  "Watson SouthEast|1":{"common":"Watson SouthEast","farm":"Chris Kolstad","fieldNum":"1","acres":75.29,"history":{"2024":"Chickpeas","2025":"CC HAD","2026":"Barley"}},
-  "Watson SouthEast|2":{"common":"Watson SouthEast","farm":"Chris Kolstad","fieldNum":"2","acres":83.53,"history":{"2024":"Winter Wheat","2025":"Chickpeas","2026":"Barley"}},
-  "Watson South|1,3,5":{"common":"Watson South","farm":"Chris Kolstad","fieldNum":"1,3,5","acres":157.99,"history":{"2024":"Chickpeas","2025":"CC HAD"}},
-  "Watson South|123":{"common":"Watson South","farm":"Chris Kolstad","fieldNum":"123","acres":157.99,"history":{"2026":"Barley"}},
-  "Watson South|2,4,6":{"common":"Watson South","farm":"Chris Kolstad","fieldNum":"2,4,6","acres":157.36,"history":{"2024":"Winter Wheat","2025":"Chickpeas"}},
-  "Watson South|456":{"common":"Watson South","farm":"Chris Kolstad","fieldNum":"456","acres":157.36,"history":{"2026":"Spring Wheat"}},
-  "Watson West|1,6":{"common":"Watson West","farm":"Chris Kolstad","fieldNum":"1,6","acres":395.12,"history":{"2024":"Winter Wheat","2025":"Chickpeas","2026":"CC HAD"}},
-  "Watson West|2,3,4,5":{"common":"Watson West","farm":"Chris Kolstad","fieldNum":"2,3,4,5","acres":218.43,"history":{"2024":"Chickpeas","2025":"CC HAD","2026":"CC HAD"}},
-  "West 120's|1":{"common":"West 120's","farm":"Home","fieldNum":"1","acres":116.77,"history":{"2022":"Corn","2023":"Spring Wheat","2024":"Lentils","2025":"Mustard","2026":"Chickpeas"}},
-  "West 120's|1,3":{"common":"West 120's","farm":"Home","fieldNum":"1,3","acres":233.75,"history":{"2015":"Winter Wheat","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Yellow Peas","2021":"CC WW"}},
-  "West 120's|2":{"common":"West 120's","farm":"Home","fieldNum":"2","acres":122.26,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Yellow Peas","2021":"CC WW"}},
-  "West 120's|2,3":{"common":"West 120's","farm":"Home","fieldNum":"2,3","acres":239.24,"history":{"2022":"Chickpeas","2023":"Spring Wheat","2024":"Lentils","2025":"Mustard","2026":"Chickpeas"}},
-  "West 120's|4":{"common":"West 120's","farm":"Home","fieldNum":"4","acres":122.87,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Chem-Fallow","2018":"Lentils","2019":"CC WW","2020":"Lentils","2021":"CC WW","2022":"Chickpeas","2023":"Spring Wheat","2024":"Lentils","2025":"Mustard","2026":"Chickpeas"}},
-  "West 200|1":{"common":"West 200","farm":"danrather (stanley)","fieldNum":"1","acres":202.11,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat","2022":"Austrians","2023":"CC WW","2024":"Lentils","2025":"CC WW","2026":"Mustard"}},
-  "West 280|":{"common":"West 280","farm":"Morkrid","fieldNum":"","acres":278.5,"history":{"2023":"Spring Wheat","2024":"Chickpeas","2025":"Spring Wheat","2026":"Mustard"}},
-  "West 320|1,2,3":{"common":"West 320","farm":"Black Coulee","fieldNum":"1,2,3","acres":328.33,"history":{"2015":"CC HAD","2016":"Lentils","2017":"Chickpeas","2018":"CC HAD","2019":"Austrians","2020":"CC WW","2021":"yellow peas","2022":"CC WW","2023":"Chickpeas","2024":"Mustard","2025":"Lentils"}},
-  "West 50s|1,2,3,4,5,6":{"common":"West 50s","farm":"Home","fieldNum":"1,2,3,4,5,6","acres":315.47,"history":{"2015":"Chem-Fallow","2016":"Winter Wheat","2017":"Yellow Peas","2018":"Chickpeas","2019":"CC WW","2020":"Yellow Peas","2021":"CC WW","2022":"Chickpeas","2023":"Spring Wheat","2024":"Mustard","2025":"CC WW","2026":"Chickpeas"}},
-  "West CRP|1,2,3,4":{"common":"West CRP","farm":"Ray","fieldNum":"1,2,3,4","acres":206.06,"history":{"2015":"CRP","2016":"Austrians","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Chickpeas","2020":"CC WW","2021":"yellow peas","2022":"CC WW","2023":"Chickpeas","2024":"Mustard","2025":"Lentils","2026":"Spring Wheat"}},
-  "West Joplin Road|1":{"common":"West Joplin Road","farm":"Sharray","fieldNum":"1","acres":158.84,"history":{"2021":"Austrians","2022":"CC WW","2023":"Chickpeas","2024":"Spring Wheat","2025":"Mustard","2026":"Green Peas"}},
-  "West Joplin Road|2":{"common":"West Joplin Road","farm":"Sharray","fieldNum":"2","acres":158.29,"history":{"2021":"Winter Wheat","2022":"yellow peas","2023":"Chickpeas","2024":"Spring Wheat","2025":"Mustard","2026":"Green Peas"}},
-  "West Section|1,10":{"common":"West Section","farm":"Englund","fieldNum":"1,10","acres":81.61,"history":{"2016":"CRP","2017":"CRP","2018":"CRP","2019":"CRP","2020":"CRP","2021":"CRP","2022":"CRP","2023":"Austrians","2024":"Mustard","2025":"Chickpeas","2026":"CC HAD"}},
-  "West Section|11":{"common":"West Section","farm":"Englund","fieldNum":"11","acres":9.76,"history":{"2016":"Chem-Fallow","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"Spring Wheat","2023":"Austrians","2024":"Mustard","2025":"Chickpeas","2026":"CC HAD"}},
-  "West Section|2,3,4,6,7,8":{"common":"West Section","farm":"Englund","fieldNum":"2,3,4,6,7,8","acres":221.43,"history":{"2016":"CC HAD","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"Spring Wheat","2023":"Austrians","2024":"Mustard","2025":"Chickpeas","2026":"CC HAD"}},
-  "West Section|2,3,7,8":{"common":"West Section","farm":"Englund","fieldNum":"2,3,7,8","acres":91.0,"history":{"2016":"Chickpeas","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"Spring Wheat","2023":"Austrians","2024":"Mustard","2025":"Chickpeas","2026":"CC HAD"}},
-  "West Section|4,5,6":{"common":"West Section","farm":"Englund","fieldNum":"4,5,6","acres":165.4,"history":{"2016":"Winter Wheat","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"Spring Wheat","2023":"Austrians","2024":"Mustard","2025":"Chickpeas","2026":"CC HAD"}},
-  "West Section|9":{"common":"West Section","farm":"Englund","fieldNum":"9","acres":63.55,"history":{"2016":"Chickpeas","2017":"Chem-Fallow","2018":"Winter Wheat","2019":"Lentils","2020":"CC WW","2021":"Chickpeas","2022":"Spring Wheat","2023":"Austrians","2024":"Mustard","2025":"Chickpeas","2026":"CC HAD"}},
-  "West Trues|1":{"common":"West Trues","farm":"Ray","fieldNum":"1","acres":44.27,"history":{"2015":"Chem-Fallow","2016":"Chickpeas","2017":"CC HAD","2018":"Chem-Fallow","2019":"Winter Wheat","2020":"Austrians","2021":"Flax","2022":"CC HAD","2023":"Chickpeas","2024":"CC HAD","2025":"Lentils","2026":"Mustard"}},
-  "West Trues|2":{"common":"West Trues","farm":"Ray","fieldNum":"2","acres":38.42,"history":{"2015":"CC HAD","2016":"Chem-Fallow","2017":"Winter Wheat","2018":"Chickpeas","2019":"CC WW","2020":"Austrians","2021":"Flax","2022":"CC HAD","2023":"Chickpeas","2024":"CC HAD","2025":"Lentils","2026":"Mustard"}},
-  "West building site|1":{"common":"West building site","farm":"underdal ent.(missile)","fieldNum":"1","acres":39.3,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat"}},
-  "West building site|1 (west 4)":{"common":"West building site","farm":"underdal ent.(missile)","fieldNum":"1 (west 4)","acres":39.3,"history":{"2022":"Green Peas","2023":"CC WW","2024":"Chickpeas","2025":"CC HAD","2026":"Green Peas"}},
-  "West building site|2":{"common":"West building site","farm":"underdal ent.(missile)","fieldNum":"2","acres":41.02,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Chickpeas"}},
-  "West building site|2 (west 3)":{"common":"West building site","farm":"underdal ent.(missile)","fieldNum":"2 (west 3)","acres":41.02,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "chemfallow|1":{"common":"chemfallow","farm":"SHARAY","fieldNum":"1","acres":772.03,"history":{"2020":"Chem-Fallow"}},
-  "east of block|":{"common":"east of block","farm":"Duncan","fieldNum":"","acres":320.0,"history":{"2026":"Chickpeas"}},
-  "far west north place|1":{"common":"far west north place","farm":"danrather (missile)","fieldNum":"1","acres":237.93,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat"}},
-  "far west north place|1 (west 6)":{"common":"far west north place","farm":"danrather (missile)","fieldNum":"1 (west 6)","acres":237.93,"history":{"2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC WW","2026":"Austrians"}},
-  "far west north place|2":{"common":"far west north place","farm":"danrather (missile)","fieldNum":"2","acres":78.77,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Chickpeas"}},
-  "far west north place|2 (west 5)":{"common":"far west north place","farm":"danrather (missile)","fieldNum":"2 (west 5)","acres":78.77,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "island|1":{"common":"island","farm":"Ray","fieldNum":"1","acres":8.9,"history":{"2015":"CRP","2016":"Austrians","2017":"Chem-Fallow","2018":"CC HAD","2019":"Austrians","2020":"CC WW","2021":"Mustard","2022":"Austrians","2023":"Spring Wheat","2024":"Mustard","2025":"Chickpeas","2026":"Spring Wheat"}},
-  "island|5":{"common":"island","farm":"Ray","fieldNum":"5","acres":8.22,"history":{"2017":"Chem-Fallow"}},
-  "north rock hill|1":{"common":"north rock hill","farm":"state","fieldNum":"1","acres":8.04,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat"}},
-  "north rock hill|1 (west 6)":{"common":"north rock hill","farm":"state","fieldNum":"1 (west 6)","acres":8.04,"history":{"2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC WW","2026":"Austrians"}},
-  "north rock hill|2":{"common":"north rock hill","farm":"state","fieldNum":"2","acres":28.86,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Chickpeas"}},
-  "north rock hill|2 (west 5)":{"common":"north rock hill","farm":"state","fieldNum":"2 (west 5)","acres":28.86,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "north|":{"common":"north","farm":"Lothair","fieldNum":"","acres":311.9,"history":{"2026":"Chickpeas"}},
-  "south eastside|":{"common":"south eastside","farm":"Lothair","fieldNum":"","acres":155.7,"history":{"2026":"Barley"}},
-  "south state 320|1":{"common":"south state 320","farm":"state","fieldNum":"1","acres":154.45,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat"}},
-  "south state 320|1 (west 4)":{"common":"south state 320","farm":"state","fieldNum":"1 (west 4)","acres":154.45,"history":{"2022":"Green Peas","2023":"CC WW","2024":"Chickpeas","2025":"CC HAD","2026":"Green Peas"}},
-  "south state 320|2":{"common":"south state 320","farm":"state","fieldNum":"2","acres":158.76,"history":{"2021":"Chickpeas"}},
-  "south state 320|2 (west 3)":{"common":"south state 320","farm":"state","fieldNum":"2 (west 3)","acres":158.76,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "south state 321|2":{"common":"south state 321","farm":"state","fieldNum":"2","acres":158.76,"history":{"2019":"Austrians","2020":"Spring Wheat"}},
-  "south westside|":{"common":"south westside","farm":"Lothair","fieldNum":"","acres":158.2,"history":{"2026":"Chickpeas"}},
-  "tracking at|":{"common":"tracking at","farm":"=SUM(M5:M75)","fieldNum":"","acres":2900.0,"history":{"2018":"Leaders"}},
-  "west Hauser Rd.|1":{"common":"west Hauser Rd.","farm":"underdal ent.(missile)","fieldNum":"1","acres":154.44,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat"}},
-  "west Hauser Rd.|1 (west 2)":{"common":"west Hauser Rd.","farm":"underdal ent.(missile)","fieldNum":"1 (west 2)","acres":154.44,"history":{"2022":"Green Peas","2023":"CC WW","2024":"Chickpeas","2025":"CC HAD","2026":"Green Peas"}},
-  "west Hauser Rd.|2":{"common":"west Hauser Rd.","farm":"underdal ent.(missile)","fieldNum":"2","acres":158.66,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Mustard"}},
-  "west Hauser Rd.|2 (west 1)":{"common":"west Hauser Rd.","farm":"underdal ent.(missile)","fieldNum":"2 (west 1)","acres":158.66,"history":{"2022":"CC WW","2023":"Austrians","2024":"Spring Wheat","2025":"Lentils","2026":"Spring Wheat"}},
-  "west buildings state|1":{"common":"west buildings state","farm":"state","fieldNum":"1","acres":34.43,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat"}},
-  "west buildings state|1 (west 4)":{"common":"west buildings state","farm":"state","fieldNum":"1 (west 4)","acres":34.43,"history":{"2022":"Green Peas","2023":"CC WW","2024":"Chickpeas","2025":"CC HAD","2026":"Green Peas"}},
-  "west buildings state|2":{"common":"west buildings state","farm":"state","fieldNum":"2","acres":36.55,"history":{"2019":"Austrians","2020":"Spring Wheat","2021":"Chickpeas"}},
-  "west buildings state|2 (west 3)":{"common":"west buildings state","farm":"state","fieldNum":"2 (west 3)","acres":36.55,"history":{"2022":"Spring Wheat","2023":"Austrians","2024":"CC WW","2025":"Lentils","2026":"Spring Wheat"}},
-  "west buildings state|3":{"common":"west buildings state","farm":"state","fieldNum":"3","acres":59.69,"history":{"2019":"Spring Wheat","2020":"Chickpeas","2021":"Spring Wheat"}},
-  "west buildings state|3 (west 2)":{"common":"west buildings state","farm":"state","fieldNum":"3 (west 2)","acres":59.69,"history":{"2022":"Green Peas","2023":"CC WW","2024":"Chickpeas","2025":"CC HAD","2026":"Green Peas"}},
-  "west home reservoir|1":{"common":"west home reservoir","farm":"underdal ent. (home)","fieldNum":"1","acres":64.35,"history":{"2019":"Spring Wheat","2020":"Flax","2021":"Spring Wheat","2022":"Green Peas","2023":"CC WW","2024":"Chickpeas","2025":"CC WW","2026":"Green Peas"}},
-  "west kirby house|1":{"common":"west kirby house","farm":"underdal ent.(missile)","fieldNum":"1","acres":156.11,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Chickpeas"}},
-  "west kirby house|2":{"common":"west kirby house","farm":"underdal ent.(missile)","fieldNum":"2","acres":145.4,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Chickpeas"}},
-  "west kirby|1":{"common":"west kirby","farm":"danrather (missile)","fieldNum":"1","acres":16.4,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Chickpeas"}},
-  "west kirby|2":{"common":"west kirby","farm":"danrather (missile)","fieldNum":"2","acres":59.29,"history":{"2019":"Spring Wheat","2020":"Austrians","2021":"Spring Wheat","2022":"Chickpeas","2023":"CC WW","2024":"Green Peas","2025":"CC HAD","2026":"Chickpeas"}},
-  "winter wheat|1":{"common":"winter wheat","farm":"SHARAY","fieldNum":"1","acres":482.37,"history":{"2020":"CC WW"}},
-};
-
-
-const GLOBALLY_INELIGIBLE = new Set(["Corn","Hemp","Chem-Fallow","Soybeans","Cotton","Rice"]);
-const ALL_CROPS = ["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Durum","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax","Corn","Hemp","Chem-Fallow","Soybeans"];
-const EXP = [
-  ["cropInsurance","Crop Insurance"],["gasFuelOil","Gas, Fuel & Oil"],["wages","Wages & In-Kind"],
-  ["ira","IRA Employee"],["fertilizerChemical","Fertilizer & Chemical"],["equipmentLoans","Equipment Loans & Leases"],
-  ["equipmentPurchases","Equipment Purchases"],["landLeases","Land Leases & Purchases"],["groceries","Groceries"],
-  ["repairsMaintenance","Repairs & Maintenance"],["utilities","Utilities (Phone, Elec.)"],["propertyTax","Property Tax & Ins."],
-  ["seed","Seed & Seed Cleaning"],["professionalFees","Professional Fees"],["misc","Misc (Travel, Meals, etc.)"],
-  ["freightCustomHire","Freight & Custom Hire"],["medical","Medical"],["interestOperating","Interest on Operating"],
+// ── Constants ─────────────────────────────────────────────────────
+const FALLBACK_GRAIN = { name:"WHEAT", bushel_lbs:60, color:"#c0b8ac" };
+const DEFAULT_TRUCKS = [
+{ id:"t1", name:"WHITE", hex:"#f0f0f0", border:"#aaa", text:"#333" },
+{ id:"t2", name:"RED", hex:"#e74c3c", border:"#c0392b", text:"#fff" },
+{ id:"t3", name:"GREEN", hex:"#27ae60", border:"#219653", text:"#fff" },
+{ id:"t4", name:"BLUE", hex:"#2980b9", border:"#1a6895", text:"#fff" },
+{ id:"t5", name:"BLACK", hex:"#2c3e50", border:"#1a252f", text:"#fff" },
+{ id:"t6", name:"YELLOW", hex:"#f1c40f", border:"#d4ac0d", text:"#333" },
 ];
-const DEFAULT_RATES = {
-  cropInsurance:19.70,gasFuelOil:11.03,wages:16.03,ira:2.50,fertilizerChemical:42.00,equipmentLoans:20.40,
-  equipmentPurchases:3.61,landLeases:34.42,groceries:2.06,repairsMaintenance:8.70,utilities:2.25,
-  propertyTax:4.60,seed:7.45,professionalFees:2.98,misc:3.67,freightCustomHire:0.90,medical:0.69,interestOperating:2.29,
-};
-const CROP_EXP_DEFAULTS = {
-  "Spring Wheat":{seed:8.50,fertilizerChemical:44.00,cropInsurance:22.00},
-  "Winter Wheat":{seed:5.00,fertilizerChemical:38.00,cropInsurance:17.00},
-  "CC WW":{seed:5.00,fertilizerChemical:38.00,cropInsurance:18.00},
-  "CC HAD":{seed:5.50,fertilizerChemical:42.00,cropInsurance:22.00},
-  "Barley":{seed:7.50,fertilizerChemical:40.00,cropInsurance:17.00},
-  "Durum":{seed:8.50,fertilizerChemical:44.00,cropInsurance:22.00},
-  "Lentils":{seed:14.00,fertilizerChemical:24.00,cropInsurance:16.00},
-  "Chickpeas":{seed:20.00,fertilizerChemical:21.00,cropInsurance:20.00},
-  "Austrians":{seed:12.00,fertilizerChemical:20.00,cropInsurance:15.00},
-  "Green Peas":{seed:16.00,fertilizerChemical:22.00,cropInsurance:16.00},
-  "Yellow Peas":{seed:16.00,fertilizerChemical:22.00,cropInsurance:16.00},
-  "Mustard":{seed:4.50,fertilizerChemical:36.00,cropInsurance:18.00},
-  "Canola":{seed:14.00,fertilizerChemical:50.00,cropInsurance:20.00},
-  "Flax":{seed:9.00,fertilizerChemical:34.00,cropInsurance:16.00},
-};
-const ACTUALS_2023 = {
-  cropInsurance:23.03,gasFuelOil:12.33,wages:16.48,ira:1.73,fertilizerChemical:42.91,equipmentLoans:16.82,
-  equipmentPurchases:10.79,landLeases:29.44,groceries:2.36,repairsMaintenance:8.60,utilities:2.30,
-  propertyTax:4.33,seed:5.44,professionalFees:3.06,misc:6.03,freightCustomHire:0.22,medical:0.43,interestOperating:0,
-};
-const BUDGET_2024 = {
-  cropInsurance:19.70,gasFuelOil:11.72,wages:17.20,ira:2.70,fertilizerChemical:44.86,equipmentLoans:21.81,
-  equipmentPurchases:3.92,landLeases:35.53,groceries:2.20,repairsMaintenance:9.31,utilities:2.45,
-  propertyTax:4.90,seed:7.84,professionalFees:3.18,misc:3.92,freightCustomHire:0.98,medical:0.74,interestOperating:2.45,
-};
-const ACTUALS_2025 = {
-  cropInsurance:19.65,gasFuelOil:11.0,wages:16.0,ira:2.5,fertilizerChemical:42.0,equipmentLoans:20.4,
-  equipmentPurchases:3.6,landLeases:34.4,groceries:2.06,repairsMaintenance:8.7,utilities:2.25,
-  propertyTax:4.6,seed:7.56,professionalFees:2.98,misc:3.66,freightCustomHire:0.9,medical:0.69,interestOperating:2.29,
-};
-const BUDGET_2026 = {
-  cropInsurance:16.36,gasFuelOil:11.0,wages:16.0,ira:2.5,fertilizerChemical:41.0,equipmentLoans:17.26,
-  equipmentPurchases:3.6,landLeases:31.8,groceries:2.06,repairsMaintenance:8.7,utilities:2.25,
-  propertyTax:4.6,seed:7.56,professionalFees:2.98,misc:3.66,freightCustomHire:0.9,medical:0.69,interestOperating:2.29,
-};
-const YEAR_LABELS = {"2023 Actuals":ACTUALS_2023,"2024 Budget":BUDGET_2024,"2025 Actuals":ACTUALS_2025,"2026 Budget":BUDGET_2026};
-
-// ── Typical Hi-Line MT guarantee & projection values (used for crop suggestions) ──
-const CROP_TYPICAL = {
-  "Spring Wheat":  { buGuar:24,  priceGuar:5.80, buProj:28,  projPrice:6.00 },
-  "Winter Wheat":  { buGuar:35,  priceGuar:5.50, buProj:42,  projPrice:5.75 },
-  "CC WW":         { buGuar:28,  priceGuar:5.80, buProj:32,  projPrice:6.00 },
-  "CC HAD":        { buGuar:24,  priceGuar:6.75, buProj:28,  projPrice:7.00 },
-  "Barley":        { buGuar:40,  priceGuar:4.50, buProj:48,  projPrice:5.50 },
-  "Durum":         { buGuar:22,  priceGuar:7.00, buProj:26,  projPrice:7.50 },
-  "Lentils":       { buGuar:16,  priceGuar:9.00, buProj:20,  projPrice:12.00 },
-  "Chickpeas":     { buGuar:16,  priceGuar:13.80,buProj:20,  projPrice:14.00 },
-  "Green Peas":    { buGuar:16,  priceGuar:9.00, buProj:22,  projPrice:10.00 },
-  "Yellow Peas":   { buGuar:16,  priceGuar:9.00, buProj:22,  projPrice:10.00 },
-  "Austrians":     { buGuar:17,  priceGuar:15.00,buProj:22,  projPrice:16.00 },
-  "Mustard":       { buGuar:10,  priceGuar:20.00,buProj:13,  projPrice:22.00 },
-  "Canola":        { buGuar:20,  priceGuar:12.00,buProj:26,  projPrice:14.00 },
-  "Flax":          { buGuar:12,  priceGuar:18.00,buProj:16,  projPrice:20.00 },
-};
-
-const FIELD_APH = {
-  "North Wanken|20-31N-5E":{"Yellow Peas":{"aph":17.1,"n":1},"CC HAD":{"aph":28.6,"n":1},"Lentils":{"aph":21.7,"n":1},"CC WW":{"aph":28.4,"n":2},"Chickpeas":{"aph":4.0,"n":2},"Barley":{"aph":1.0,"n":1},"Austrians":{"aph":9.2,"n":1},"Mustard":{"aph":6.9,"n":1}},
-  "West 120's|36-31N-4E":{"Winter Wheat":{"aph":56.1,"n":3},"CC WW":{"aph":17.6,"n":2},"Yellow Peas":{"aph":29.1,"n":1},"Chickpeas":{"aph":9.0,"n":1},"Spring Wheat":{"aph":15.5,"n":1},"Lentils":{"aph":3.1,"n":1},"Mustard":{"aph":8.8,"n":1}},
-  "South House|32-31N-5E":{"Winter Wheat":{"aph":56.6,"n":3},"Chickpeas":{"aph":14.1,"n":2},"Spring Wheat":{"aph":24.9,"n":2},"Lentils":{"aph":7.7,"n":1},"CC WW":{"aph":2.0,"n":1},"Flax":{"aph":1.3,"n":1},"Mustard":{"aph":4.5,"n":1}},
-  "House|29-31N-5E":{"Green Peas":{"aph":5.9,"n":1},"CC HAD":{"aph":14.6,"n":2},"Winter Wheat":{"aph":49.3,"n":1},"CC WW":{"aph":32.8,"n":1},"Lentils":{"aph":6.1,"n":2},"Chickpeas":{"aph":4.9,"n":1},"Mustard":{"aph":8.2,"n":1}},
-  "North Henke|05-30N-7E":{"Winter Wheat":{"aph":28.7,"n":2},"CC WW":{"aph":16.8,"n":2},"Chickpeas":{"aph":8.8,"n":2},"Mustard":{"aph":1.3,"n":1},"Spring Wheat":{"aph":18.9,"n":2}},
-  "North Kammer|02-31N-5E":{"Winter Wheat":{"aph":40.2,"n":2},"Chickpeas":{"aph":5.0,"n":2},"CC WW":{"aph":15.8,"n":2},"Yellow Peas":{"aph":13.8,"n":1},"Spring Wheat":{"aph":8.9,"n":1},"Lentils":{"aph":3.1,"n":1},"Mustard":{"aph":5.5,"n":1}},
-  "Henke/Hill|04-30N-7E":{"CC WW":{"aph":10.2,"n":2},"Chickpeas":{"aph":2.6,"n":2},"Winter Wheat":{"aph":25.4,"n":1},"Austrians":{"aph":16.0,"n":1},"Lentils":{"aph":0.3,"n":1},"Mustard":{"aph":5.8,"n":1},"Spring Wheat":{"aph":9.7,"n":1}},
-  "East Trues|08-30N-5E":{"Winter Wheat":{"aph":57.8,"n":2},"Chickpeas":{"aph":25.7,"n":2},"CC HAD":{"aph":21.9,"n":1},"Spring Wheat":{"aph":32.9,"n":1},"Green Peas":{"aph":30.4,"n":1},"CC WW":{"aph":19.8,"n":2},"Yellow Peas":{"aph":5.9,"n":1},"Mustard":{"aph":3.3,"n":1}},
-  "North Cabin|17-30N-5E":{"Winter Wheat":{"aph":47.6,"n":1},"Chickpeas":{"aph":16.3,"n":3},"CC HAD":{"aph":30.8,"n":1},"Lentils":{"aph":26.6,"n":1},"CC WW":{"aph":19.4,"n":2},"Austrians":{"aph":12.2,"n":1},"Spring Wheat":{"aph":19.4,"n":1}},
-  "Trues|07-30N-5E":{"CC HAD":{"aph":28.2,"n":2},"Winter Wheat":{"aph":50.0,"n":1},"CC WW":{"aph":30.2,"n":1},"Austrians":{"aph":16.9,"n":1},"Spring Wheat":{"aph":10.6,"n":2},"Chickpeas":{"aph":2.4,"n":1},"Canola":{"aph":0.7,"n":1},"Lentils":{"aph":4.3,"n":1}},
-  "West Trues|18-30N-5E":{"CC HAD":{"aph":15.9,"n":4},"Chickpeas":{"aph":40.9,"n":2},"Austrians":{"aph":21.8,"n":1},"Flax":{"aph":2.0,"n":1},"Lentils":{"aph":18.7,"n":1}},
-  "Pivot|19-30N-5E":{"IRR Green Pea":{"aph":39.9,"n":1},"CC HAD":{"aph":36.6,"n":1},"Chickpeas":{"aph":51.5,"n":1},"Austrians":{"aph":18.9,"n":2},"Flax":{"aph":42.9,"n":1},"Spring Wheat":{"aph":54.0,"n":1},"Hemp":{"aph":28.6,"n":1},"corn":{"aph":85.8,"n":2}},
-  "Barn|21-30N-5E":{"CC HAD":{"aph":31.1,"n":2},"Chickpeas":{"aph":13.9,"n":2},"CC WW":{"aph":17.1,"n":2},"Green Peas":{"aph":25.8,"n":1},"Spring Wheat":{"aph":10.6,"n":1},"Austrians":{"aph":14.0,"n":1},"Mustard":{"aph":17.8,"n":1}},
-  "Cabin East|20-30N-5E":{"Green Peas":{"aph":20.4,"n":1},"Austrians":{"aph":19.3,"n":3},"Chickpeas":{"aph":10.2,"n":2},"CC HAD":{"aph":25.0,"n":1},"CC WW":{"aph":26.3,"n":1},"Spring Wheat":{"aph":11.6,"n":1},"Mustard":{"aph":13.3,"n":1}},
-  "STATE|21-30N-5E":{"CC HAD":{"aph":30.1,"n":3},"CC WW":{"aph":17.7,"n":2},"Green Peas":{"aph":25.8,"n":1},"Chickpeas":{"aph":6.0,"n":1},"Spring Wheat":{"aph":13.4,"n":1},"Austrians":{"aph":12.9,"n":1},"Mustard":{"aph":17.8,"n":1}},
-  "South Rd.|07-30N-7E":{"CC HAD":{"aph":7.0,"n":1},"sunflowers":{"aph":26.1,"n":1},"Austrians":{"aph":2.3,"n":1},"CC WW":{"aph":4.0,"n":2},"Chickpeas":{"aph":5.7,"n":2},"Spring Wheat":{"aph":18.6,"n":1},"Mustard":{"aph":5.0,"n":1}},
-  "North 320|23-31N-7E":{"CC HAD":{"aph":5.3,"n":1},"Chickpeas":{"aph":14.4,"n":2},"Winter Wheat":{"aph":31.0,"n":1},"Lentils":{"aph":7.6,"n":2},"CC WW":{"aph":13.6,"n":2},"Yellow Peas":{"aph":4.4,"n":1},"Mustard":{"aph":2.6,"n":1}},
-  "West 320|27-31N-7E":{"CC HAD":{"aph":10.4,"n":2},"Lentils":{"aph":13.2,"n":2},"Chickpeas":{"aph":4.3,"n":2},"Austrians":{"aph":25.1,"n":1},"CC WW":{"aph":12.3,"n":2},"Yellow Peas":{"aph":4.4,"n":1},"Mustard":{"aph":4.4,"n":1}},
-  "East 320|26-31N-7E":{"CC HAD":{"aph":5.6,"n":2},"Lentils":{"aph":13.5,"n":2},"Chickpeas":{"aph":7.5,"n":2},"Austrians":{"aph":24.0,"n":1},"CC WW":{"aph":13.2,"n":2},"Yellow Peas":{"aph":4.4,"n":1},"Mustard":{"aph":4.2,"n":1}},
-  "North 320|24-30N-5E":{"CC WW":{"aph":31.6,"n":1},"Green Peas":{"aph":17.2,"n":1},"CC HAD":{"aph":10.6,"n":1},"oats":{"aph":40.7,"n":1}},
-  "South 480|25-30N-5E":{"CC WW":{"aph":28.1,"n":1},"Lentils":{"aph":17.9,"n":1},"Chickpeas":{"aph":9.9,"n":1}},
-  "South 480|26-30N-5E":{"CC WW":{"aph":25.4,"n":1},"Lentils":{"aph":18.2,"n":1},"Chickpeas":{"aph":5.8,"n":1},"Flax":{"aph":13.9,"n":1}},
-  "Decker yard W|07-30N-6E":{"CC WW":{"aph":21.8,"n":2},"Winter Wheat":{"aph":44.3,"n":1},"Austrians":{"aph":13.0,"n":1},"Chickpeas":{"aph":8.3,"n":2},"Lentils":{"aph":3.1,"n":1},"Mustard":{"aph":2.8,"n":1}},
-  "Decker yard E|08-30N-6E":{"CC WW":{"aph":19.5,"n":2},"Winter Wheat":{"aph":43.4,"n":1},"Austrians":{"aph":12.5,"n":1},"Chickpeas":{"aph":9.5,"n":2},"Lentils":{"aph":3.1,"n":1},"Mustard":{"aph":2.8,"n":1}},
-  "Decker Yard|08-30N-6E":{"CC WW":{"aph":10.0,"n":2},"Winter Wheat":{"aph":42.3,"n":1},"Austrians":{"aph":12.7,"n":1},"Chickpeas":{"aph":11.2,"n":2},"Lentils":{"aph":2.5,"n":1},"Mustard":{"aph":2.9,"n":1}},
-  "North 320|16-31N-5E":{"Winter Wheat":{"aph":66.4,"n":1}},
-  "West 50s|31-31N-5E":{"Winter Wheat":{"aph":73.2,"n":1},"Yellow Peas":{"aph":21.1,"n":2},"CC WW":{"aph":20.3,"n":3},"Chickpeas":{"aph":9.9,"n":1},"Spring Wheat":{"aph":15.3,"n":1},"Mustard":{"aph":2.4,"n":1}},
-  "South Poles|32-31N-5E":{"Chickpeas":{"aph":8.7,"n":2},"CC HAD":{"aph":12.8,"n":1},"Lentils":{"aph":6.3,"n":2},"Flax":{"aph":1.6,"n":1},"Mustard":{"aph":4.5,"n":1},"Spring Wheat":{"aph":18.9,"n":1}},
-  "North Hendrickson|21-31N-5E":{"Winter Wheat":{"aph":52.1,"n":1},"Lentils":{"aph":10.0,"n":1},"Chickpeas":{"aph":18.1,"n":2},"Yellow Peas":{"aph":1.0,"n":1},"CC WW":{"aph":10.7,"n":1},"Mustard":{"aph":6.9,"n":1},"Austrians":{"aph":20.4,"n":1}},
-  "Joplin Rd|03-30N-7E":{"Winter Wheat":{"aph":31.5,"n":1},"CC HAD":{"aph":11.7,"n":1},"Mustard":{"aph":7.2,"n":2},"CC WW":{"aph":6.0,"n":1}},
-  "Joplin Rd|02-30N-7E":{"Winter Wheat":{"aph":31.5,"n":1},"CC HAD":{"aph":9.1,"n":1},"Mustard":{"aph":7.4,"n":2},"CC WW":{"aph":6.0,"n":1}},
-  "Joplin Rd|11-30N-7E":{"Winter Wheat":{"aph":32.9,"n":1},"CC HAD":{"aph":8.3,"n":1},"Mustard":{"aph":8.0,"n":2},"CC WW":{"aph":6.0,"n":1}},
-  "Blow Field|06-30N-5E":{"Winter Wheat":{"aph":70.7,"n":1},"Chickpeas":{"aph":6.1,"n":3},"CC HAD":{"aph":25.7,"n":1},"CC WW":{"aph":25.6,"n":1},"Lentils":{"aph":8.8,"n":2},"Spring Wheat":{"aph":1.8,"n":1},"Mustard":{"aph":5.0,"n":1}},
-  "West CRP|12-30N-4E":{"Austrians":{"aph":16.0,"n":1},"Winter Wheat":{"aph":51.6,"n":1},"Chickpeas":{"aph":10.5,"n":2},"CC WW":{"aph":16.7,"n":2},"Yellow Peas":{"aph":1.0,"n":1},"Mustard":{"aph":3.6,"n":1},"Lentils":{"aph":10.1,"n":1}},
-  "Pivot CRP|19-30N-5E":{"Austrians":{"aph":12.2,"n":3},"Flax":{"aph":16.1,"n":1},"Spring Wheat":{"aph":9.0,"n":1},"Yellow Peas":{"aph":1.4,"n":1},"corn":{"aph":14.1,"n":1}},
-  "island|20-30N-5E":{"Austrians":{"aph":16.4,"n":3},"CC HAD":{"aph":25.8,"n":1},"CC WW":{"aph":35.6,"n":1},"Spring Wheat":{"aph":11.6,"n":1},"Mustard":{"aph":2.2,"n":1},"Chickpeas":{"aph":11.3,"n":1}},
-  "BOR|20-30N-5E":{"Winter Wheat":{"aph":45.4,"n":1},"CC HAD":{"aph":24.5,"n":1},"Austrians":{"aph":17.8,"n":2},"CC WW":{"aph":36.8,"n":1},"Spring Wheat":{"aph":11.6,"n":1},"Mustard":{"aph":1.8,"n":1},"Chickpeas":{"aph":11.3,"n":1}},
-  "STATE|06-30N-7E":{"Winter Wheat":{"aph":34.1,"n":1},"CC HAD":{"aph":27.1,"n":1},"CC WW":{"aph":13.4,"n":2},"Chickpeas":{"aph":8.9,"n":2},"Mustard":{"aph":1.3,"n":1},"Spring Wheat":{"aph":16.9,"n":1}},
-  "STATE|07-30N-7E":{"Winter Wheat":{"aph":27.4,"n":1},"sunflowers":{"aph":16.4,"n":1},"Austrians":{"aph":6.8,"n":1},"CC WW":{"aph":21.7,"n":1},"Chickpeas":{"aph":5.8,"n":2},"Lentils":{"aph":0.8,"n":1},"Spring Wheat":{"aph":15.0,"n":2}},
-  "North Rd|06-30N-7E":{"Winter Wheat":{"aph":32.9,"n":1},"Austrians":{"aph":17.7,"n":1},"CC WW":{"aph":17.4,"n":2},"Chickpeas":{"aph":9.3,"n":2},"Mustard":{"aph":1.3,"n":1},"Spring Wheat":{"aph":19.2,"n":2}},
-  "N. 320|24-31N-6":{"Winter Wheat":{"aph":47.6,"n":1},"Chickpeas":{"aph":15.9,"n":2},"Green Peas":{"aph":34.2,"n":1},"CC WW":{"aph":4.0,"n":1},"Lentils":{"aph":1.2,"n":1},"Mustard":{"aph":1.0,"n":1},"CC HAD":{"aph":20.2,"n":1}},
-  "East Section|25-31N-6":{"Winter Wheat":{"aph":43.8,"n":1},"Austrians":{"aph":9.0,"n":1},"Chickpeas":{"aph":12.6,"n":1},"CC WW":{"aph":5.0,"n":1},"Lentils":{"aph":0.0,"n":1},"Spring Wheat":{"aph":10.8,"n":1},"Mustard":{"aph":4.2,"n":1}},
-  "House|26-31N-6E":{"Lentils":{"aph":2.4,"n":1},"Winter Wheat":{"aph":38.3,"n":1},"Chickpeas":{"aph":9.8,"n":2},"CC WW":{"aph":25.7,"n":1},"Spring Wheat":{"aph":8.3,"n":2},"Austrians":{"aph":17.2,"n":1}},
-  "West Section|27-31N-6E":{"Winter Wheat":{"aph":29.8,"n":2},"Lentils":{"aph":10.5,"n":1},"CC WW":{"aph":21.2,"n":1},"Chickpeas":{"aph":5.7,"n":2},"Spring Wheat":{"aph":4.2,"n":1},"Austrians":{"aph":10.2,"n":1},"Mustard":{"aph":3.6,"n":1}},
-  "North Tiber Grade|16-31N-5E":{"Lentils":{"aph":7.2,"n":2},"Chickpeas":{"aph":13.1,"n":2},"CC WW":{"aph":21.3,"n":1},"Yellow Peas":{"aph":0.3,"n":1},"Barley":{"aph":5.0,"n":1},"Spring Wheat":{"aph":22.1,"n":1},"CC HAD":{"aph":20.7,"n":1}},
-  "Northwest 640|32-32N-7E":{"Mustard":{"aph":9.0,"n":1},"CC WW":{"aph":23.3,"n":1},"Chickpeas":{"aph":1.0,"n":1}},
-  "Southwest 640|05-31N-7E":{"Flax":{"aph":6.6,"n":1},"CC WW":{"aph":25.4,"n":1},"Chickpeas":{"aph":2.5,"n":1}},
-  "North Building site|33-30N-3E":{"Austrians":{"aph":11.7,"n":2},"Spring Wheat":{"aph":28.0,"n":2},"Mustard":{"aph":2.0,"n":1},"Lentils":{"aph":6.2,"n":1}},
-  "West building site|33-30N-3E":{"Spring Wheat":{"aph":35.8,"n":2},"Chickpeas":{"aph":16.2,"n":2},"Green Peas":{"aph":2.8,"n":1},"CC WW":{"aph":17.6,"n":1},"CC HAD":{"aph":15.4,"n":1}},
-  "Rock Hilltop|32-30N-3E":{"Spring Wheat":{"aph":33.9,"n":2},"Austrians":{"aph":33.6,"n":1},"Chickpeas":{"aph":16.1,"n":1},"CC WW":{"aph":28.4,"n":2},"Green Peas":{"aph":10.7,"n":1}},
-  "west kirby house|3-29N-3E":{"Spring Wheat":{"aph":36.5,"n":2},"Austrians":{"aph":14.8,"n":1},"Chickpeas":{"aph":6.9,"n":1},"CC WW":{"aph":29.7,"n":1},"Green Peas":{"aph":7.5,"n":1},"CC HAD":{"aph":19.6,"n":1}},
-  "west Hauser Rd.|3-29N-3E":{"Spring Wheat":{"aph":33.4,"n":2},"Chickpeas":{"aph":14.4,"n":2},"Green Peas":{"aph":7.7,"n":1},"CC WW":{"aph":58.4,"n":1},"CC HAD":{"aph":22.8,"n":1}},
-  "South Rock Hilltop|5-29N-3E":{"Spring Wheat":{"aph":35.2,"n":2},"Austrians":{"aph":33.8,"n":1},"Chickpeas":{"aph":15.6,"n":1},"CC WW":{"aph":21.5,"n":2},"Green Peas":{"aph":10.1,"n":1}},
-  "far west north place|5-29N-3E":{"Spring Wheat":{"aph":38.0,"n":2},"Austrians":{"aph":38.8,"n":1},"Chickpeas":{"aph":3.2,"n":1},"CC WW":{"aph":18.0,"n":2},"Green Peas":{"aph":10.3,"n":1}},
-  "Old House West|8-29N-3E":{"Spring Wheat":{"aph":28.0,"n":2},"Austrians":{"aph":26.5,"n":1},"Chickpeas":{"aph":13.7,"n":1},"CC WW":{"aph":21.7,"n":2},"Green Peas":{"aph":5.5,"n":1}},
-  "South Kirby corner|10-29N-3E":{"Spring Wheat":{"aph":33.3,"n":2},"Austrians":{"aph":34.2,"n":1},"Chickpeas":{"aph":9.7,"n":1},"CC WW":{"aph":17.7,"n":2},"Green Peas":{"aph":5.9,"n":1}},
-  "west home reservoir|11-29N-3E":{"Spring Wheat":{"aph":34.9,"n":2},"Flax":{"aph":15.5,"n":1},"Green Peas":{"aph":2.3,"n":1},"CC WW":{"aph":14.4,"n":2},"Chickpeas":{"aph":7.3,"n":1}},
-  "N1/2 St. Olaf|23-29N-3E":{"Spring Wheat":{"aph":36.8,"n":2},"Austrians":{"aph":9.6,"n":1},"Chickpeas":{"aph":4.6,"n":1},"CC WW":{"aph":12.2,"n":1},"Green Peas":{"aph":11.9,"n":1},"CC HAD":{"aph":19.3,"n":1}},
-  "S1/2 St. Olaf|23-29N-3E":{"Spring Wheat":{"aph":36.5,"n":2},"Austrians":{"aph":9.5,"n":1},"Chickpeas":{"aph":11.2,"n":1},"CC WW":{"aph":12.7,"n":1},"Green Peas":{"aph":7.8,"n":1},"CC HAD":{"aph":19.3,"n":1}},
-  "Shotgun Slough|29-29N-3E":{"Chickpeas":{"aph":2.2,"n":1},"Spring Wheat":{"aph":37.6,"n":1},"Green Peas":{"aph":4.9,"n":1},"CC WW":{"aph":1.9,"n":1},"Lentils":{"aph":5.0,"n":1},"Mustard":{"aph":1.3,"n":1}},
-  "West 200|31-29N-3E":{"Spring Wheat":{"aph":36.5,"n":2},"Chickpeas":{"aph":21.1,"n":1},"Austrians":{"aph":2.0,"n":1},"CC WW":{"aph":28.0,"n":2},"Lentils":{"aph":10.5,"n":1}},
-  "South Shotgun|32-29N-3E":{"Spring Wheat":{"aph":42.0,"n":2},"Chickpeas":{"aph":21.0,"n":1},"Austrians":{"aph":3.1,"n":1},"CC WW":{"aph":12.6,"n":2},"Lentils":{"aph":7.2,"n":1}},
-  "Lynch 40|32-29N-3E":{"Chickpeas":{"aph":11.6,"n":2},"Spring Wheat":{"aph":31.9,"n":1},"Green Peas":{"aph":4.9,"n":1},"CC WW":{"aph":19.0,"n":2},"Mustard":{"aph":7.1,"n":1}},
-  "East 320|33-29N-3E":{"Chickpeas":{"aph":19.1,"n":2},"Spring Wheat":{"aph":32.6,"n":1},"Green Peas":{"aph":4.9,"n":1},"CC WW":{"aph":16.7,"n":2},"Mustard":{"aph":8.4,"n":1}},
-  "Home Place|12-29N-3E":{"Spring Wheat":{"aph":33.7,"n":2},"Flax":{"aph":15.3,"n":1},"Chickpeas":{"aph":4.8,"n":1},"CC WW":{"aph":14.6,"n":1},"Green Peas":{"aph":8.0,"n":1},"Barley":{"aph":17.8,"n":1}},
-  "South House Section|14-29N-3E":{"Spring Wheat":{"aph":38.2,"n":2},"Chickpeas":{"aph":20.8,"n":2},"Austrians":{"aph":0.1,"n":1},"CC WW":{"aph":28.9,"n":1},"CC HAD":{"aph":25.1,"n":1}},
-  "North Kirby|3-29N-3E":{"Spring Wheat":{"aph":25.3,"n":2},"Austrians":{"aph":14.8,"n":1},"Chickpeas":{"aph":8.4,"n":1},"CC WW":{"aph":16.1,"n":1},"Green Peas":{"aph":7.1,"n":1},"CC HAD":{"aph":19.6,"n":1}},
-  "west kirby|3-29N-3E":{"Spring Wheat":{"aph":25.3,"n":2},"Austrians":{"aph":14.8,"n":1},"Chickpeas":{"aph":7.4,"n":1},"CC WW":{"aph":16.1,"n":1},"Green Peas":{"aph":7.6,"n":1},"CC HAD":{"aph":19.6,"n":1}},
-  "west buildings state|33-30N-3E":{"Spring Wheat":{"aph":28.7,"n":2},"Chickpeas":{"aph":13.5,"n":2},"Green Peas":{"aph":1.1,"n":1},"CC WW":{"aph":32.6,"n":1},"CC HAD":{"aph":15.4,"n":1}},
-  "south state 320|4-29N-3E":{"Spring Wheat":{"aph":36.9,"n":2},"Chickpeas":{"aph":16.1,"n":2},"Green Peas":{"aph":4.5,"n":1},"CC WW":{"aph":37.7,"n":1},"CC HAD":{"aph":15.4,"n":1}},
-  "south state 321|4-29N-3E":{"Austrians":{"aph":6.0,"n":1},"Spring Wheat":{"aph":40.4,"n":1}},
-  "north rock hill|32-30N-3E":{"Spring Wheat":{"aph":24.3,"n":2},"Austrians":{"aph":33.8,"n":1},"Chickpeas":{"aph":13.6,"n":1},"CC WW":{"aph":27.4,"n":2},"Green Peas":{"aph":9.1,"n":1}},
-  "winter wheat|":{"CC WW":{"aph":28.2,"n":1}},
-  "SW 320|25-31N-7E":{"Winter Wheat":{"aph":23.0,"n":1},"Yellow Peas":{"aph":5.0,"n":1},"Spring Wheat":{"aph":29.8,"n":1}},
-  "NW 320|24-31N-7E":{"Winter Wheat":{"aph":23.0,"n":1},"Yellow Peas":{"aph":5.6,"n":1},"Chickpeas":{"aph":13.0,"n":1}},
-  "NE 320|24-31N-7E":{"Winter Wheat":{"aph":23.0,"n":1},"Yellow Peas":{"aph":5.5,"n":1},"Chickpeas":{"aph":12.7,"n":1}},
-  "SE 320|25-31N-7E":{"Winter Wheat":{"aph":23.0,"n":1},"Yellow Peas":{"aph":4.6,"n":1},"Spring Wheat":{"aph":29.8,"n":1}},
-  "West Joplin Road|35-31N-7E":{"Winter Wheat":{"aph":16.0,"n":1},"CC WW":{"aph":1.8,"n":1},"Chickpeas":{"aph":14.1,"n":1},"Spring Wheat":{"aph":15.7,"n":1},"Mustard":{"aph":5.8,"n":1}},
-  "Beulow Rd|18-31N-7E":{"Chickpeas":{"aph":4.7,"n":2},"Spring Wheat":{"aph":7.8,"n":2},"Lentils":{"aph":4.3,"n":1}},
-  "Beulow Rd|17-31N-7E":{"Chickpeas":{"aph":4.7,"n":2},"Spring Wheat":{"aph":7.5,"n":2},"Lentils":{"aph":6.5,"n":1}},
-  "East 320|25-31N-5E":{"Spring Wheat":{"aph":30.3,"n":1},"Austrians":{"aph":16.3,"n":1}},
-  "North 320|23-31N-5E":{"Mustard":{"aph":8.4,"n":1},"Lentils":{"aph":4.4,"n":1}},
-  "Middle section|26-31N-5E":{"Spring Wheat":{"aph":32.3,"n":1},"Lentils":{"aph":6.0,"n":1}},
-  "West 280|27-31N-5E":{"Spring Wheat":{"aph":0.2,"n":1},"Chickpeas":{"aph":6.2,"n":1}},
-  "Watson West|12/13-29N-3E":{"Winter Wheat":{"aph":40.5,"n":1},"Chickpeas":{"aph":7.1,"n":1}},
-  "Watson NorthWest|12-29N-3E":{"Winter Wheat":{"aph":53.2,"n":1},"Chickpeas":{"aph":13.0,"n":1}},
-  "Watson North|7-29N-4E":{"Chickpeas":{"aph":8.9,"n":1},"CC HAD":{"aph":18.8,"n":1}},
-  "Watson South|18-29N-4E":{"Chickpeas":{"aph":9.1,"n":1},"CC HAD":{"aph":13.8,"n":1}},
-  "Watson SouthEast|17-29N-4E":{"Chickpeas":{"aph":10.1,"n":1},"CC HAD":{"aph":20.0,"n":1}},
-  "Cedric Section 6|6-29N-4E":{"Winter Wheat":{"aph":40.4,"n":1},"Chickpeas":{"aph":7.2,"n":1}},
-  "STATE north|06-30N-7E":{"Spring Wheat":{"aph":16.1,"n":1}},
-  "Akey yard W|07-30N-6E":{"CC WW":{"aph":21.0,"n":1}},
-  "Akey yard E|08-30N-6E":{"CC WW":{"aph":21.0,"n":1}},
-  "Akey Yard|08-30N-6E":{"CC WW":{"aph":21.0,"n":1}},
-  "East 320|":{"Spring Wheat":{"aph":20.3,"n":1}},
-  "North 320|":{"Chickpeas":{"aph":8.1,"n":1}},
-  "Middle section|":{"Chickpeas":{"aph":5.2,"n":1}},
-  "West 280|":{"Spring Wheat":{"aph":27.6,"n":1}},
-};
-
-const CROP_SOLD_PRICES = {
-  "Austrians":13.4,
-  "CC HAD":6.56,
-  "CC WW":4.9,
-  "Chickpeas":20.0,
-  "Flax":9.58,
-  "Green Peas":8.67,
-  "IRR Green Pea":8.0,
-  "Lentils":27.33,
-  "Mustard":28.0,
-  "Spring Wheat":5.79,
-  "Winter Wheat":5.23,
-  "Yellow Peas":7.75,
-  "corn":4.8,
-  "oats":2.0,
-  "sunflowers":4.2,
-};
-
-const WORKBOOK_PRODUCTION = {
-  "North Wanken|20-31N-5E":{"2015":{"crop":"Yellow Peas","revenue":46189.0,"total_bu":5434.0,"sold_price":8.5,"bu_per_ac":17.09},"2016":{"crop":"CC HAD","revenue":48394.28,"total_bu":9096.7,"sold_price":5.32,"bu_per_ac":28.61},"2018":{"crop":"Lentils","revenue":62100.0,"total_bu":6900.0,"sold_price":9.0,"bu_per_ac":21.7},"2019":{"crop":"CC WW","revenue":71444.52,"total_bu":11907.4,"sold_price":6.0,"bu_per_ac":37.45},"2020":{"crop":"Chickpeas","revenue":1704.37,"total_bu":213.0,"sold_price":8.0,"bu_per_ac":0.67},"2021":{"crop":"Barley","total_bu":318.0,"bu_per_ac":1.0},"2022":{"crop":"Austrians","total_bu":2942.2,"bu_per_ac":9.25},"2023":{"crop":"Mustard","total_bu":2190.0,"bu_per_ac":6.89},"2024":{"crop":"CC WW","revenue":33676.1,"total_bu":6179.1,"sold_price":5.45,"bu_per_ac":19.43},"2025":{"crop":"Chickpeas","total_bu":2326.6,"bu_per_ac":7.32}},
-  "West 120's|36-31N-4E":{"2015":{"crop":"Winter Wheat","revenue":120294.9,"total_bu":13827.0,"sold_price":8.7,"bu_per_ac":113.1},"2016":{"crop":"Winter Wheat","revenue":29170.68,"total_bu":7292.7,"sold_price":4.0,"bu_per_ac":59.35},"2017":{"crop":"Winter Wheat","revenue":86901.3,"total_bu":19311.4,"sold_price":4.5,"bu_per_ac":157.95},"2019":{"crop":"CC WW","revenue":33536.0,"total_bu":8384.0,"sold_price":4.0,"bu_per_ac":68.23},"2020":{"crop":"Yellow Peas","revenue":221151.0,"total_bu":14743.4,"sold_price":15.0,"bu_per_ac":119.99},"2021":{"crop":"CC WW","total_bu":2394.4,"bu_per_ac":19.49},"2022":{"crop":"Chickpeas","total_bu":3247.0,"bu_per_ac":26.43},"2023":{"crop":"Spring Wheat","total_bu":6207.5,"bu_per_ac":50.52},"2024":{"crop":"Lentils","revenue":40521.6,"total_bu":1500.8,"sold_price":27.0,"bu_per_ac":12.21},"2025":{"crop":"Mustard","total_bu":4209.3,"bu_per_ac":34.26}},
-  "South House|32-31N-5E":{"2015":{"crop":"Winter Wheat","revenue":106337.08,"total_bu":15300.3,"sold_price":6.95,"bu_per_ac":97.69},"2016":{"crop":"Winter Wheat","revenue":54468.0,"total_bu":13617.0,"sold_price":4.0,"bu_per_ac":66.26},"2017":{"crop":"Winter Wheat","revenue":90000.0,"total_bu":20000.0,"sold_price":4.5,"bu_per_ac":85.49},"2018":{"crop":"Chickpeas","revenue":109800.0,"total_bu":9150.0,"sold_price":12.0,"bu_per_ac":39.11},"2019":{"crop":"Spring Wheat","revenue":63959.5,"total_bu":11629.0,"sold_price":5.5,"bu_per_ac":49.71},"2020":{"crop":"Lentils","revenue":121417.5,"total_bu":8094.5,"sold_price":15.0,"bu_per_ac":34.6},"2021":{"crop":"CC WW","total_bu":545.2,"bu_per_ac":2.33},"2022":{"crop":"Flax","total_bu":730.0,"bu_per_ac":3.12},"2023":{"crop":"Chickpeas","total_bu":6663.1,"bu_per_ac":28.48},"2024":{"crop":"Mustard","revenue":59908.8,"total_bu":2139.6,"sold_price":28.0,"bu_per_ac":9.15},"2025":{"crop":"Spring Wheat","total_bu":9012.9,"bu_per_ac":38.52}},
-  "House|29-31N-5E":{"2015":{"crop":"Green Peas","revenue":43720.11,"total_bu":5025.3,"sold_price":8.7,"bu_per_ac":58.23},"2016":{"crop":"CC HAD","revenue":61626.8,"total_bu":15406.7,"sold_price":4.0,"bu_per_ac":99.23},"2017":{"crop":"Winter Wheat","revenue":80272.0,"total_bu":20068.0,"sold_price":4.0,"bu_per_ac":232.54},"2019":{"crop":"CC WW","revenue":56854.4,"total_bu":14213.6,"sold_price":4.0,"bu_per_ac":118.45},"2020":{"crop":"Lentils","revenue":5683.5,"total_bu":378.9,"sold_price":15.0,"bu_per_ac":3.16},"2022":{"crop":"Chickpeas","total_bu":4686.1,"bu_per_ac":39.05},"2023":{"crop":"Mustard","total_bu":4978.0,"bu_per_ac":41.48},"2024":{"crop":"CC HAD","revenue":46640.43,"total_bu":6982.1,"sold_price":6.68,"bu_per_ac":58.18},"2025":{"crop":"Lentils","total_bu":10087.5,"bu_per_ac":84.06}},
-  "North Henke|05-30N-7E":{"2015":{"crop":"Winter Wheat","revenue":40000.0,"total_bu":8000.0,"sold_price":5.0,"bu_per_ac":23.7},"2017":{"crop":"Winter Wheat","revenue":51095.7,"total_bu":11354.6,"sold_price":4.5,"bu_per_ac":33.63},"2019":{"crop":"CC WW","revenue":39393.96,"total_bu":9848.5,"sold_price":4.0,"bu_per_ac":30.53},"2020":{"crop":"Chickpeas","revenue":42063.6,"total_bu":3505.3,"sold_price":12.0,"bu_per_ac":10.87},"2021":{"crop":"CC WW","total_bu":967.7,"bu_per_ac":3.0},"2022":{"crop":"Mustard","total_bu":430.7,"bu_per_ac":28.64},"2023":{"crop":"Spring Wheat","total_bu":7705.8,"bu_per_ac":512.35},"2024":{"crop":"Chickpeas","revenue":45406.0,"total_bu":2270.3,"sold_price":20.0,"bu_per_ac":150.95},"2025":{"crop":"Spring Wheat","total_bu":5020.0,"bu_per_ac":333.78}},
-  "North Kammer|02-31N-5E":{"2015":{"crop":"Winter Wheat","revenue":57762.7,"total_bu":11552.5,"sold_price":5.0,"bu_per_ac":36.32},"2017":{"crop":"Winter Wheat","revenue":63000.0,"total_bu":14000.0,"sold_price":4.5,"bu_per_ac":44.01},"2018":{"crop":"Chickpeas","revenue":28200.0,"total_bu":2350.0,"sold_price":12.0,"bu_per_ac":7.39},"2019":{"crop":"CC WW","revenue":36332.0,"total_bu":9083.0,"sold_price":4.0,"bu_per_ac":28.55},"2020":{"crop":"Yellow Peas","revenue":30812.6,"total_bu":4401.8,"sold_price":7.0,"bu_per_ac":13.84},"2021":{"crop":"CC WW","total_bu":954.3,"bu_per_ac":3.0},"2022":{"crop":"Chickpeas","total_bu":806.7,"bu_per_ac":2.54},"2023":{"crop":"Spring Wheat","total_bu":2840.8,"bu_per_ac":8.93},"2024":{"crop":"Lentils","revenue":27062.91,"total_bu":1002.3,"sold_price":27.0,"bu_per_ac":3.15},"2025":{"crop":"Mustard","total_bu":1759.1,"bu_per_ac":5.53}},
-  "Henke/Hill|04-30N-7E":{"2015":{"crop":"CC WW","revenue":10573.26,"total_bu":2114.7,"sold_price":5.0,"bu_per_ac":19.42},"2017":{"crop":"Chickpeas","revenue":9291.5,"total_bu":371.7,"sold_price":25.0,"bu_per_ac":3.08},"2019":{"crop":"Winter Wheat","revenue":10749.4,"total_bu":2687.3,"sold_price":4.0,"bu_per_ac":25.44},"2020":{"crop":"Austrians","revenue":15420.8,"total_bu":1927.6,"sold_price":8.0,"bu_per_ac":127.82},"2021":{"crop":"CC WW","total_bu":120.7,"bu_per_ac":8.0},"2022":{"crop":"Lentils","total_bu":32.0,"bu_per_ac":2.12},"2023":{"crop":"Mustard","total_bu":705.5,"bu_per_ac":46.78},"2024":{"crop":"Chickpeas","revenue":5238.0,"total_bu":261.9,"sold_price":20.0,"bu_per_ac":17.37},"2025":{"crop":"Spring Wheat","total_bu":1173.0,"bu_per_ac":77.79}},
-  "East Trues|08-30N-5E":{"2015":{"crop":"Winter Wheat","revenue":216100.5,"total_bu":14406.7,"sold_price":15.0,"bu_per_ac":90.26},"2016":{"crop":"Chickpeas","revenue":24956.4,"total_bu":6239.1,"sold_price":4.0,"bu_per_ac":39.09},"2017":{"crop":"Winter Wheat","revenue":630000.0,"total_bu":21000.0,"sold_price":30.0,"bu_per_ac":131.56},"2018":{"crop":"CC HAD","revenue":17500.0,"total_bu":3500.0,"sold_price":5.0,"bu_per_ac":21.93},"2019":{"crop":"Spring Wheat","revenue":187918.5,"total_bu":12527.9,"sold_price":15.0,"bu_per_ac":78.49},"2020":{"crop":"Green Peas","revenue":58127.4,"total_bu":12917.2,"sold_price":4.5,"bu_per_ac":80.92},"2021":{"crop":"CC WW","total_bu":2441.3,"bu_per_ac":15.29},"2022":{"crop":"Yellow Peas","total_bu":1813.2,"bu_per_ac":11.36},"2023":{"crop":"Chickpeas","revenue":83428.2,"total_bu":4634.9,"sold_price":18.0,"bu_per_ac":29.04},"2024":{"crop":"Mustard","revenue":44875.6,"total_bu":1602.7,"sold_price":28.0,"bu_per_ac":10.04},"2025":{"crop":"CC WW","total_bu":14688.0,"bu_per_ac":92.02}},
-  "North Cabin|17-30N-5E":{"2015":{"crop":"Winter Wheat","revenue":82500.0,"total_bu":15000.0,"sold_price":5.5,"bu_per_ac":47.58},"2017":{"crop":"Chickpeas","revenue":255000.0,"total_bu":8500.0,"sold_price":30.0,"bu_per_ac":26.96},"2018":{"crop":"CC HAD","revenue":48500.0,"total_bu":9700.0,"sold_price":5.0,"bu_per_ac":30.77},"2019":{"crop":"Lentils","revenue":75573.0,"total_bu":8397.0,"sold_price":9.0,"bu_per_ac":26.64},"2020":{"crop":"CC WW","revenue":44520.78,"total_bu":9893.5,"sold_price":4.5,"bu_per_ac":31.38},"2021":{"crop":"Chickpeas","total_bu":2143.7,"bu_per_ac":6.8},"2022":{"crop":"CC WW","total_bu":2364.0,"bu_per_ac":7.5},"2023":{"crop":"Austrians","total_bu":3829.2,"bu_per_ac":12.15},"2024":{"crop":"Spring Wheat","revenue":35336.95,"total_bu":6103.1,"sold_price":5.79,"bu_per_ac":19.36},"2025":{"crop":"Chickpeas","total_bu":4770.0,"bu_per_ac":15.13}},
-  "Trues|07-30N-5E":{"2015":{"crop":"CC HAD","revenue":38862.9,"total_bu":4467.0,"sold_price":8.7,"bu_per_ac":38.15},"2016":{"crop":"Winter Wheat","revenue":61495.48,"total_bu":11559.3,"sold_price":5.32,"bu_per_ac":119.17},"2017":{"crop":"CC HAD","revenue":42750.0,"total_bu":9500.0,"sold_price":4.5,"bu_per_ac":81.13},"2019":{"crop":"CC WW","revenue":14153.0,"total_bu":3538.2,"sold_price":4.0,"bu_per_ac":30.22},"2020":{"crop":"Austrians","revenue":37067.2,"total_bu":4633.4,"sold_price":8.0,"bu_per_ac":39.57},"2021":{"crop":"Spring Wheat","total_bu":2047.7,"bu_per_ac":17.49},"2022":{"crop":"Chickpeas","total_bu":829.4,"bu_per_ac":7.08},"2023":{"crop":"Spring Wheat","total_bu":2052.5,"bu_per_ac":17.53},"2024":{"crop":"Canola","revenue":31800.81,"total_bu":4760.6,"sold_price":6.68,"bu_per_ac":40.65},"2025":{"crop":"Lentils","total_bu":2028.1,"bu_per_ac":17.32}},
-  "West Trues|18-30N-5E":{"2015":{"crop":"CC HAD","revenue":11301.3,"total_bu":1299.0,"sold_price":8.7,"bu_per_ac":33.81},"2016":{"crop":"Chickpeas","revenue":18960.0,"total_bu":1185.0,"sold_price":16.0,"bu_per_ac":26.77},"2017":{"crop":"CC HAD","revenue":10380.8,"total_bu":2595.2,"sold_price":4.0,"bu_per_ac":67.55},"2020":{"crop":"Austrians","revenue":13883.2,"total_bu":1735.4,"sold_price":8.0,"bu_per_ac":45.17},"2021":{"crop":"Flax","total_bu":165.3,"bu_per_ac":4.3},"2022":{"crop":"CC HAD","total_bu":117.5,"bu_per_ac":3.06},"2023":{"crop":"Chickpeas","total_bu":4880.0,"bu_per_ac":127.02},"2024":{"crop":"CC HAD","revenue":8480.93,"total_bu":1269.6,"sold_price":6.68,"bu_per_ac":33.05},"2025":{"crop":"Lentils","total_bu":1545.4,"bu_per_ac":40.22}},
-  "Pivot|19-30N-5E":{"2015":{"crop":"IRR Green Pea","revenue":22301.28,"total_bu":2787.7,"sold_price":8.0,"bu_per_ac":39.85},"2016":{"crop":"CC HAD","revenue":13642.24,"total_bu":2564.3,"sold_price":5.32,"bu_per_ac":36.65},"2017":{"crop":"Chickpeas","revenue":108030.0,"total_bu":3601.0,"sold_price":30.0,"bu_per_ac":51.47},"2019":{"crop":"Austrians","revenue":19800.0,"total_bu":2200.0,"sold_price":9.0,"bu_per_ac":31.45},"2020":{"crop":"Flax","revenue":30000.0,"total_bu":3000.0,"sold_price":10.0,"bu_per_ac":42.88},"2021":{"crop":"Spring Wheat","total_bu":3777.8,"bu_per_ac":54.0},"2022":{"crop":"Hemp","total_bu":2000.0,"bu_per_ac":28.59},"2023":{"crop":"corn","total_bu":8000.0,"bu_per_ac":114.35},"2024":{"crop":"corn","revenue":19200.0,"total_bu":4000.0,"sold_price":4.8,"bu_per_ac":57.18},"2025":{"crop":"Austrians","total_bu":442.0,"bu_per_ac":6.32}},
-  "Barn|21-30N-5E":{"2015":{"crop":"CC HAD","revenue":43633.37,"total_bu":5015.3,"sold_price":8.7,"bu_per_ac":31.47},"2017":{"crop":"Chickpeas","revenue":87500.0,"total_bu":3500.0,"sold_price":25.0,"bu_per_ac":21.96},"2018":{"crop":"CC HAD","revenue":24500.0,"total_bu":4900.0,"sold_price":5.0,"bu_per_ac":30.74},"2019":{"crop":"CC WW","revenue":15481.16,"total_bu":3870.3,"sold_price":4.0,"bu_per_ac":24.28},"2020":{"crop":"Green Peas","revenue":28723.31,"total_bu":4103.3,"sold_price":7.0,"bu_per_ac":25.75},"2021":{"crop":"CC WW","total_bu":1593.8,"bu_per_ac":10.0},"2022":{"crop":"Chickpeas","total_bu":933.1,"bu_per_ac":5.85},"2023":{"crop":"Spring Wheat","total_bu":1695.1,"bu_per_ac":10.64},"2024":{"crop":"Austrians","revenue":30040.2,"total_bu":2225.2,"sold_price":13.5,"bu_per_ac":13.96},"2025":{"crop":"Mustard","total_bu":2841.0,"bu_per_ac":17.83}},
-  "Cabin East|20-30N-5E":{"2015":{"crop":"Green Peas","revenue":18000.0,"total_bu":3000.0,"sold_price":6.0,"bu_per_ac":20.41},"2016":{"crop":"Austrians","revenue":18456.68,"total_bu":3469.3,"sold_price":5.32,"bu_per_ac":23.6},"2017":{"crop":"Chickpeas","revenue":87500.0,"total_bu":3500.0,"sold_price":25.0,"bu_per_ac":23.81},"2018":{"crop":"CC HAD","revenue":22750.0,"total_bu":4550.0,"sold_price":5.0,"bu_per_ac":30.96},"2019":{"crop":"Austrians","revenue":39150.0,"total_bu":4350.0,"sold_price":9.0,"bu_per_ac":29.6},"2020":{"crop":"CC WW","revenue":22604.85,"total_bu":5023.3,"sold_price":4.5,"bu_per_ac":34.18},"2022":{"crop":"Chickpeas","total_bu":789.6,"bu_per_ac":5.37},"2023":{"crop":"Spring Wheat","total_bu":2150.2,"bu_per_ac":14.63},"2024":{"crop":"Austrians","revenue":49206.15,"total_bu":3644.9,"sold_price":13.5,"bu_per_ac":24.8},"2025":{"crop":"Mustard","total_bu":2434.0,"bu_per_ac":16.56}},
-  "STATE|21-30N-5E":{"2015":{"crop":"CC HAD","revenue":12525.78,"total_bu":1919.7,"sold_price":6.52,"bu_per_ac":26.57},"2017":{"crop":"CC HAD","revenue":17721.69,"total_bu":2531.7,"sold_price":7.0,"bu_per_ac":35.05},"2018":{"crop":"CC HAD","revenue":10365.0,"total_bu":2073.0,"sold_price":5.0,"bu_per_ac":28.7},"2019":{"crop":"CC WW","revenue":6783.56,"total_bu":1695.9,"sold_price":4.0,"bu_per_ac":23.48},"2020":{"crop":"Green Peas","revenue":13063.4,"total_bu":1866.2,"sold_price":7.0,"bu_per_ac":25.83},"2021":{"crop":"CC WW","total_bu":866.9,"bu_per_ac":12.0},"2022":{"crop":"Chickpeas","total_bu":430.7,"bu_per_ac":5.96},"2023":{"crop":"Spring Wheat","total_bu":969.9,"bu_per_ac":13.43},"2024":{"crop":"Austrians","revenue":12596.58,"total_bu":933.1,"sold_price":13.5,"bu_per_ac":12.92},"2025":{"crop":"Mustard","total_bu":1288.0,"bu_per_ac":17.83}},
-  "South Rd.|07-30N-7E":{"2015":{"crop":"CC HAD","revenue":17571.13,"total_bu":2019.7,"sold_price":8.7,"bu_per_ac":7.03},"2017":{"crop":"sunflowers","revenue":31500.0,"total_bu":7500.0,"sold_price":4.2,"bu_per_ac":26.09},"2018":{"crop":"Austrians","revenue":5850.0,"total_bu":650.0,"sold_price":9.0,"bu_per_ac":2.26},"2019":{"crop":"CC WW","revenue":6857.96,"total_bu":1714.5,"sold_price":4.0,"bu_per_ac":5.96},"2020":{"crop":"Chickpeas","revenue":39200.0,"total_bu":2800.0,"sold_price":14.0,"bu_per_ac":9.74},"2021":{"crop":"CC WW","total_bu":574.9,"bu_per_ac":2.0},"2022":{"crop":"Lentils","total_bu":1.0},"2023":{"crop":"Spring Wheat","total_bu":5334.2,"bu_per_ac":18.56},"2024":{"crop":"Mustard","revenue":40471.2,"total_bu":1445.4,"sold_price":28.0,"bu_per_ac":5.03},"2025":{"crop":"Chickpeas","total_bu":500.1,"bu_per_ac":1.74}},
-  "North 320|23-31N-7E":{"2015":{"crop":"CC HAD","revenue":14790.0,"total_bu":1700.0,"sold_price":8.7,"bu_per_ac":5.26},"2016":{"crop":"Chickpeas","revenue":207000.0,"total_bu":6900.0,"sold_price":30.0,"bu_per_ac":21.37},"2018":{"crop":"Winter Wheat","revenue":55000.0,"total_bu":10000.0,"sold_price":5.5,"bu_per_ac":30.97},"2019":{"crop":"Lentils","revenue":35583.03,"total_bu":3953.7,"sold_price":9.0,"bu_per_ac":12.24},"2020":{"crop":"CC WW","revenue":38035.5,"total_bu":8452.3,"sold_price":4.5,"bu_per_ac":26.18},"2021":{"crop":"Yellow Peas","total_bu":1414.3,"bu_per_ac":4.38},"2022":{"crop":"CC WW","total_bu":322.9,"bu_per_ac":1.0},"2023":{"crop":"Chickpeas","total_bu":2425.2,"bu_per_ac":7.51},"2024":{"crop":"Mustard","revenue":23153.2,"total_bu":826.9,"sold_price":28.0,"bu_per_ac":2.56},"2025":{"crop":"Lentils","total_bu":968.7,"bu_per_ac":3.0}},
-  "West 320|27-31N-7E":{"2015":{"crop":"CC HAD","revenue":43769.87,"total_bu":5031.0,"sold_price":8.7,"bu_per_ac":15.32},"2016":{"crop":"Lentils","revenue":121323.22,"total_bu":7136.7,"sold_price":17.0,"bu_per_ac":21.74},"2017":{"crop":"Chickpeas","revenue":27722.4,"total_bu":1155.1,"sold_price":24.0,"bu_per_ac":3.52},"2018":{"crop":"CC HAD","revenue":8875.0,"total_bu":1775.0,"sold_price":5.0,"bu_per_ac":5.41},"2019":{"crop":"Austrians","revenue":82250.0,"total_bu":8225.0,"sold_price":10.0,"bu_per_ac":25.05},"2020":{"crop":"CC WW","revenue":35151.68,"total_bu":7811.5,"sold_price":4.5,"bu_per_ac":23.79},"2021":{"crop":"Yellow Peas","total_bu":1438.1,"bu_per_ac":4.38},"2022":{"crop":"CC WW","total_bu":298.8,"bu_per_ac":0.91},"2023":{"crop":"Chickpeas","total_bu":1690.2,"bu_per_ac":5.15},"2024":{"crop":"Mustard","revenue":40517.68,"total_bu":1447.1,"sold_price":28.0,"bu_per_ac":4.41},"2025":{"crop":"Lentils","total_bu":1516.0,"bu_per_ac":4.62}},
-  "East 320|26-31N-7E":{"2015":{"crop":"CC HAD","revenue":18513.51,"total_bu":2128.0,"sold_price":8.7,"bu_per_ac":6.63},"2016":{"crop":"Lentils","revenue":132067.22,"total_bu":7768.7,"sold_price":17.0,"bu_per_ac":24.22},"2017":{"crop":"Chickpeas","revenue":61875.0,"total_bu":2475.0,"sold_price":25.0,"bu_per_ac":7.72},"2018":{"crop":"CC HAD","revenue":7265.0,"total_bu":1453.0,"sold_price":5.0,"bu_per_ac":4.53},"2019":{"crop":"Austrians","revenue":77000.0,"total_bu":7700.0,"sold_price":10.0,"bu_per_ac":24.0},"2020":{"crop":"CC WW","revenue":36366.61,"total_bu":8081.5,"sold_price":4.5,"bu_per_ac":25.19},"2021":{"crop":"Yellow Peas","total_bu":1405.1,"bu_per_ac":4.38},"2022":{"crop":"CC WW","total_bu":384.9,"bu_per_ac":1.2},"2023":{"crop":"Chickpeas","total_bu":2309.9,"bu_per_ac":7.2},"2024":{"crop":"Mustard","revenue":37623.6,"total_bu":1343.7,"sold_price":28.0,"bu_per_ac":4.19},"2025":{"crop":"Lentils","total_bu":904.0,"bu_per_ac":2.82}},
-  "North 320|24-30N-5E":{"2015":{"crop":"CC WW","revenue":49500.0,"total_bu":9900.0,"sold_price":5.0,"bu_per_ac":31.57},"2016":{"crop":"Green Peas","revenue":32400.0,"total_bu":5400.0,"sold_price":6.0,"bu_per_ac":17.22},"2017":{"crop":"CC HAD","revenue":26688.0,"total_bu":3336.0,"sold_price":8.0,"bu_per_ac":10.64},"2019":{"crop":"oats","revenue":25500.0,"total_bu":12750.0,"sold_price":2.0,"bu_per_ac":40.66}},
-  "South 480|25-30N-5E":{"2015":{"crop":"CC WW","revenue":49069.13,"total_bu":8921.7,"sold_price":5.5,"bu_per_ac":28.06},"2016":{"crop":"Lentils","revenue":96900.0,"total_bu":5700.0,"sold_price":17.0,"bu_per_ac":17.93},"2017":{"crop":"Chickpeas","revenue":79000.0,"total_bu":3160.0,"sold_price":25.0,"bu_per_ac":9.94}},
-  "South 480|26-30N-5E":{"2015":{"crop":"CC WW","revenue":20000.0,"total_bu":4000.0,"sold_price":5.0,"bu_per_ac":25.43},"2016":{"crop":"Lentils","revenue":48784.22,"total_bu":2869.7,"sold_price":17.0,"bu_per_ac":18.24},"2017":{"crop":"Chickpeas","revenue":22902.5,"total_bu":916.1,"sold_price":25.0,"bu_per_ac":5.82},"2019":{"crop":"Flax","revenue":19177.02,"total_bu":2191.7,"sold_price":8.75,"bu_per_ac":13.93}},
-  "Decker yard W|07-30N-6E":{"2015":{"crop":"CC WW","revenue":32000.0,"total_bu":6400.0,"sold_price":5.0,"bu_per_ac":40.53},"2017":{"crop":"Winter Wheat","revenue":28000.0,"total_bu":7000.0,"sold_price":4.0,"bu_per_ac":44.33},"2018":{"crop":"Austrians","revenue":18450.0,"total_bu":2050.0,"sold_price":9.0,"bu_per_ac":12.98},"2020":{"crop":"Chickpeas","revenue":28000.0,"total_bu":2000.0,"sold_price":14.0,"bu_per_ac":12.66},"2021":{"crop":"CC WW","total_bu":473.8,"bu_per_ac":3.0},"2022":{"crop":"Lentils","total_bu":488.0,"bu_per_ac":3.09},"2023":{"crop":"Mustard","total_bu":445.3,"bu_per_ac":2.82},"2024":{"crop":"Chickpeas","revenue":12375.2,"total_bu":618.8,"sold_price":20.0,"bu_per_ac":3.92}},
-  "Decker yard E|08-30N-6E":{"2015":{"crop":"CC WW","revenue":24506.7,"total_bu":4901.3,"sold_price":5.0,"bu_per_ac":35.96},"2017":{"crop":"Winter Wheat","revenue":23644.32,"total_bu":5911.1,"sold_price":4.0,"bu_per_ac":43.37},"2018":{"crop":"Austrians","revenue":15300.0,"total_bu":1700.0,"sold_price":9.0,"bu_per_ac":12.47},"2020":{"crop":"Chickpeas","revenue":28000.0,"total_bu":2000.0,"sold_price":14.0,"bu_per_ac":14.67},"2021":{"crop":"CC WW","total_bu":408.9,"bu_per_ac":3.0},"2022":{"crop":"Lentils","total_bu":428.0,"bu_per_ac":3.14},"2023":{"crop":"Mustard","total_bu":384.3,"bu_per_ac":2.82},"2024":{"crop":"Chickpeas","revenue":11607.4,"total_bu":580.4,"sold_price":20.0,"bu_per_ac":4.26}},
-  "Decker Yard|08-30N-6E":{"2015":{"crop":"CC WW","revenue":1000.0,"total_bu":200.0,"sold_price":5.0,"bu_per_ac":16.91},"2017":{"crop":"Winter Wheat","revenue":2000.0,"total_bu":500.0,"sold_price":4.0,"bu_per_ac":42.27},"2018":{"crop":"Austrians","revenue":1350.0,"total_bu":150.0,"sold_price":9.0,"bu_per_ac":12.68},"2020":{"crop":"Chickpeas","revenue":3024.0,"total_bu":216.0,"sold_price":14.0,"bu_per_ac":18.26},"2021":{"crop":"CC WW","total_bu":35.5,"bu_per_ac":3.0},"2022":{"crop":"Lentils","total_bu":30.0,"bu_per_ac":2.54},"2023":{"crop":"Mustard","total_bu":34.6,"bu_per_ac":2.93},"2024":{"crop":"Chickpeas","revenue":1000.0,"total_bu":50.0,"sold_price":20.0,"bu_per_ac":4.23}},
-  "North 320|16-31N-5E":{"2016":{"crop":"Winter Wheat","revenue":83600.0,"total_bu":20900.0,"sold_price":4.0,"bu_per_ac":66.39}},
-  "West 50s|31-31N-5E":{"2016":{"crop":"Winter Wheat","revenue":92400.0,"total_bu":23100.0,"sold_price":4.0,"bu_per_ac":73.22},"2017":{"crop":"Yellow Peas","revenue":42309.0,"total_bu":4701.0,"sold_price":9.0,"bu_per_ac":14.9},"2019":{"crop":"CC WW","revenue":65533.56,"total_bu":10922.3,"sold_price":6.0,"bu_per_ac":34.62},"2020":{"crop":"Yellow Peas","revenue":60370.1,"total_bu":8624.3,"sold_price":7.0,"bu_per_ac":27.34},"2021":{"crop":"CC WW","total_bu":630.9,"bu_per_ac":2.0},"2022":{"crop":"Chickpeas","total_bu":3120.2,"bu_per_ac":9.89},"2023":{"crop":"Spring Wheat","total_bu":4838.6,"bu_per_ac":15.34},"2024":{"crop":"Mustard","revenue":20746.6,"total_bu":741.0,"sold_price":28.0,"bu_per_ac":2.35},"2025":{"crop":"CC WW","total_bu":7630.0,"bu_per_ac":24.19}},
-  "South Poles|32-31N-5E":{"2016":{"crop":"Chickpeas","revenue":42400.0,"total_bu":2650.0,"sold_price":16.0,"bu_per_ac":16.92},"2017":{"crop":"CC HAD","revenue":16072.0,"total_bu":2009.0,"sold_price":8.0,"bu_per_ac":12.83},"2018":{"crop":"Lentils","revenue":12150.0,"total_bu":1350.0,"sold_price":9.0,"bu_per_ac":8.62},"2020":{"crop":"Chickpeas","revenue":680.0,"total_bu":85.0,"sold_price":8.0,"bu_per_ac":0.54},"2022":{"crop":"Flax","total_bu":254.7,"bu_per_ac":1.63},"2023":{"crop":"Lentils","total_bu":638.7,"bu_per_ac":4.08},"2024":{"crop":"Mustard","revenue":19600.0,"total_bu":700.0,"sold_price":28.0,"bu_per_ac":4.47},"2025":{"crop":"Spring Wheat","total_bu":2952.0,"bu_per_ac":18.85}},
-  "North Hendrickson|21-31N-5E":{"2016":{"crop":"Winter Wheat","revenue":63613.2,"total_bu":15903.3,"sold_price":4.0,"bu_per_ac":99.09},"2017":{"crop":"Lentils","revenue":57600.0,"total_bu":3200.0,"sold_price":18.0,"bu_per_ac":19.94},"2019":{"crop":"Chickpeas","revenue":100080.0,"total_bu":8340.0,"sold_price":12.0,"bu_per_ac":51.97},"2021":{"crop":"Yellow Peas","total_bu":319.9,"bu_per_ac":1.99},"2022":{"crop":"CC WW","total_bu":3412.1,"bu_per_ac":21.26},"2023":{"crop":"Chickpeas","total_bu":3179.7,"bu_per_ac":19.81},"2024":{"crop":"Mustard","revenue":61944.4,"total_bu":2212.3,"sold_price":28.0,"bu_per_ac":13.78},"2025":{"crop":"Austrians","total_bu":6538.9,"bu_per_ac":40.74}},
-  "Joplin Rd|03-30N-7E":{"2016":{"crop":"Winter Wheat","revenue":14000.0,"total_bu":3500.0,"sold_price":4.0,"bu_per_ac":31.46},"2019":{"crop":"CC HAD","revenue":9100.0,"total_bu":1300.0,"sold_price":7.0,"bu_per_ac":11.68},"2020":{"crop":"Mustard","revenue":9450.0,"total_bu":700.0,"sold_price":13.5,"bu_per_ac":6.29},"2021":{"crop":"CC WW","total_bu":667.6,"bu_per_ac":6.0},"2022":{"crop":"Lentils","total_bu":0.1},"2023":{"crop":"Mustard","total_bu":895.3,"bu_per_ac":8.05}},
-  "Joplin Rd|02-30N-7E":{"2016":{"crop":"Winter Wheat","revenue":18000.0,"total_bu":4500.0,"sold_price":4.0,"bu_per_ac":31.49},"2019":{"crop":"CC HAD","revenue":9100.0,"total_bu":1300.0,"sold_price":7.0,"bu_per_ac":9.1},"2020":{"crop":"Mustard","revenue":12150.0,"total_bu":900.0,"sold_price":13.5,"bu_per_ac":6.3},"2021":{"crop":"CC WW","total_bu":857.5,"bu_per_ac":6.0},"2022":{"crop":"Lentils","total_bu":0.1},"2023":{"crop":"Mustard","total_bu":1223.1,"bu_per_ac":8.56}},
-  "Joplin Rd|11-30N-7E":{"2016":{"crop":"Winter Wheat","revenue":58500.0,"total_bu":13000.0,"sold_price":4.5,"bu_per_ac":32.86},"2019":{"crop":"CC HAD","revenue":23100.0,"total_bu":3300.0,"sold_price":7.0,"bu_per_ac":8.34},"2020":{"crop":"Mustard","revenue":40959.0,"total_bu":3034.0,"sold_price":13.5,"bu_per_ac":7.67},"2021":{"crop":"CC WW","total_bu":2373.8,"bu_per_ac":6.0},"2022":{"crop":"Lentils","total_bu":0.1},"2023":{"crop":"Mustard","total_bu":3297.6,"bu_per_ac":8.33}},
-  "Blow Field|06-30N-5E":{"2016":{"crop":"Winter Wheat","revenue":50728.5,"total_bu":11273.0,"sold_price":4.5,"bu_per_ac":70.73},"2017":{"crop":"Chickpeas","revenue":62500.0,"total_bu":2500.0,"sold_price":25.0,"bu_per_ac":15.69},"2018":{"crop":"CC HAD","revenue":20500.0,"total_bu":4100.0,"sold_price":5.0,"bu_per_ac":25.73},"2019":{"crop":"CC WW","revenue":16316.0,"total_bu":4079.0,"sold_price":4.0,"bu_per_ac":25.59},"2020":{"crop":"Lentils","revenue":40918.5,"total_bu":2727.9,"sold_price":15.0,"bu_per_ac":17.12},"2021":{"crop":"Chickpeas","total_bu":223.1,"bu_per_ac":1.4},"2022":{"crop":"Spring Wheat","total_bu":288.1,"bu_per_ac":1.81},"2023":{"crop":"Lentils","revenue":1530.0,"total_bu":85.0,"sold_price":18.0,"bu_per_ac":0.53},"2024":{"crop":"Mustard","revenue":22195.6,"total_bu":792.7,"sold_price":28.0,"bu_per_ac":4.97},"2025":{"crop":"Chickpeas","total_bu":170.0,"bu_per_ac":1.07}},
-  "West CRP|12-30N-4E":{"2016":{"crop":"Austrians","revenue":26400.0,"total_bu":3300.0,"sold_price":8.0,"bu_per_ac":16.01},"2018":{"crop":"Winter Wheat","revenue":58448.5,"total_bu":10627.0,"sold_price":5.5,"bu_per_ac":51.57},"2019":{"crop":"Chickpeas","revenue":34000.0,"total_bu":3400.0,"sold_price":10.0,"bu_per_ac":16.5},"2020":{"crop":"CC WW","revenue":25211.73,"total_bu":5602.6,"sold_price":4.5,"bu_per_ac":27.19},"2021":{"crop":"Yellow Peas","total_bu":206.1,"bu_per_ac":1.0},"2022":{"crop":"CC WW","total_bu":1261.8,"bu_per_ac":6.12},"2023":{"crop":"Chickpeas","total_bu":940.8,"bu_per_ac":4.57},"2024":{"crop":"Mustard","revenue":20701.52,"total_bu":739.3,"sold_price":28.0,"bu_per_ac":3.59},"2025":{"crop":"Lentils","total_bu":2089.4,"bu_per_ac":10.14}},
-  "Pivot CRP|19-30N-5E":{"2016":{"crop":"Austrians","revenue":3229.36,"total_bu":403.7,"sold_price":8.0,"bu_per_ac":16.22},"2019":{"crop":"Austrians","revenue":3150.0,"total_bu":350.0,"sold_price":9.0,"bu_per_ac":14.06},"2020":{"crop":"Flax","revenue":4000.0,"total_bu":400.0,"sold_price":10.0,"bu_per_ac":16.07},"2021":{"crop":"Spring Wheat","total_bu":224.0,"bu_per_ac":9.0},"2022":{"crop":"Yellow Peas","total_bu":35.6,"bu_per_ac":1.43},"2024":{"crop":"corn","revenue":1680.0,"total_bu":350.0,"sold_price":4.8,"bu_per_ac":14.06},"2025":{"crop":"Austrians","total_bu":155.6,"bu_per_ac":6.25}},
-  "island|20-30N-5E":{"2016":{"crop":"Austrians","revenue":1253.36,"total_bu":156.7,"sold_price":8.0,"bu_per_ac":17.6},"2018":{"crop":"CC HAD","revenue":1150.0,"total_bu":230.0,"sold_price":5.0,"bu_per_ac":25.84},"2019":{"crop":"Austrians","revenue":2250.0,"total_bu":250.0,"sold_price":9.0,"bu_per_ac":28.09},"2020":{"crop":"CC WW","revenue":1426.18,"total_bu":316.9,"sold_price":4.5,"bu_per_ac":35.61},"2022":{"crop":"Austrians","total_bu":32.4,"bu_per_ac":3.64},"2023":{"crop":"Spring Wheat","total_bu":103.2,"bu_per_ac":11.6},"2024":{"crop":"Mustard","revenue":560.0,"total_bu":20.0,"sold_price":28.0,"bu_per_ac":2.25},"2025":{"crop":"Chickpeas","total_bu":101.0,"bu_per_ac":11.35}},
-  "BOR|20-30N-5E":{"2016":{"crop":"Winter Wheat","revenue":5924.0,"total_bu":1481.0,"sold_price":4.0,"bu_per_ac":45.36},"2018":{"crop":"CC HAD","revenue":4000.0,"total_bu":800.0,"sold_price":5.0,"bu_per_ac":24.5},"2019":{"crop":"Austrians","revenue":10500.0,"total_bu":1050.0,"sold_price":10.0,"bu_per_ac":32.16},"2020":{"crop":"CC WW","revenue":5400.0,"total_bu":1200.0,"sold_price":4.5,"bu_per_ac":36.75},"2022":{"crop":"Austrians","total_bu":110.0,"bu_per_ac":3.37},"2023":{"crop":"Spring Wheat","total_bu":379.4,"bu_per_ac":11.62},"2024":{"crop":"Mustard","revenue":1624.0,"total_bu":58.0,"sold_price":28.0,"bu_per_ac":1.78},"2025":{"crop":"Chickpeas","total_bu":370.0,"bu_per_ac":11.33}},
-  "STATE|06-30N-7E":{"2016":{"crop":"Winter Wheat","revenue":33975.0,"total_bu":7550.0,"sold_price":4.5,"bu_per_ac":34.12},"2018":{"crop":"CC HAD","revenue":30020.0,"total_bu":6004.0,"sold_price":5.0,"bu_per_ac":27.14},"2019":{"crop":"CC WW","revenue":21058.36,"total_bu":5264.6,"sold_price":4.0,"bu_per_ac":23.79},"2020":{"crop":"Chickpeas","revenue":44800.0,"total_bu":3200.0,"sold_price":14.0,"bu_per_ac":14.46},"2021":{"crop":"CC WW","total_bu":663.8,"bu_per_ac":3.0},"2022":{"crop":"Mustard","total_bu":287.1,"bu_per_ac":1.3},"2023":{"crop":"Spring Wheat","total_bu":3730.6,"bu_per_ac":16.86},"2024":{"crop":"Chickpeas","revenue":14964.8,"total_bu":748.2,"sold_price":20.0,"bu_per_ac":3.38}},
-  "STATE|07-30N-7E":{"2016":{"crop":"Winter Wheat","revenue":9000.0,"total_bu":2000.0,"sold_price":4.5,"bu_per_ac":27.4},"2017":{"crop":"sunflowers","revenue":5040.0,"total_bu":1200.0,"sold_price":4.2,"bu_per_ac":16.44},"2018":{"crop":"Austrians","revenue":4500.0,"total_bu":500.0,"sold_price":9.0,"bu_per_ac":6.85},"2019":{"crop":"CC WW","revenue":6339.88,"total_bu":1585.0,"sold_price":4.0,"bu_per_ac":21.71},"2020":{"crop":"Chickpeas","revenue":10049.2,"total_bu":717.8,"sold_price":14.0,"bu_per_ac":9.83},"2022":{"crop":"Lentils","total_bu":60.4,"bu_per_ac":0.83},"2023":{"crop":"Spring Wheat","total_bu":1230.7,"bu_per_ac":16.86},"2024":{"crop":"Chickpeas","revenue":2568.0,"total_bu":128.4,"sold_price":20.0,"bu_per_ac":1.76},"2025":{"crop":"Spring Wheat","total_bu":959.0,"bu_per_ac":13.14}},
-  "North Rd|06-30N-7E":{"2016":{"crop":"Winter Wheat","revenue":56700.0,"total_bu":12600.0,"sold_price":4.5,"bu_per_ac":32.88},"2018":{"crop":"Austrians","revenue":61155.0,"total_bu":6795.0,"sold_price":9.0,"bu_per_ac":17.73},"2019":{"crop":"CC WW","revenue":45690.6,"total_bu":11422.6,"sold_price":4.0,"bu_per_ac":29.81},"2020":{"crop":"Chickpeas","revenue":81200.0,"total_bu":5800.0,"sold_price":14.0,"bu_per_ac":15.14},"2021":{"crop":"CC WW","total_bu":1915.9,"bu_per_ac":5.0},"2022":{"crop":"Mustard","total_bu":495.0,"bu_per_ac":1.29},"2023":{"crop":"Spring Wheat","total_bu":8543.5,"bu_per_ac":22.3},"2024":{"crop":"Chickpeas","revenue":26000.0,"total_bu":1300.0,"sold_price":20.0,"bu_per_ac":3.39},"2025":{"crop":"Spring Wheat","total_bu":6178.0,"bu_per_ac":16.12}},
-  "N. 320|24-31N-6":{"2016":{"crop":"Winter Wheat","revenue":22500.0,"total_bu":5000.0,"sold_price":4.5,"bu_per_ac":47.61},"2017":{"crop":"Chickpeas","revenue":175000.0,"total_bu":7000.0,"sold_price":25.0,"bu_per_ac":66.65},"2020":{"crop":"Green Peas","revenue":76421.1,"total_bu":10917.3,"sold_price":7.0,"bu_per_ac":103.94},"2021":{"crop":"CC WW","total_bu":1276.0,"bu_per_ac":12.15},"2022":{"crop":"Lentils","total_bu":389.2,"bu_per_ac":3.71},"2023":{"crop":"Mustard","total_bu":311.1,"bu_per_ac":2.96},"2024":{"crop":"Chickpeas","revenue":58244.0,"total_bu":2912.2,"sold_price":20.0,"bu_per_ac":27.74},"2025":{"crop":"CC HAD","total_bu":6453.4,"bu_per_ac":61.46}},
-  "East Section|25-31N-6":{"2016":{"crop":"Winter Wheat","revenue":91350.0,"total_bu":20300.0,"sold_price":4.5,"bu_per_ac":43.8},"2017":{"crop":"Austrians","revenue":45000.0,"total_bu":5000.0,"sold_price":9.0,"bu_per_ac":10.79},"2020":{"crop":"Chickpeas","revenue":101495.8,"total_bu":7249.7,"sold_price":14.0,"bu_per_ac":15.64},"2021":{"crop":"CC WW","total_bu":3205.8,"bu_per_ac":6.92},"2022":{"crop":"Lentils","total_bu":27.8,"bu_per_ac":0.06},"2024":{"crop":"Spring Wheat","revenue":39523.12,"total_bu":6826.1,"sold_price":5.79,"bu_per_ac":14.73},"2025":{"crop":"Mustard","total_bu":2679.6,"bu_per_ac":5.78}},
-  "House|26-31N-6E":{"2016":{"crop":"Lentils","revenue":20659.95,"total_bu":1377.3,"sold_price":15.0,"bu_per_ac":2.43},"2018":{"crop":"Winter Wheat","revenue":119245.5,"total_bu":21681.0,"sold_price":5.5,"bu_per_ac":38.33},"2019":{"crop":"Chickpeas","revenue":76950.0,"total_bu":8550.0,"sold_price":9.0,"bu_per_ac":15.12},"2020":{"crop":"CC WW","revenue":65347.59,"total_bu":14521.7,"sold_price":4.5,"bu_per_ac":25.67},"2022":{"crop":"Spring Wheat","total_bu":2768.7,"bu_per_ac":4.89},"2023":{"crop":"Chickpeas","total_bu":2491.8,"bu_per_ac":4.4},"2024":{"crop":"Spring Wheat","revenue":42950.22,"total_bu":7418.0,"sold_price":5.79,"bu_per_ac":13.11},"2025":{"crop":"Austrians","total_bu":10406.0,"bu_per_ac":18.4}},
-  "West Section|27-31N-6E":{"2016":{"crop":"Winter Wheat","revenue":123467.2,"total_bu":7716.7,"sold_price":16.0,"bu_per_ac":84.8},"2018":{"crop":"Winter Wheat","revenue":98246.5,"total_bu":17863.0,"sold_price":5.5,"bu_per_ac":1832.1},"2019":{"crop":"Lentils","revenue":56630.7,"total_bu":6292.3,"sold_price":9.0,"bu_per_ac":645.36},"2020":{"crop":"CC WW","revenue":52463.25,"total_bu":11658.5,"sold_price":4.5,"bu_per_ac":1195.74},"2021":{"crop":"Chickpeas","total_bu":1008.5,"bu_per_ac":103.44},"2022":{"crop":"Spring Wheat","total_bu":2374.2,"bu_per_ac":243.51},"2023":{"crop":"Austrians","total_bu":6488.5,"bu_per_ac":664.81},"2024":{"crop":"Mustard","revenue":66802.4,"total_bu":2385.8,"sold_price":28.0,"bu_per_ac":244.45},"2025":{"crop":"Chickpeas","total_bu":6093.0,"bu_per_ac":624.28}},
-  "North Tiber Grade|16-31N-5E":{"2017":{"crop":"Lentils","revenue":63000.0,"total_bu":3500.0,"sold_price":18.0,"bu_per_ac":11.12},"2018":{"crop":"Chickpeas","revenue":64200.0,"total_bu":5350.0,"sold_price":12.0,"bu_per_ac":17.0},"2019":{"crop":"CC WW","revenue":26858.16,"total_bu":6714.5,"sold_price":4.0,"bu_per_ac":21.33},"2020":{"crop":"Yellow Peas","revenue":805.86,"total_bu":100.7,"sold_price":8.0,"bu_per_ac":0.32},"2021":{"crop":"Barley","total_bu":1574.0,"bu_per_ac":5.0},"2022":{"crop":"Chickpeas","total_bu":2918.4,"bu_per_ac":9.27},"2023":{"crop":"Spring Wheat","total_bu":6953.1,"bu_per_ac":22.09},"2024":{"crop":"Lentils","revenue":28738.8,"total_bu":1064.4,"sold_price":27.0,"bu_per_ac":3.38},"2025":{"crop":"CC HAD","total_bu":6509.0,"bu_per_ac":20.68}},
-  "Northwest 640|32-32N-7E":{"2019":{"crop":"Mustard","revenue":57500.0,"total_bu":5750.0,"sold_price":10.0,"bu_per_ac":9.02},"2020":{"crop":"CC WW","revenue":66900.69,"total_bu":14866.8,"sold_price":4.5,"bu_per_ac":23.31},"2021":{"crop":"Chickpeas","total_bu":637.8,"bu_per_ac":1.0}},
-  "Southwest 640|05-31N-7E":{"2019":{"crop":"Flax","revenue":36050.0,"total_bu":4120.0,"sold_price":8.75,"bu_per_ac":6.63},"2020":{"crop":"CC WW","revenue":70966.08,"total_bu":15770.2,"sold_price":4.5,"bu_per_ac":25.37},"2021":{"crop":"Chickpeas","total_bu":1529.4,"bu_per_ac":2.46}},
-  "North Building site|33-30N-3E":{"2019":{"crop":"Austrians","revenue":5310.0,"total_bu":590.0,"sold_price":9.0,"bu_per_ac":16.25},"2020":{"crop":"Spring Wheat","revenue":7532.25,"total_bu":1506.5,"sold_price":5.0,"bu_per_ac":41.5},"2021":{"crop":"Mustard","total_bu":72.6,"bu_per_ac":2.0},"2023":{"crop":"Austrians","total_bu":256.4,"bu_per_ac":7.06},"2024":{"crop":"Spring Wheat","revenue":3029.91,"total_bu":523.3,"sold_price":5.79,"bu_per_ac":14.42},"2025":{"crop":"Lentils","total_bu":223.2,"bu_per_ac":6.15}},
-  "West building site|33-30N-3E":{"2019":{"crop":"Spring Wheat","revenue":21091.5,"total_bu":2343.5,"sold_price":9.0,"bu_per_ac":57.13},"2020":{"crop":"Chickpeas","revenue":13759.0,"total_bu":2751.8,"sold_price":5.0,"bu_per_ac":67.08},"2021":{"crop":"Spring Wheat","total_bu":1069.1,"bu_per_ac":26.06},"2022":{"crop":"Green Peas","total_bu":569.3,"bu_per_ac":13.88},"2023":{"crop":"CC WW","total_bu":982.2,"bu_per_ac":23.94},"2024":{"crop":"Chickpeas","revenue":4066.32,"total_bu":702.3,"sold_price":5.79,"bu_per_ac":17.12},"2025":{"crop":"CC HAD","total_bu":860.0,"bu_per_ac":20.97}},
-  "Rock Hilltop|32-30N-3E":{"2019":{"crop":"Spring Wheat","revenue":20718.0,"total_bu":2302.0,"sold_price":9.0,"bu_per_ac":56.62},"2020":{"crop":"Austrians","revenue":15829.5,"total_bu":3165.9,"sold_price":5.0,"bu_per_ac":77.86},"2021":{"crop":"Spring Wheat","total_bu":1586.8,"bu_per_ac":39.03},"2022":{"crop":"Chickpeas","total_bu":1078.4,"bu_per_ac":26.52},"2023":{"crop":"CC WW","total_bu":2508.0,"bu_per_ac":61.68},"2024":{"crop":"Green Peas","revenue":11661.04,"total_bu":2063.9,"sold_price":5.65,"bu_per_ac":50.76},"2025":{"crop":"CC WW","total_bu":585.0,"bu_per_ac":14.39}},
-  "west kirby house|3-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":79190.65,"total_bu":14398.3,"sold_price":5.5,"bu_per_ac":99.03},"2020":{"crop":"Austrians","revenue":35577.6,"total_bu":4447.2,"sold_price":8.0,"bu_per_ac":30.59},"2021":{"crop":"Spring Wheat","total_bu":5125.7,"bu_per_ac":35.25},"2022":{"crop":"Chickpeas","total_bu":2080.2,"bu_per_ac":14.31},"2023":{"crop":"CC WW","total_bu":8945.4,"bu_per_ac":61.52},"2024":{"crop":"Green Peas","revenue":20363.4,"total_bu":2262.6,"sold_price":9.0,"bu_per_ac":15.56},"2025":{"crop":"CC HAD","total_bu":5906.0,"bu_per_ac":40.62}},
-  "west Hauser Rd.|3-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":88290.0,"total_bu":9810.0,"sold_price":9.0,"bu_per_ac":61.83},"2020":{"crop":"Chickpeas","revenue":52474.0,"total_bu":10494.8,"sold_price":5.0,"bu_per_ac":66.15},"2021":{"crop":"Spring Wheat","total_bu":2942.8,"bu_per_ac":18.55},"2022":{"crop":"Green Peas","total_bu":2493.9,"bu_per_ac":15.72},"2023":{"crop":"CC WW","total_bu":10937.3,"bu_per_ac":68.94},"2024":{"crop":"Chickpeas","revenue":16628.3,"total_bu":2871.9,"sold_price":5.79,"bu_per_ac":18.1},"2025":{"crop":"CC HAD","total_bu":4507.0,"bu_per_ac":28.41}},
-  "South Rock Hilltop|5-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":51300.0,"total_bu":5700.0,"sold_price":9.0,"bu_per_ac":72.14},"2020":{"crop":"Austrians","revenue":30826.0,"total_bu":6165.2,"sold_price":5.0,"bu_per_ac":78.03},"2021":{"crop":"Spring Wheat","total_bu":1677.7,"bu_per_ac":21.23},"2022":{"crop":"Chickpeas","total_bu":2083.8,"bu_per_ac":26.37},"2023":{"crop":"CC WW","total_bu":3022.3,"bu_per_ac":38.25},"2024":{"crop":"Green Peas","revenue":19990.83,"total_bu":3538.2,"sold_price":5.65,"bu_per_ac":44.78},"2025":{"crop":"CC WW","total_bu":1961.0,"bu_per_ac":24.82}},
-  "far west north place|5-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":132354.0,"total_bu":14706.0,"sold_price":9.0,"bu_per_ac":186.7},"2020":{"crop":"Austrians","revenue":63484.0,"total_bu":12696.8,"sold_price":5.0,"bu_per_ac":161.19},"2021":{"crop":"Spring Wheat","total_bu":5166.6,"bu_per_ac":65.59},"2022":{"crop":"Chickpeas","total_bu":1609.4,"bu_per_ac":20.43},"2023":{"crop":"CC WW","total_bu":5904.7,"bu_per_ac":74.96},"2024":{"crop":"Green Peas","revenue":29569.28,"total_bu":5233.5,"sold_price":5.65,"bu_per_ac":66.44},"2025":{"crop":"CC WW","total_bu":4400.0,"bu_per_ac":55.86}},
-  "Old House West|8-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":32450.0,"total_bu":5900.0,"sold_price":5.5,"bu_per_ac":37.05},"2020":{"crop":"Austrians","revenue":33760.0,"total_bu":4220.0,"sold_price":8.0,"bu_per_ac":26.5},"2021":{"crop":"Spring Wheat","total_bu":3025.6,"bu_per_ac":19.0},"2022":{"crop":"Chickpeas","total_bu":2177.4,"bu_per_ac":13.67},"2023":{"crop":"CC WW","total_bu":4523.5,"bu_per_ac":28.41},"2024":{"crop":"Green Peas","revenue":7855.2,"total_bu":872.8,"sold_price":9.0,"bu_per_ac":5.48},"2025":{"crop":"CC WW","total_bu":2398.0,"bu_per_ac":15.06}},
-  "South Kirby corner|10-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":23549.19,"total_bu":4281.7,"sold_price":5.5,"bu_per_ac":56.66},"2020":{"crop":"Austrians","revenue":20666.64,"total_bu":2583.3,"sold_price":8.0,"bu_per_ac":34.18},"2021":{"crop":"Spring Wheat","total_bu":755.7,"bu_per_ac":10.0},"2022":{"crop":"Chickpeas","total_bu":729.8,"bu_per_ac":9.66},"2023":{"crop":"CC WW","total_bu":1390.3,"bu_per_ac":18.4},"2024":{"crop":"Green Peas","revenue":4030.2,"total_bu":447.8,"sold_price":9.0,"bu_per_ac":5.93},"2025":{"crop":"CC WW","total_bu":1291.0,"bu_per_ac":17.08}},
-  "west home reservoir|11-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":20073.19,"total_bu":3649.7,"sold_price":5.5,"bu_per_ac":56.72},"2020":{"crop":"Flax","revenue":10000.0,"total_bu":1000.0,"sold_price":10.0,"bu_per_ac":15.54},"2021":{"crop":"Spring Wheat","total_bu":836.5,"bu_per_ac":13.0},"2022":{"crop":"Green Peas","total_bu":146.0,"bu_per_ac":2.27},"2023":{"crop":"CC WW","total_bu":1239.5,"bu_per_ac":19.26},"2024":{"crop":"Chickpeas","revenue":9416.0,"total_bu":470.8,"sold_price":20.0,"bu_per_ac":7.32},"2025":{"crop":"CC WW","total_bu":619.5,"bu_per_ac":9.63}},
-  "N1/2 St. Olaf|23-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":57672.0,"total_bu":6408.0,"sold_price":9.0,"bu_per_ac":81.55},"2020":{"crop":"Austrians","revenue":19248.5,"total_bu":3849.7,"sold_price":5.0,"bu_per_ac":48.99},"2021":{"crop":"Spring Wheat","total_bu":1719.2,"bu_per_ac":21.88},"2022":{"crop":"Chickpeas","total_bu":355.9,"bu_per_ac":4.56},"2023":{"crop":"CC WW","total_bu":1778.2,"bu_per_ac":22.63},"2024":{"crop":"Green Peas","revenue":15787.23,"total_bu":2794.2,"sold_price":5.65,"bu_per_ac":35.56},"2025":{"crop":"CC HAD","total_bu":2093.0,"bu_per_ac":26.64}},
-  "S1/2 St. Olaf|23-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":57903.3,"total_bu":6433.7,"sold_price":9.0,"bu_per_ac":79.51},"2020":{"crop":"Austrians","revenue":19430.0,"total_bu":3886.0,"sold_price":5.0,"bu_per_ac":48.02},"2021":{"crop":"Spring Wheat","total_bu":1796.5,"bu_per_ac":22.2},"2022":{"crop":"Chickpeas","total_bu":889.8,"bu_per_ac":11.23},"2023":{"crop":"CC WW","total_bu":2157.7,"bu_per_ac":26.66},"2024":{"crop":"Green Peas","revenue":10125.36,"total_bu":1792.1,"sold_price":5.65,"bu_per_ac":22.15},"2025":{"crop":"CC HAD","total_bu":2105.0,"bu_per_ac":26.01}},
-  "Shotgun Slough|29-29N-3E":{"2019":{"crop":"Chickpeas","revenue":3150.0,"total_bu":350.0,"sold_price":9.0,"bu_per_ac":2.17},"2020":{"crop":"Spring Wheat","revenue":30311.7,"total_bu":6062.3,"sold_price":5.0,"bu_per_ac":37.63},"2021":{"crop":"Green Peas","total_bu":786.2,"bu_per_ac":4.88},"2023":{"crop":"CC WW","total_bu":302.1,"bu_per_ac":1.88},"2024":{"crop":"Lentils","total_bu":800.0,"bu_per_ac":4.97},"2025":{"crop":"Mustard","total_bu":207.0,"bu_per_ac":1.28}},
-  "West 200|31-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":71127.76,"total_bu":12932.3,"sold_price":5.5,"bu_per_ac":63.99},"2020":{"crop":"Chickpeas","revenue":51084.0,"total_bu":4257.0,"sold_price":12.0,"bu_per_ac":21.06},"2021":{"crop":"Spring Wheat","total_bu":1819.0,"bu_per_ac":9.0},"2022":{"crop":"Austrians","revenue":5278.09,"total_bu":399.9,"sold_price":13.2,"bu_per_ac":1.98},"2023":{"crop":"CC WW","total_bu":9153.1,"bu_per_ac":45.29},"2024":{"crop":"Lentils","revenue":58272.5,"total_bu":2119.0,"sold_price":27.5,"bu_per_ac":10.48},"2025":{"crop":"CC WW","total_bu":2160.0,"bu_per_ac":10.69}},
-  "South Shotgun|32-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":225123.3,"total_bu":25013.7,"sold_price":9.0,"bu_per_ac":91.55},"2020":{"crop":"Chickpeas","revenue":82612.5,"total_bu":16522.5,"sold_price":5.0,"bu_per_ac":60.47},"2021":{"crop":"Spring Wheat","total_bu":8405.7,"bu_per_ac":30.76},"2022":{"crop":"Austrians","revenue":24827.88,"total_bu":1880.9,"sold_price":13.2,"bu_per_ac":6.88},"2023":{"crop":"CC WW","total_bu":6621.7,"bu_per_ac":24.23},"2024":{"crop":"Lentils","revenue":52248.61,"total_bu":9586.9,"sold_price":5.45,"bu_per_ac":35.09},"2025":{"crop":"CC WW","total_bu":5620.0,"bu_per_ac":20.57}},
-  "Lynch 40|32-29N-3E":{"2019":{"crop":"Chickpeas","revenue":6750.0,"total_bu":750.0,"sold_price":9.0,"bu_per_ac":17.06},"2020":{"crop":"Spring Wheat","revenue":7006.65,"total_bu":1401.3,"sold_price":5.0,"bu_per_ac":31.88},"2021":{"crop":"Green Peas","total_bu":216.7,"bu_per_ac":4.93},"2022":{"crop":"CC WW","total_bu":209.7,"bu_per_ac":4.77},"2023":{"crop":"Chickpeas","total_bu":274.4,"bu_per_ac":6.24},"2024":{"crop":"CC WW","revenue":7305.0,"total_bu":1461.0,"sold_price":5.0,"bu_per_ac":33.23},"2025":{"crop":"Mustard","total_bu":311.0,"bu_per_ac":7.07}},
-  "East 320|33-29N-3E":{"2019":{"crop":"Chickpeas","revenue":55800.0,"total_bu":6200.0,"sold_price":9.0,"bu_per_ac":19.48},"2020":{"crop":"Spring Wheat","revenue":51875.05,"total_bu":10375.0,"sold_price":5.0,"bu_per_ac":32.6},"2021":{"crop":"Green Peas","total_bu":1569.1,"bu_per_ac":4.93},"2022":{"crop":"CC WW","total_bu":1000.0,"bu_per_ac":3.14},"2023":{"crop":"Chickpeas","total_bu":5974.4,"bu_per_ac":18.77},"2024":{"crop":"CC WW","revenue":52582.69,"total_bu":9648.2,"sold_price":5.45,"bu_per_ac":30.31},"2025":{"crop":"Mustard","total_bu":2684.0,"bu_per_ac":8.43}},
-  "Home Place|12-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":126117.0,"total_bu":14013.0,"sold_price":9.0,"bu_per_ac":56.09},"2020":{"crop":"Flax","revenue":58298.5,"total_bu":11659.7,"sold_price":5.0,"bu_per_ac":46.67},"2021":{"crop":"Spring Wheat","total_bu":3259.9,"bu_per_ac":13.05},"2022":{"crop":"Chickpeas","total_bu":1898.5,"bu_per_ac":7.6},"2023":{"crop":"CC WW","total_bu":3346.9,"bu_per_ac":13.4},"2024":{"crop":"Green Peas","revenue":30174.01,"total_bu":5211.4,"sold_price":5.79,"bu_per_ac":20.86},"2025":{"crop":"Barley","total_bu":7113.0,"bu_per_ac":28.47}},
-  "South House Section|14-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":231149.7,"total_bu":25683.3,"sold_price":9.0,"bu_per_ac":79.64},"2020":{"crop":"Chickpeas","revenue":113198.5,"total_bu":22639.7,"sold_price":5.0,"bu_per_ac":70.2},"2021":{"crop":"Spring Wheat","total_bu":11201.7,"bu_per_ac":34.73},"2022":{"crop":"Austrians","total_bu":17.4,"bu_per_ac":0.06},"2023":{"crop":"CC WW","total_bu":14404.6,"bu_per_ac":43.41},"2024":{"crop":"Chickpeas","revenue":60768.59,"total_bu":11150.2,"sold_price":5.45,"bu_per_ac":33.6},"2025":{"crop":"CC HAD","total_bu":9904.8,"bu_per_ac":29.85}},
-  "North Kirby|3-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":31333.5,"total_bu":5697.0,"sold_price":5.5,"bu_per_ac":36.66},"2020":{"crop":"Austrians","revenue":18337.2,"total_bu":2292.2,"sold_price":8.0,"bu_per_ac":14.75},"2021":{"crop":"Spring Wheat","total_bu":2175.6,"bu_per_ac":14.0},"2022":{"crop":"Chickpeas","total_bu":1300.0,"bu_per_ac":8.37},"2023":{"crop":"CC WW","total_bu":2506.6,"bu_per_ac":16.13},"2024":{"crop":"Green Peas","revenue":9900.0,"total_bu":1100.0,"sold_price":9.0,"bu_per_ac":7.08},"2025":{"crop":"CC HAD","total_bu":3045.0,"bu_per_ac":19.59}},
-  "west kirby|3-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":15950.0,"total_bu":2900.0,"sold_price":5.5,"bu_per_ac":48.91},"2020":{"crop":"Austrians","revenue":8931.2,"total_bu":1116.4,"sold_price":8.0,"bu_per_ac":18.83},"2021":{"crop":"Spring Wheat","total_bu":1059.7,"bu_per_ac":17.87},"2022":{"crop":"Chickpeas","total_bu":622.0,"bu_per_ac":10.49},"2023":{"crop":"CC WW","total_bu":1220.1,"bu_per_ac":20.58},"2024":{"crop":"Green Peas","revenue":4989.6,"total_bu":554.4,"sold_price":9.0,"bu_per_ac":9.35},"2025":{"crop":"CC HAD","total_bu":1483.0,"bu_per_ac":25.01}},
-  "west buildings state|33-30N-3E":{"2019":{"crop":"Spring Wheat","revenue":25176.25,"total_bu":4577.5,"sold_price":5.5,"bu_per_ac":76.69},"2020":{"crop":"Chickpeas","revenue":46366.8,"total_bu":3863.9,"sold_price":12.0,"bu_per_ac":64.73},"2021":{"crop":"Spring Wheat","total_bu":1322.2,"bu_per_ac":22.15},"2022":{"crop":"Green Peas","total_bu":301.1,"bu_per_ac":5.04},"2023":{"crop":"CC WW","total_bu":3316.3,"bu_per_ac":55.56},"2024":{"crop":"Chickpeas","revenue":13978.0,"total_bu":698.9,"sold_price":20.0,"bu_per_ac":11.71},"2025":{"crop":"CC HAD","total_bu":1760.0,"bu_per_ac":29.49}},
-  "south state 320|4-29N-3E":{"2019":{"crop":"Spring Wheat","revenue":39787.0,"total_bu":7234.0,"sold_price":5.5,"bu_per_ac":46.84},"2020":{"crop":"Chickpeas","revenue":50916.0,"total_bu":4243.0,"sold_price":12.0,"bu_per_ac":27.47},"2021":{"crop":"Spring Wheat","total_bu":5519.6,"bu_per_ac":34.77},"2022":{"crop":"Green Peas","total_bu":1600.3,"bu_per_ac":10.08},"2023":{"crop":"CC WW","total_bu":7149.8,"bu_per_ac":45.04},"2024":{"crop":"Chickpeas","revenue":15857.85,"total_bu":2806.7,"sold_price":5.65,"bu_per_ac":17.68},"2025":{"crop":"CC HAD","total_bu":3744.0,"bu_per_ac":23.58}},
-  "south state 321|4-29N-3E":{"2019":{"crop":"Austrians","revenue":8613.0,"total_bu":957.0,"sold_price":9.0,"bu_per_ac":6.03},"2020":{"crop":"Spring Wheat","revenue":32045.7,"total_bu":6409.1,"sold_price":5.0,"bu_per_ac":40.37}},
-  "north rock hill|32-30N-3E":{"2019":{"crop":"Spring Wheat","revenue":7650.0,"total_bu":850.0,"sold_price":9.0,"bu_per_ac":29.45},"2020":{"crop":"Austrians","revenue":7726.0,"total_bu":1545.2,"sold_price":5.0,"bu_per_ac":53.54},"2021":{"crop":"Spring Wheat","total_bu":291.3,"bu_per_ac":10.09},"2022":{"crop":"Chickpeas","total_bu":262.8,"bu_per_ac":9.11},"2023":{"crop":"CC WW","total_bu":611.0,"bu_per_ac":21.17},"2024":{"crop":"Green Peas","revenue":6147.2,"total_bu":1088.0,"sold_price":5.65,"bu_per_ac":37.7},"2025":{"crop":"CC WW","total_bu":374.0,"bu_per_ac":12.96}},
-  "winter wheat|":{"2020":{"crop":"CC WW","revenue":120892.95,"total_bu":26865.1,"sold_price":4.5,"bu_per_ac":55.69}},
-  "SW 320|25-31N-7E":{"2021":{"crop":"Winter Wheat","total_bu":3238.2,"bu_per_ac":23.0},"2022":{"crop":"Yellow Peas","total_bu":700.0,"bu_per_ac":4.97},"2023":{"crop":"Spring Wheat","total_bu":8700.1,"bu_per_ac":61.79}},
-  "NW 320|24-31N-7E":{"2021":{"crop":"Winter Wheat","total_bu":3455.5,"bu_per_ac":23.0},"2022":{"crop":"Yellow Peas","total_bu":843.9,"bu_per_ac":5.62},"2023":{"crop":"Chickpeas","total_bu":3760.0,"bu_per_ac":25.03}},
-  "NE 320|24-31N-7E":{"2021":{"crop":"Winter Wheat","total_bu":3796.2,"bu_per_ac":23.0},"2022":{"crop":"Yellow Peas","total_bu":900.0,"bu_per_ac":5.45},"2023":{"crop":"Chickpeas","total_bu":4223.9,"bu_per_ac":25.59}},
-  "SE 320|25-31N-7E":{"2021":{"crop":"Winter Wheat","total_bu":3626.2,"bu_per_ac":23.0},"2022":{"crop":"Yellow Peas","total_bu":723.6,"bu_per_ac":4.59},"2023":{"crop":"Spring Wheat","total_bu":9394.0,"bu_per_ac":59.58}},
-  "West Joplin Road|35-31N-7E":{"2021":{"crop":"Winter Wheat","total_bu":2532.6,"bu_per_ac":16.0},"2022":{"crop":"CC WW","total_bu":394.8,"bu_per_ac":2.49},"2023":{"crop":"Chickpeas","total_bu":4489.2,"bu_per_ac":28.36},"2024":{"crop":"Spring Wheat","revenue":28932.05,"total_bu":4996.9,"sold_price":5.79,"bu_per_ac":31.57},"2025":{"crop":"Mustard","total_bu":1854.0,"bu_per_ac":11.71}},
-  "Beulow Rd|18-31N-7E":{"2021":{"crop":"Chickpeas","total_bu":504.1,"bu_per_ac":3.12},"2022":{"crop":"Spring Wheat","total_bu":863.2,"bu_per_ac":5.34},"2023":{"crop":"Lentils","total_bu":693.4,"bu_per_ac":4.29},"2024":{"crop":"Spring Wheat","revenue":9619.51,"total_bu":1661.4,"sold_price":5.79,"bu_per_ac":10.28},"2025":{"crop":"Chickpeas","total_bu":1023.0,"bu_per_ac":6.33}},
-  "Beulow Rd|17-31N-7E":{"2021":{"crop":"Chickpeas","total_bu":1456.9,"bu_per_ac":3.01},"2022":{"crop":"Spring Wheat","total_bu":2118.3,"bu_per_ac":4.38},"2023":{"crop":"Lentils","total_bu":3150.6,"bu_per_ac":6.51},"2024":{"crop":"Spring Wheat","revenue":29869.45,"total_bu":5158.8,"sold_price":5.79,"bu_per_ac":10.66},"2025":{"crop":"Chickpeas","total_bu":3098.0,"bu_per_ac":6.4}},
-  "East 320|25-31N-5E":{"2023":{"crop":"Spring Wheat","total_bu":9480.1,"bu_per_ac":30.28},"2024":{"crop":"Austrians","revenue":69080.85,"total_bu":5117.1,"sold_price":13.5,"bu_per_ac":16.34}},
-  "North 320|23-31N-5E":{"2023":{"crop":"Mustard","total_bu":2684.7,"bu_per_ac":8.37},"2024":{"crop":"Lentils","revenue":39122.88,"total_bu":1422.7,"sold_price":27.5,"bu_per_ac":4.44}},
-  "Middle section|26-31N-5E":{"2023":{"crop":"Spring Wheat","total_bu":20567.2,"bu_per_ac":32.26},"2024":{"crop":"Lentils","revenue":105217.75,"total_bu":3826.1,"sold_price":27.5,"bu_per_ac":6.0}},
-  "West 280|27-31N-5E":{"2023":{"crop":"Spring Wheat","total_bu":45.5,"bu_per_ac":0.16},"2024":{"crop":"Chickpeas","revenue":34262.0,"total_bu":1713.1,"sold_price":20.0,"bu_per_ac":6.15}},
-  "Watson West|12/13-29N-3E":{"2024":{"crop":"Winter Wheat","revenue":363840.0,"total_bu":18192.0,"sold_price":20.0,"bu_per_ac":83.29},"2025":{"crop":"Chickpeas","total_bu":6679.0,"bu_per_ac":30.58}},
-  "Watson NorthWest|12-29N-3E":{"2024":{"crop":"Winter Wheat","revenue":11694.61,"total_bu":2145.8,"sold_price":5.45,"bu_per_ac":53.25},"2025":{"crop":"Chickpeas","total_bu":524.0,"bu_per_ac":13.0}},
-  "Watson North|7-29N-4E":{"2024":{"crop":"Chickpeas","revenue":111380.56,"total_bu":20436.8,"sold_price":5.45,"bu_per_ac":65.06},"2025":{"crop":"CC HAD","total_bu":9368.0,"bu_per_ac":29.82}},
-  "Watson South|18-29N-4E":{"2024":{"crop":"Chickpeas","revenue":55977.5,"total_bu":10271.1,"sold_price":5.45,"bu_per_ac":65.27},"2025":{"crop":"CC HAD","total_bu":3906.0,"bu_per_ac":24.82}},
-  "Watson SouthEast|17-29N-4E":{"2024":{"crop":"Chickpeas","revenue":24460.69,"total_bu":4488.2,"sold_price":5.45,"bu_per_ac":53.73},"2025":{"crop":"CC HAD","total_bu":2062.8,"bu_per_ac":24.7}},
-  "Cedric Section 6|6-29N-4E":{"2024":{"crop":"Winter Wheat","revenue":88846.39,"total_bu":15344.8,"sold_price":5.79,"bu_per_ac":100.15},"2025":{"crop":"Chickpeas","total_bu":8066.0,"bu_per_ac":52.64}},
-  "STATE north|06-30N-7E":{"2025":{"crop":"Spring Wheat","total_bu":3561.0,"bu_per_ac":16.09}},
-  "Akey yard W|07-30N-6E":{"2025":{"crop":"CC WW","total_bu":3316.0,"bu_per_ac":21.0}},
-  "Akey yard E|08-30N-6E":{"2025":{"crop":"CC WW","total_bu":2862.0,"bu_per_ac":21.0}},
-  "Akey Yard|08-30N-6E":{"2025":{"crop":"CC WW","total_bu":248.0,"bu_per_ac":20.96}},
-  "East 320|":{"2025":{"crop":"Spring Wheat","total_bu":6343.0,"bu_per_ac":20.26}},
-  "North 320|":{"2025":{"crop":"Chickpeas","total_bu":2608.0,"bu_per_ac":8.13}},
-  "Middle section|":{"2025":{"crop":"Chickpeas","total_bu":3338.0,"bu_per_ac":5.24}},
-  "West 280|":{"2025":{"crop":"Spring Wheat","total_bu":7700.0,"bu_per_ac":27.65}},
-};
-
-function getCropProfitability(crop, acres, fieldCommon) {
-  // ── Expense calculation ──────────────────────────────────────────────────
-  const expRate = EXP.reduce((s,[k]) => {
-    const rates = _expRates||DEFAULT_RATES;
-    const crops = _cropRates||CROP_EXP_DEFAULTS;
-    const cd = crops[crop];
-    return s + (cd&&cd[k]!==undefined ? cd[k] : rates[k]??0);
-  }, 0);
-  const expenses = expRate * acres;
-
-  // ── APH yield lookup — priority: imported APH > manual history > FA/VT hardcoded ──
-  let aphYield=null, aphYears=null, aphNote=null;
-
-  // 1. Imported APH (from crop insurance PDF)
-  if(_aphData && fieldCommon && _aphData[fieldCommon]?.[crop]?.aphYield) {
-    const d = _aphData[fieldCommon][crop];
-    aphYield = d.aphYield;
-    aphYears = d.aphYears;
-    aphNote  = `${aphYield} bu/ac APH (${aphYears||"?"}yr) — imported`;
-  }
-
-  // 2. Manual history — average yield for this crop across entered years
-  if(!aphYield && _fieldHistory?.[fieldCommon]) {
-    const yrs = Object.values(_fieldHistory[fieldCommon])
-      .filter(y => y.crop===crop && y.yield && +y.yield>0);
-    if(yrs.length>0){
-      aphYield = Math.round(yrs.reduce((s,y)=>s+(+y.yield),0)/yrs.length*10)/10;
-      aphYears = yrs.length;
-      aphNote  = `${aphYield} bu/ac avg (${aphYears}yr manual history)`;
-    }
-  }
-
-  // 3. FA/VT hardcoded data (standalone app only)
-  if(!aphYield && !_isAgriLogixTenant) {
-    const fa = FIELD_APH[fieldCommon]?.[crop] || FIELD_APH[fieldCommon+"|"]?.[crop];
-    const t  = CROP_TYPICAL[crop];
-    if(fa){ aphYield=fa.aph; aphYears=fa.n; aphNote=`${fa.aph} bu/ac APH (${fa.n}yr)`; }
-    else if(t){ aphYield=t.buProj; aphNote="Typical (no field APH)"; }
-  }
-
-  // No APH — return expense-only result so UI can show expenses without revenue
-  if(!aphYield) {
-    if(expRate===0) return null;
-    return {
-      expRate, expenses,
-      buGuar:null, priceGuar:null,
-      aphNote: "No APH data — add in History & Plan tab",
-      guarRevPerAc:null, guarRev:null, guarNet:null, guarNetPerAc:null,
-      projRevPerAc:null, projRev:null, projNet:null, projNetPerAc:null,
-      soldPrice:null, fieldAph:false,
-    };
-  }
-
-  // ── Revenue calculation ──────────────────────────────────────────────────
-  const t = CROP_TYPICAL[crop];
-  const buGuar    = Math.round(aphYield*0.75*10)/10;
-  // Use tenant-configured prices first, fall back to CROP_TYPICAL defaults
-  const tp        = _cropPrices?.[crop];
-  const priceGuar = tp?.priceGuar>0 ? tp.priceGuar : (t?.priceGuar || 0);
-  const soldPrice = tp?.projPrice>0 ? tp.projPrice :
-                    ((typeof CROP_SOLD_PRICES!=="undefined"&&CROP_SOLD_PRICES[crop]) || t?.projPrice || 0);
-
-  const guarRevPerAc = buGuar*priceGuar;
-  const guarRev      = guarRevPerAc*acres;
-  const projRevPerAc = aphYield*soldPrice;
-  const projRev      = projRevPerAc*acres;
-
-  return {
-    expRate, expenses,
-    buGuar, priceGuar, aphNote,
-    guarRevPerAc, guarRev, guarNet:guarRev-expenses, guarNetPerAc:guarRevPerAc-expRate,
-    projRevPerAc, projRev, projNet:projRev-expenses, projNetPerAc:projRevPerAc-expRate,
-    soldPrice, fieldAph:true,
-  };
-}
-
-
-let _id=1;
-const FA_ELIG=["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"];
-const VT_ELIG=["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax"];
-
-function getRate(field,key){
-  if(field.expenseOverrides&&field.expenseOverrides[key]!==undefined) return +field.expenseOverrides[key];
-  const rates=_expRates||DEFAULT_RATES; const crops=_cropRates||CROP_EXP_DEFAULTS;
-  const cd=crops[field.crop];
-  if(cd&&cd[key]!==undefined) return cd[key];
-  return (_isAgriLogixTenant ? (rates[key]??0) : (rates[key]??DEFAULT_RATES[key]??0));
-}
-function getCropDefault(crop,key){
-  const rates=_expRates||DEFAULT_RATES; const crops=_cropRates||CROP_EXP_DEFAULTS;
-  const cd=crops[crop];
-  return cd&&cd[key]!==undefined?cd[key]:rates[key]??0;
-}
-function calc(field){
-  if(!field||typeof field!=="object"||!field.income){ return {valAcre:0,guarantee:0,revenue:0,risk:0,expRate:0,expenses:0,net:0}; }
-  const{acres,income:i}=field;
-  const valAcre=i.bushelGuarantee*i.priceGuarantee;
-  const guarantee=valAcre*acres;
-  const revenue=i.bushelProjection*i.currentPrice*acres;
-  const expRate=EXP.reduce((s,[k])=>s+getRate(field,k),0);
-  const expenses=expRate*acres;
-  return{valAcre,guarantee,revenue,risk:revenue-guarantee,expRate,expenses,net:revenue-expenses};
-}
-// Real $ actually spent this field/year, by the same EXP categories the
-// projected rates use — entered as a total dollar figure per category (not a
-// rate), since that's how a grower actually tracks spend. Lives on the
-// per-year field record itself (field.actualExpenses), same as
-// expenseOverrides, so it's automatically scoped to whichever year's plan
-// you're looking at. Returns null when nothing's been entered yet, so callers
-// can cleanly hide the "actual" UI until there's real data.
-function calcActual(field){
-  const ae=field?.actualExpenses;
-  if(!ae) return null;
-  const entries=Object.entries(ae).filter(([,v])=>v!==undefined&&v!==null&&v!==""&&!isNaN(v));
-  if(entries.length===0) return null;
-  const total=entries.reduce((s,[,v])=>s+(+v||0),0);
-  const acres=field?.acres||0;
-  return{total,rate:acres>0?total/acres:0,categoriesEntered:entries.length};
-}
-const f$=(n,neg)=>{const abs=Math.abs(n);const str="$"+abs.toLocaleString("en-US",{maximumFractionDigits:0});return neg&&n<0?"("+str+")":str;};
-const f2=n=>(+n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-
-// Combines calcActual (real $ spent) with actual bushels/revenue (from
-// fieldHistory — AgriScale weigh tickets or manually entered) into one
-// per-field "how did this actually turn out" figure, for the reports
-// (exportCSV / openPrint). Only ever reads real, tenant-entered data — no
-// hardcoded benchmark years — so it's safe to show to every tenant.
-function calcFieldActuals(field, fieldHistory, year){
-  const ae=calcActual(field);
-  const act=fieldHistory?.[field.common]?.[year];
-  const bu=parseFloat(act?.bushels)||0;
-  const hasRevenue=bu>0;
-  const actualRevenue=hasRevenue?bu*(field.income?.currentPrice||0):0;
-  const hasAny=!!ae||hasRevenue;
-  return{
-    actualExpenses:ae?ae.total:0,
-    hasExpenses:!!ae,
-    actualRevenue,
-    hasRevenue,
-    actualNet:hasAny?(actualRevenue-(ae?ae.total:0)):null,
-    hasAny,
-    bushels:bu,
-  };
-}
-
-function mkF(farmNum,entity,farm,legal,common,fieldNum,acres,crop,bG,pG,bP,cP,el){
-  return{id:String(_id++),farmNumber:farmNum,entity,farm,legal:legal||"",common,fieldNum:fieldNum||"",
-    acres:+acres,crop,eligibleCrops:el||(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:FA_ELIG),
-    income:{bushelGuarantee:+bG,priceGuarantee:+pG,bushelProjection:+bP,currentPrice:+cP},
-    expenseOverrides:{}};
-}
-
-const INITIAL_FIELDS = [
-  {id:String(_id++),farmNumber:355,excelRow:5,entity:"Flat Acre",farm:"Home",legal:"",common:"North Tiber Grade",fieldNum:"1,2,3",acres:314.79,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:19.5,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:6,entity:"Flat Acre",farm:"Home",legal:"",common:"North Wanken",fieldNum:"1",acres:317.98,crop:"Flax",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:12.0,priceGuarantee:20.0,bushelProjection:15.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:7,entity:"Flat Acre",farm:"Home",legal:"",common:"West 50s",fieldNum:"1,2,3,4,5,6",acres:315.47,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:16.4,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:8,entity:"Flat Acre",farm:"Home",legal:"",common:"West 120\'s",fieldNum:"1",acres:116.77,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:14.45,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:9,entity:"Flat Acre",farm:"Home",legal:"",common:"West 120\'s",fieldNum:"2,3",acres:239.24,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:14.45,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:10,entity:"Flat Acre",farm:"Home",legal:"",common:"West 120\'s",fieldNum:"4",acres:122.87,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:14.45,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:11,entity:"Flat Acre",farm:"Home",legal:"",common:"South House",fieldNum:"1,2",acres:38.67,crop:"Oats",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:35.0,priceGuarantee:3.3,bushelProjection:50.0,currentPrice:3.5},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:12,entity:"Flat Acre",farm:"Home",legal:"",common:"South House",fieldNum:"1,2",acres:205.52,crop:"Oats",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:35.0,priceGuarantee:3.3,bushelProjection:50.0,currentPrice:3.5},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:13,entity:"Flat Acre",farm:"Home",legal:"",common:"South House",fieldNum:"3,4,5",acres:233.95,crop:"Oats",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:35.0,priceGuarantee:3.3,bushelProjection:50.0,currentPrice:3.5},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:14,entity:"Flat Acre",farm:"Home",legal:"",common:"South Poles",fieldNum:"6",acres:156.62,crop:"Oats",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:35.0,priceGuarantee:3.3,bushelProjection:50.0,currentPrice:3.5},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:15,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"1",acres:10.14,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:16,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"2",acres:13.27,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:17,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"1",acres:163.56,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:18,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"2",acres:155.26,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:19,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"3",acres:73.52,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:20,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"4",acres:86.3,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:21,entity:"Flat Acre",farm:"Home",legal:"",common:"House",fieldNum:"4",acres:120.0,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.3,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:22,entity:"Flat Acre",farm:"Home",legal:"",common:"North Hendrickson",fieldNum:"1,2",acres:159.42,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:6.98,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:355,excelRow:23,entity:"Flat Acre",farm:"Home",legal:"",common:"North Hendrickson",fieldNum:"1,3",acres:160.49,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:6.98,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:24,entity:"Flat Acre",farm:"Hunnewell",legal:"",common:"North Henke",fieldNum:"1,2",acres:322.55,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:25,entity:"Flat Acre",farm:"Hunnewell",legal:"",common:"North Henke",fieldNum:"1,2",acres:15.04,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:26,entity:"Flat Acre",farm:"Hunnewell",legal:"",common:"North Kammer",fieldNum:"1",acres:318.11,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:14.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:27,entity:"Flat Acre",farm:"Hunnewell",legal:"",common:"Henke/Hill",fieldNum:"1,3,4",acres:105.62,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:28,entity:"Flat Acre",farm:"Hunnewell",legal:"",common:"Henke/Hill",fieldNum:"1,3,4",acres:15.08,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:29,entity:"Flat Acre",farm:"Ray",legal:"",common:"Blow Field",fieldNum:"1",acres:159.37,crop:"Quinoa",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:0.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:30.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:30,entity:"Flat Acre",farm:"Ray",legal:"",common:"West CRP",fieldNum:"1,2,3,4",acres:206.06,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:18.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:31,entity:"Flat Acre",farm:"Ray",legal:"",common:"East Trues",fieldNum:"1,3",acres:245.34,crop:"Lentils",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:13.3,priceGuarantee:9.0,bushelProjection:13.0,currentPrice:12.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:32,entity:"Flat Acre",farm:"Ray",legal:"",common:"East Trues",fieldNum:"2",acres:73.64,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:26.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:33,entity:"Flat Acre",farm:"Ray",legal:"",common:"East Trues",fieldNum:"4",acres:159.62,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:26.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:34,entity:"Flat Acre",farm:"Ray",legal:"",common:"North Cabin",fieldNum:"1,2,3,4,5",acres:315.25,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:24.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:35,entity:"Flat Acre",farm:"Ray",legal:"",common:"Trues",fieldNum:"1,3,4",acres:62.0,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:17.0,priceGuarantee:13.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:36,entity:"Flat Acre",farm:"Ray",legal:"",common:"Trues",fieldNum:"1",acres:191.27,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:37,entity:"Flat Acre",farm:"Ray",legal:"",common:"Trues",fieldNum:"3,4",acres:97.0,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:17.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:38,entity:"Flat Acre",farm:"Ray",legal:"",common:"Trues",fieldNum:"2",acres:117.1,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:39,entity:"Flat Acre",farm:"Ray",legal:"",common:"West Trues",fieldNum:"1",acres:44.27,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:40,entity:"Flat Acre",farm:"Ray",legal:"",common:"West Trues",fieldNum:"2",acres:38.42,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:41,entity:"Flat Acre",farm:"Ray",legal:"",common:"Pivot CRP",fieldNum:"1",acres:24.89,crop:"Cover Crop",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:6.0,bushelProjection:50.0,currentPrice:2.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:42,entity:"Flat Acre",farm:"Ray",legal:"",common:"Pivot",fieldNum:"2",acres:69.96,crop:"Cover Crop",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:45.0,priceGuarantee:6.0,bushelProjection:50.0,currentPrice:2.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:43,entity:"Flat Acre",farm:"Ray",legal:"",common:"Barn",fieldNum:"1,2,3,4,5,6",acres:159.38,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:44,entity:"Flat Acre",farm:"Ray",legal:"",common:"island",fieldNum:"1",acres:8.9,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:19.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:45,entity:"Flat Acre",farm:"Ray",legal:"",common:"Cabin East",fieldNum:"1,5",acres:38.06,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2694,excelRow:46,entity:"Flat Acre",farm:"Ray",legal:"",common:"Cabin East",fieldNum:"2,3,4",acres:146.98,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2892,excelRow:47,entity:"Flat Acre",farm:"Ray",legal:"",common:"STATE",fieldNum:"1,2,3,4,5,6",acres:72.24,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2693,excelRow:48,entity:"Flat Acre",farm:"Ray",legal:"",common:"BOR",fieldNum:"1,1,2",acres:32.65,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:19.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2892,excelRow:49,entity:"Flat Acre",farm:"Brown",legal:"",common:"STATE north",fieldNum:"1,2",acres:221.26,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2892,excelRow:50,entity:"Flat Acre",farm:"Brown",legal:"",common:"STATE",fieldNum:"1,2",acres:72.99,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:51,entity:"Flat Acre",farm:"Brown",legal:"",common:"North Rd",fieldNum:"1,2,1,2,3,1-3",acres:383.18,crop:"Mustard",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:9.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:52,entity:"Flat Acre",farm:"Brown",legal:"",common:"South Rd.",fieldNum:"1-2,1-4",acres:287.43,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3346,excelRow:53,entity:"Flat Acre",farm:"Nuxoll Land",legal:"",common:"Akey yard W",fieldNum:"1",acres:157.92,crop:"Quinoa",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:0,priceGuarantee:0,bushelProjection:20.0,currentPrice:30.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3346,excelRow:54,entity:"Flat Acre",farm:"Nuxoll Land",legal:"",common:"Akey yard E",fieldNum:"2",acres:136.29,crop:"Austrians",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3605,excelRow:55,entity:"Flat Acre",farm:"Nuxoll Land",legal:"",common:"Akey Yard",fieldNum:"1,2",acres:11.83,crop:"Austrians",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:15.0,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:56,entity:"Flat Acre",farm:"Englund",legal:"",common:"N. 320",fieldNum:"1,3",acres:214.0,crop:"Austrians",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:17.0,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:57,entity:"Flat Acre",farm:"Englund",legal:"",common:"N. 320",fieldNum:"2",acres:105.0,crop:"Austrians",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:17.0,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:58,entity:"Flat Acre",farm:"Englund",legal:"",common:"East Section",fieldNum:"2",acres:111.14,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:19.5,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:59,entity:"Flat Acre",farm:"Englund",legal:"",common:"East Section",fieldNum:"4",acres:66.56,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:19.5,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:60,entity:"Flat Acre",farm:"Englund",legal:"",common:"East Section",fieldNum:"1,3,5",acres:463.45,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:19.5,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:61,entity:"Flat Acre",farm:"Englund",legal:"",common:"House",fieldNum:"1,2,17",acres:38.25,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:62,entity:"Flat Acre",farm:"Englund",legal:"",common:"House",fieldNum:"2,4-16",acres:565.69,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:63,entity:"Flat Acre",farm:"Englund",legal:"",common:"West Section",fieldNum:"4,5,6",acres:165.4,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:64,entity:"Flat Acre",farm:"Englund",legal:"",common:"West Section",fieldNum:"1,10",acres:81.61,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:65,entity:"Flat Acre",farm:"Englund",legal:"",common:"West Section",fieldNum:"2,3,4,6,7,8",acres:221.43,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:66,entity:"Flat Acre",farm:"Englund",legal:"",common:"West Section",fieldNum:"9",acres:63.55,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:67,entity:"Flat Acre",farm:"Englund",legal:"",common:"West Section",fieldNum:"2,3,7,8",acres:91.0,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3009,excelRow:68,entity:"Flat Acre",farm:"Englund",legal:"",common:"West Section",fieldNum:"11",acres:9.76,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3591,excelRow:69,entity:"Flat Acre",farm:"Chris Kolstad",legal:"",common:"Watson West",fieldNum:"1,6",acres:395.12,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:37.0,priceGuarantee:6.98,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3591,excelRow:70,entity:"Flat Acre",farm:"Chris Kolstad",legal:"",common:"Watson West",fieldNum:"2,3,4,5",acres:218.43,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:37.0,priceGuarantee:6.98,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3591,excelRow:71,entity:"Flat Acre",farm:"Chris Kolstad",legal:"",common:"Watson NorthWest",fieldNum:"1",acres:40.3,crop:"CC HAD",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:37.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2644,excelRow:72,entity:"Flat Acre",farm:"Duncan",legal:"",common:"Block",fieldNum:"",acres:589.0,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:16.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:73,entity:"Flat Acre",farm:"Duncan",legal:"",common:"east of block",fieldNum:"",acres:320.0,crop:"Chickpeas",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:16.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:74,entity:"Flat Acre",farm:"Duncan",legal:"",common:"Duncan",fieldNum:"",acres:550.0,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:22.0,priceGuarantee:6.19,bushelProjection:22.0,currentPrice:6.19},expenseOverrides:{}},
-  {id:String(_id++),farmNumber:null,excelRow:75,entity:"Flat Acre",farm:"Kolstad Lake",legal:"",common:"Kolstad Lake",fieldNum:"",acres:640.0,crop:"Chem-Fallow",eligibleCrops:["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"],income:{bushelGuarantee:0,priceGuarantee:0,bushelProjection:0.0,currentPrice:0.0},expenseOverrides:{}},
-  {id:String(_id++),farmNumber:null,excelRow:77,entity:"Via Terra",farm:"Chris Kolstad",legal:"",common:"Watson North",fieldNum:"123",acres:313.84,crop:"Barley",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:37.0,priceGuarantee:4.2,bushelProjection:35.0,currentPrice:4.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:78,entity:"Via Terra",farm:"Chris Kolstad",legal:"",common:"Watson North",fieldNum:"456",acres:314.12,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:22.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:79,entity:"Via Terra",farm:"Chris Kolstad",legal:"",common:"Watson South",fieldNum:"123",acres:157.99,crop:"Barley",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:37.0,priceGuarantee:4.2,bushelProjection:35.0,currentPrice:4.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:80,entity:"Via Terra",farm:"Chris Kolstad",legal:"",common:"Watson South",fieldNum:"456",acres:157.36,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:22.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:81,entity:"Via Terra",farm:"Chris Kolstad",legal:"",common:"Watson SouthEast",fieldNum:"1",acres:75.29,crop:"Barley",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:37.0,priceGuarantee:4.2,bushelProjection:35.0,currentPrice:4.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:82,entity:"Via Terra",farm:"Chris Kolstad",legal:"",common:"Watson SouthEast",fieldNum:"2",acres:83.53,crop:"Barley",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:37.0,priceGuarantee:4.2,bushelProjection:35.0,currentPrice:4.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:83,entity:"Via Terra",farm:"Kostad Trust",legal:"",common:"Cedric Section 6",fieldNum:"1",acres:155.92,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:24.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:84,entity:"Via Terra",farm:"Kostad Trust",legal:"",common:"Cedric Section 6",fieldNum:"2",acres:150.82,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:9.7,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:85,entity:"Via Terra",farm:"Kostad Trust",legal:"",common:"Cedric Section 6",fieldNum:"3",acres:52.76,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:9.7,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:86,entity:"Via Terra",farm:"Kostad Trust",legal:"",common:"Cedric Section 6",fieldNum:"5,7",acres:103.26,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:9.7,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:87,entity:"Via Terra",farm:"Kostad Trust",legal:"",common:"Cedric Section 6",fieldNum:"4,6,8",acres:153.22,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:9.7,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:88,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"North Building site",fieldNum:"1 (west 1)",acres:36.3,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:27.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:89,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"West building site",fieldNum:"1 (west 4)",acres:39.3,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:29.6,priceGuarantee:6.6,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:90,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"West building site",fieldNum:"2 (west 3)",acres:41.02,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:27.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:91,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"Rock Hilltop",fieldNum:"1 (west 6)",acres:40.76,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:19.2,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:92,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"Rock Hilltop",fieldNum:"2 (west 5)",acres:40.66,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:29.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:93,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"west kirby house",fieldNum:"1",acres:156.11,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:94,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"west kirby house",fieldNum:"2",acres:145.4,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:95,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"west Hauser Rd.",fieldNum:"1 (west 2)",acres:154.44,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:24.0,priceGuarantee:6.6,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:96,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"west Hauser Rd.",fieldNum:"2 (west 1)",acres:158.66,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:27.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:97,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"South Rock Hilltop",fieldNum:"1 (west 6)",acres:79.34,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:19.2,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:98,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"South Rock Hilltop",fieldNum:"2 (west 5)",acres:79.01,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:28.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:99,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"far west north place",fieldNum:"1 (west 6)",acres:237.93,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:19.2,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:100,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"far west north place",fieldNum:"2 (west 5)",acres:78.77,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:25.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:101,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"Old House West",fieldNum:"1",acres:159.24,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:102,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"South Kirby corner",fieldNum:"1",acres:75.57,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:17.5,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:103,entity:"Via Terra",farm:"underdal ent. (home)",legal:"",common:"west home reservoir",fieldNum:"1",acres:64.35,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:24.0,priceGuarantee:10.0,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:104,entity:"Via Terra",farm:"danrather (home)",legal:"",common:"N1/2 St. Olaf",fieldNum:"1",acres:78.02,crop:"Lentils",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:16.5,priceGuarantee:9.0,bushelProjection:13.0,currentPrice:12.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:105,entity:"Via Terra",farm:"danrather (home)",legal:"",common:"N1/2 St. Olaf",fieldNum:"2",acres:78.58,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:30.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:106,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"S1/2 St. Olaf",fieldNum:"1",acres:79.26,crop:"Lentils",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:16.5,priceGuarantee:9.0,bushelProjection:13.0,currentPrice:12.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:107,entity:"Via Terra",farm:"TLU Ranch",legal:"",common:"S1/2 St. Olaf",fieldNum:"2",acres:80.92,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:30.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:108,entity:"Via Terra",farm:"danrather (stanley)",legal:"",common:"Shotgun Slough",fieldNum:"1",acres:161.11,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:17.0,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:109,entity:"Via Terra",farm:"danrather (stanley)",legal:"",common:"West 200",fieldNum:"1",acres:202.11,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:13.0,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:110,entity:"Via Terra",farm:"danrather (stanley)",legal:"",common:"South Shotgun",fieldNum:"1",acres:320.85,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:11.5,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:111,entity:"Via Terra",farm:"danrather (stanley)",legal:"",common:"South Shotgun",fieldNum:"2",acres:273.23,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:15.7,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:112,entity:"Via Terra",farm:"Lynch",legal:"",common:"Lynch 40",fieldNum:"1",acres:43.96,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:15.7,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:113,entity:"Via Terra",farm:"danrather (stanley)",legal:"",common:"East 320",fieldNum:"1",acres:318.28,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:17.0,priceGuarantee:14.4,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:114,entity:"Via Terra",farm:"underdal ent. (home)",legal:"",common:"Home Place",fieldNum:"1",acres:149.87,crop:"Lentils",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:10.5,priceGuarantee:9.0,bushelProjection:13.0,currentPrice:12.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:115,entity:"Via Terra",farm:"underdal ent. (home)",legal:"",common:"Home Place",fieldNum:"2",acres:249.83,crop:"Lentils",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:10.5,priceGuarantee:9.0,bushelProjection:13.0,currentPrice:12.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:116,entity:"Via Terra",farm:"underdal ent. (home)",legal:"",common:"South House Section",fieldNum:"1",acres:306.79,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:24.0,priceGuarantee:6.6,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:117,entity:"Via Terra",farm:"underdal ent. (home)",legal:"",common:"South House Section",fieldNum:"2",acres:331.84,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:32.0,priceGuarantee:6.0,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:118,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"North Kirby",fieldNum:"1",acres:155.4,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:119,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"west kirby",fieldNum:"1",acres:16.4,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3533,excelRow:120,entity:"Via Terra",farm:"danrather (missile)",legal:"",common:"west kirby",fieldNum:"2",acres:59.29,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.5,priceGuarantee:15.0,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:121,entity:"Via Terra",farm:"state",legal:"",common:"west buildings state",fieldNum:"1 (west 4)",acres:34.43,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:20.0,priceGuarantee:10.0,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:122,entity:"Via Terra",farm:"state",legal:"",common:"west buildings state",fieldNum:"2 (west 3)",acres:36.55,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:27.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:123,entity:"Via Terra",farm:"state",legal:"",common:"west buildings state",fieldNum:"3 (west 2)",acres:59.69,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:24.0,priceGuarantee:6.6,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:124,entity:"Via Terra",farm:"state",legal:"",common:"south state 320",fieldNum:"1 (west 4)",acres:154.45,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:24.0,priceGuarantee:6.6,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:125,entity:"Via Terra",farm:"state",legal:"",common:"south state 320",fieldNum:"2 (west 3)",acres:158.76,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:27.0,priceGuarantee:6.0,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:126,entity:"Via Terra",farm:"state",legal:"",common:"north rock hill",fieldNum:"1 (west 6)",acres:8.04,crop:"Austrians",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:19.2,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:2593,excelRow:127,entity:"Via Terra",farm:"state",legal:"",common:"north rock hill",fieldNum:"2 (west 5)",acres:28.86,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:26.0,priceGuarantee:6.0,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:128,entity:"Via Terra",farm:"Sharray",legal:"",common:"West Joplin Road",fieldNum:"1",acres:158.84,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.3,priceGuarantee:6.1,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:129,entity:"Via Terra",farm:"Sharray",legal:"",common:"West Joplin Road",fieldNum:"2",acres:158.29,crop:"Green Peas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:18.3,priceGuarantee:6.1,bushelProjection:20.0,currentPrice:10.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3345,excelRow:130,entity:"Via Terra",farm:"Beulow Rd",legal:"",common:"Beulow Rd",fieldNum:"4",acres:161.57,crop:"CC HAD",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:3345,excelRow:131,entity:"Via Terra",farm:"Beulow Rd",legal:"",common:"Beulow Rd",fieldNum:"6",acres:484.02,crop:"CC HAD",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:21.0,priceGuarantee:7.0,bushelProjection:20.0,currentPrice:7.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:132,entity:"Via Terra",farm:"Morkrid",legal:"",common:"East 320",fieldNum:"",acres:313.07,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:9.6,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:133,entity:"Via Terra",farm:"Morkrid",legal:"",common:"North 320",fieldNum:"",acres:320.75,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:25.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:134,entity:"Via Terra",farm:"Morkrid",legal:"",common:"Middle section",fieldNum:"",acres:637.59,crop:"Spring Wheat",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:25.0,priceGuarantee:6.19,bushelProjection:30.0,currentPrice:6.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:135,entity:"Via Terra",farm:"Morkrid",legal:"",common:"West 280",fieldNum:"",acres:278.5,crop:"Mustard",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:9.6,priceGuarantee:20.0,bushelProjection:11.0,currentPrice:20.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:136,entity:"Via Terra",farm:"Lothair",legal:"",common:"north",fieldNum:"",acres:311.9,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:17.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:137,entity:"Via Terra",farm:"Lothair",legal:"",common:"south eastside",fieldNum:"",acres:155.7,crop:"Barley",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:45.0,priceGuarantee:4.2,bushelProjection:35.0,currentPrice:4.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
-  {id:String(_id++),farmNumber:null,excelRow:138,entity:"Via Terra",farm:"Lothair",legal:"",common:"south westside",fieldNum:"",acres:158.2,crop:"Chickpeas",eligibleCrops:["Spring Wheat","CC WW","CC HAD","Barley","Chickpeas","Lentils","Mustard","Austrians","Canola","Flax","Green Peas"],income:{bushelGuarantee:17.0,priceGuarantee:13.8,bushelProjection:15.0,currentPrice:13.0},expenseOverrides:{"cropInsurance":16.36,"gasFuelOil":11.0,"wages":16.0,"ira":2.5,"fertilizerChemical":41.0,"equipmentLoans":17.26,"equipmentPurchases":3.6,"landLeases":31.8,"groceries":2.06,"repairsMaintenance":8.7,"utilities":2.25,"propertyTax":4.6,"seed":7.56,"professionalFees":2.98,"misc":3.66,"freightCustomHire":0.9,"medical":0.69,"interestOperating":2.29}},
+const UNITS = ["LBS","TONS","BU"];
+const DEFAULT_FIELDS = [
+{ id:1, name:"FIELD 1", loads:[], acres:0, costs:{}, grainPrice:"", landlord:"", cropShare:"", insCoverageLevel:"", insGuaranteedYield:"", insPriceElection:"", insType:"", insInsuredAcres:"" },
 ];
+const DEFAULT_BINS = [
+{ id:101, name:"BIN 1", capacityBu:50000, storedLbs:0, grainName:"WHEAT" },
+];
+const GRAIN_COLORS = ["#c8a060","#7ab870","#a0c8e0","#e8c070","#c0a8e0","#80c8a8"];
 
-
-// ─── ROTATION RULES ───────────────────────────────────────────────────────────
-const FIELD_PEAS = new Set(["Austrians","Green Peas","Yellow Peas"]);
-// ── Default rotation rules config (editable, stored in Firebase) ─────────────
-// RMA Crop Insurance Rotation Requirements — Montana (per RMA Special Provisions)
-// selfGap = years before same crop can be replanted (insurable)
-// conflictGap = years before conflicting crops can follow
-// Source: RMA Crop Provisions + westernfrontierins.com/crop/rotation-info
-const DEFAULT_ROTATION_CONFIG = {
-  // Lentils: 2-yr self gap; any broadleaf in prior year = ineligible
-  Lentils:     { selfGap: 2, conflictGap: 1, conflicts: ["Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax","Sunflowers"] },
-  // Chickpeas: 3-yr self gap (strictest rule — Desi & Kabuli)
-  Chickpeas:   { selfGap: 3, conflictGap: 0, conflicts: [] },
-  // Austrian Winter Peas: 2-yr self gap; sunflowers 1-yr conflict
-  Austrians:   { selfGap: 2, conflictGap: 1, conflicts: ["Green Peas","Yellow Peas","Lentils","Sunflowers"] },
-  // Smooth Green Peas: 2-yr self gap; sunflowers & lentils 1-yr conflict
-  "Green Peas":  { selfGap: 2, conflictGap: 1, conflicts: ["Yellow Peas","Austrians","Lentils","Sunflowers"] },
-  // Smooth Yellow Peas: same as green peas
-  "Yellow Peas": { selfGap: 2, conflictGap: 1, conflicts: ["Green Peas","Austrians","Lentils","Sunflowers"] },
-  // Mustard: 1-yr self gap; canola, chickpeas, sunflowers conflict
-  Mustard:     { selfGap: 1, conflictGap: 1, conflicts: ["Canola","Chickpeas","Sunflowers"] },
-  // Canola: Montana = 1-yr rotation; chickpeas, mustard, sunflowers conflict
-  Canola:      { selfGap: 1, conflictGap: 1, conflicts: ["Mustard","Chickpeas","Sunflowers"] },
+// ── Helpers ───────────────────────────────────────────────────────
+const fmtWt = (lbs, unit, bushelLbs=60) => {
+if(unit==="TONS") return { value:(lbs/2000).toFixed(2), label:"TONS" };
+if(unit==="BU") return { value:(lbs/(bushelLbs||60)).toFixed(1), label:"BU" };
+return { value:lbs.toLocaleString("en-US",{maximumFractionDigits:0}), label:"LBS" };
 };
 
-// Global rotation config — loaded from Firebase on mount, falls back to DEFAULT
-let _rotationConfig = { ...DEFAULT_ROTATION_CONFIG };
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+.as-wrap { font-family: 'IBM Plex Mono', monospace; }
+.as-wrap * { box-sizing: border-box; }
+@keyframes as-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(45,122,31,0.25)} 50%{box-shadow:0 0 0 4px rgba(45,122,31,0)} }
+.as-record-btn:not(:disabled):hover { filter: brightness(1.08); }
+.as-record-btn:not(:disabled):active { transform: translateY(1px); }
+.as-numkey:active { transform: translateY(1px); box-shadow: none !important; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #ede9e4; }
+::-webkit-scrollbar-thumb { background: #9a8a72; border-radius: 2px; }
+`;
 
-function getRotationConfig() { return _rotationConfig; }
-function setRotationConfig(cfg) { _rotationConfig = cfg; }
-
-function buildRotationRules(cfg) {
-  const rules = {};
-  Object.entries(cfg).forEach(([crop, r]) => {
-    rules[crop] = (hist, yr) => {
-      const y = +yr; const msgs = [];
-      // Self gap — no same crop within selfGap years
-      for (let i = 1; i <= r.selfGap; i++) {
-        if (hist[y-i] === crop) msgs.push(`${crop} in ${y-i} (within ${r.selfGap} yr gap)`);
-      }
-      // Conflict gap — no conflicting crops within conflictGap years
-      if (r.conflictGap > 0) {
-        r.conflicts.filter(c => c !== crop).forEach(conflict => {
-          for (let i = 1; i <= r.conflictGap; i++) {
-            if (hist[y-i] === conflict) msgs.push(`${conflict} in ${y-i} (conflicts with ${crop})`);
-          }
-        });
-      }
-      return msgs;
-    };
-  });
-  return rules;
-}
-
-// ROTATION_RULES is now a getter so it always uses current config
-function getRotationRules() { return buildRotationRules(_rotationConfig); }
-
-function checkRotationViolations(histData, year) {
-  const rules = getRotationRules();
-  const violations = [];
-  Object.entries(histData).forEach(([key, d]) => {
-    const crop = d.history[year];
-    if (!crop) return;
-    const checker = rules[crop];
-    if (!checker) return;
-    const msgs = checker(d.history, year);
-    if (msgs.length > 0) violations.push({ key, common: d.common, fieldNum: d.fieldNum||"", legal: d.legal||"", acres: d.acres, crop, msgs });
-  });
-  return violations;
-}
-
-// ── Rotation Rules Editor Component ──────────────────────────────────────────
-function RotationRulesEditor({ onClose }) {
-  const [config, setConfig] = useState(() => JSON.parse(JSON.stringify(_rotationConfig)));
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  const ALL_CONFLICT_CROPS = ["Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Sunflowers"];
-  const crops = Object.keys(config);
-
-  const updateSelfGap = (crop, val) => {
-    setConfig(c => ({ ...c, [crop]: { ...c[crop], selfGap: Math.max(0, parseInt(val)||0) }}));
-  };
-  const updateConflictGap = (crop, val) => {
-    setConfig(c => ({ ...c, [crop]: { ...c[crop], conflictGap: Math.max(0, parseInt(val)||0) }}));
-  };
-  const toggleConflict = (crop, conflict) => {
-    setConfig(c => {
-      const cur = c[crop].conflicts;
-      const updated = cur.includes(conflict) ? cur.filter(x=>x!==conflict) : [...cur, conflict];
-      return { ...c, [crop]: { ...c[crop], conflicts: updated }};
-    });
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    setRotationConfig(config);
-    try {
-      await fbSaveRotationRules(config);
-      setSaved(true);
-      setTimeout(() => { setSaved(false); setSaving(false); onClose(); }, 1000);
-    } catch(e) {
-      console.error("Failed to save rules:", e);
-      setSaving(false);
-    }
-  };
-
-  const handleReset = () => setConfig(JSON.parse(JSON.stringify(DEFAULT_ROTATION_CONFIG)));
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000}}>
-      <div style={{background:"#fff",borderRadius:12,padding:28,width:640,maxHeight:"85vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.25)",border:"1px solid #ccdda0"}}>
-        {/* Header */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-          <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>Rotation Rules</div>
-            <div style={{fontSize:11,color:"#7a9260",marginTop:2}}>Changes save to database and apply across all devices</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={handleReset} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:5,padding:"6px 14px",fontSize:11,cursor:"pointer",color:"#7a9260"}}>Reset to Default</button>
-            <button onClick={handleSave} disabled={saving} style={{background:saved?"#4a9030":"#2a7a18",border:"none",borderRadius:5,padding:"6px 18px",fontSize:12,cursor:"pointer",color:"#fff",fontWeight:600}}>
-              {saving?"Saving...":saved?"✓ Saved":"Save & Apply"}
-            </button>
-            <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:5,padding:"6px 12px",fontSize:12,cursor:"pointer",color:"#7a9260"}}>✕</button>
-          </div>
-        </div>
-
-        {/* Rules table */}
-        {crops.map(crop => {
-          const r = config[crop];
-          return (
-            <div key={crop} style={{marginBottom:16,padding:14,background:"#f8fbf5",borderRadius:8,border:"1px solid #ddecc0"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                <span style={{background:cropColor(crop),color:"#fff",padding:"3px 12px",borderRadius:4,fontSize:13,fontWeight:700,minWidth:100,textAlign:"center"}}>{crop}</span>
-                <div style={{display:"flex",alignItems:"center",gap:16}}>
-                  <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#3a6020"}}>
-                    <span>No {crop} within</span>
-                    <input type="number" min={0} max={10} value={r.selfGap}
-                      onChange={e=>updateSelfGap(crop, e.target.value)}
-                      style={{width:44,textAlign:"center",background:"#fff",border:"1px solid #b8d09a",borderRadius:4,padding:"4px 6px",fontSize:13,fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,color:"#1a3010"}}/>
-                    <span>yr{r.selfGap!==1?"s":""}</span>
-                  </label>
-                  {r.conflictGap >= 0 && (
-                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#3a6020"}}>
-                      <span>Conflicts within</span>
-                      <input type="number" min={0} max={10} value={r.conflictGap}
-                        onChange={e=>updateConflictGap(crop, e.target.value)}
-                        style={{width:44,textAlign:"center",background:"#fff",border:"1px solid #b8d09a",borderRadius:4,padding:"4px 6px",fontSize:13,fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,color:"#1a3010"}}/>
-                      <span>yr{r.conflictGap!==1?"s":""}</span>
-                    </label>
-                  )}
-                </div>
-              </div>
-              {/* Conflict crops */}
-              {r.conflictGap > 0 && (
-                <div>
-                  <div style={{fontSize:10,color:"#7a9260",marginBottom:6,textTransform:"uppercase",letterSpacing:0.6}}>Conflicting prior crops:</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                    {ALL_CONFLICT_CROPS.filter(c=>c!==crop).map(c=>{
-                      const on = r.conflicts.includes(c);
-                      return(
-                        <label key={c} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",background:on?"#e8f8e0":"#fff",border:`1px solid ${on?"#4a9030":"#ccdda0"}`,borderRadius:4,cursor:"pointer",fontSize:11,color:on?"#1a7010":"#7a9260"}}>
-                          <input type="checkbox" checked={on} onChange={()=>toggleConflict(crop,c)} style={{margin:0}}/>
-                          <span style={{background:cropColor(c),color:"#fff",padding:"1px 5px",borderRadius:2,fontSize:9,fontWeight:600}}>{c}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <div style={{fontSize:10,color:"#b0b8a8",marginTop:4,fontStyle:"italic"}}>
-          These rules apply to the rotation violation checker and crop suggestions. Update each spring when you receive new guidelines from your insurance agent.
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── CROP COLOR MAP ───────────────────────────────────────────────────────────
-const CROP_COLORS = {
-  "Spring Wheat":"#d4a84b","Winter Wheat":"#c49230","CC WW":"#b87d20","CC HAD":"#e8b840",
-  "Barley":"#c8a060","Durum":"#d4b050",
-  "Lentils":"#7cb87c","Chickpeas":"#5a9a5a","Austrians":"#4a8a4a","Green Peas":"#6ab86a","Yellow Peas":"#a0c050",
-  "Mustard":"#d4c020","Canola":"#c8d020","Flax":"#5090c0",
-  "Chem-Fallow":"#c0b8a8","Cover Crop":"#90b870","CRP":"#80a860",
-  "Corn":"#e0a830","Hemp":"#6a9060","Sunflowers":"#e8c030",
-  "Oats":"#d0b880","Quinoa":"#c0a0d0","Leaders":"#a080c0",
+// ── AgriScale design tokens (SCALE tab redesign) ───────────────────────────
+// Flat, rounded-card look with color-coded sections instead of the old uniform
+// tan/beige panels — each control group gets a hue that maps to what it is
+// (storage = teal, commodity = amber, land = green), and the weight readout
+// gets a dark, high-contrast "instrument" treatment instead of a pale box.
+const AS = {
+  page:     "#F4F2EC",
+  pageGradient: "linear-gradient(160deg, #182420 0%, #101815 55%, #0B120F 100%)",
+  textOnDark:     "#F2F0E8",
+  textOnDarkSoft: "#9BA79C",
+  card:     "#FFFFFF",
+  cardAlt:  "#F7F6F1",
+  border:   "#E4E1D6",
+  borderStrong: "#D3CFC0",
+  text:     "#1C2420",
+  textSoft: "#6B7268",
+  textFaint:"#98988C",
+  teal:     "#0F6E56", tealBg: "#E1F5EE", tealText: "#085041",
+  amber:    "#BA7517", amberBg:"#FAEEDA", amberText:"#412402",
+  green:    "#3B6D11", greenBg:"#EAF3DE", greenText:"#173404",
+  blue:     "#185FA5", blueBg: "#E6F1FB", blueText: "#042C53",
+  danger:   "#A32D2D", dangerBg:"#FCEBEB",
+  readout:      "#0F1512",
+  readoutMuted: "#7FA88F",
+  readoutText:  "#E8F5EE",
+  // Pulled from the Agri Logix badge mark (public/icons) — used sparingly
+  // as brand accents (thin bars, underlines) rather than large fills.
+  logoGreen:     "#1F3B22",
+  logoGreenSoft: "#4FA95C",
+  logoGold:      "#C9A227",
+  logoGoldSoft:  "#E4C468",
 };
-function cropColor(crop) { return CROP_COLORS[crop] || "#aabbaa"; }
 
-// ─── HISTORY VIEW ─────────────────────────────────────────────────────────────
-const HIST_YEARS = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
-
-function HistoryView({ fields, allFields, onSelectField, aphData=null, fieldHistory=null, onDeleteAphCrop=null, tenantId=null }) {
-  const [year, setYear] = useState("2026");
-  const [search, setSearch] = useState("");
-  const [filterViol, setFilterViol] = useState(false);
-  const [sortKey, setSortKey] = useState("farm");
-
-  // Build history data — merges manual fieldHistory (priority) + imported APH.
-  // HISTORY_DATA is Flat Acre Farms / Via Terra's own real historical data
-  // (Chris's tenant) — it must never be the fallback for anyone else's empty
-  // history, or a brand-new tenant with nothing entered yet would see someone
-  // else's actual farm/crop data. See resolveFieldHistoryEntry for the same rule.
-  const histData = useMemo(() => {
-    if (!aphData && !fieldHistory) return isFlatAcreTenant(tenantId) ? HISTORY_DATA : {};
-    const built = {};
-
-    const ensureField = (fieldCommon) => {
-      const apField = allFields.find(f => f.common === fieldCommon);
-      const key = `${fieldCommon}|${apField?.fieldNum||""}`;
-      if(!built[key]) built[key] = {
-        common: fieldCommon, farm: apField?.farm||"", fieldNum: apField?.fieldNum||"",
-        acres: apField?.acres||0, history: {}
-      };
-      return key;
-    };
-
-    // Manual history takes priority (user entered, most accurate)
-    if(fieldHistory) {
-      Object.entries(fieldHistory).forEach(([fieldCommon, years]) => {
-        const key = ensureField(fieldCommon);
-        Object.entries(years).forEach(([yr, data]) => {
-          if(data?.crop) built[key].history[yr] = data.crop;
-        });
-      });
-    }
-
-    // APH data fills gaps not covered by manual entries
-    if(aphData) {
-      Object.entries(aphData).forEach(([fieldCommon, crops]) => {
-        const key = ensureField(fieldCommon);
-        Object.entries(crops).forEach(([crop, cropData]) => {
-          Object.keys(cropData.years||{}).forEach(yr => {
-            if(!built[key].history[yr]) built[key].history[yr] = crop;
-          });
-        });
-      });
-    }
-
-    return Object.keys(built).length > 0 ? built : (isFlatAcreTenant(tenantId) ? HISTORY_DATA : {});
-  }, [aphData, fieldHistory, allFields, tenantId]);
-
-  const [, forceUpdate] = useState(0);
-  const violations = useMemo(() => checkRotationViolations(histData, year), [histData, year, forceUpdate]);
-  const violKeys = useMemo(() => new Set(violations.map(v => v.key)), [violations]);
-
-  // Build rows for selected year
-  const rows = useMemo(() => {
-    const yr = year;
-    return Object.entries(histData)
-      .filter(([key, d]) => {
-        if (!d.history[yr]) return false;
-        if (filterViol && !violKeys.has(key)) return false;
-        if (search) {
-          const q = search.toLowerCase();
-          if (!d.common.toLowerCase().includes(q) && !(d.fieldNum||"").toLowerCase().includes(q) && !(d.farm||"").toLowerCase().includes(q)) return false;
-        }
-        return true;
-      })
-      .sort((a,b) => {
-        if (sortKey==="farm") return ((a[1].farm||"")+(a[1].common||"")).localeCompare((b[1].farm||"")+(b[1].common||""),undefined,{numeric:true,sensitivity:"base"});
-        if (sortKey==="crop") return (a[1].history[yr]||"").localeCompare(b[1].history[yr]||"");
-        if (sortKey==="acres") return b[1].acres - a[1].acres;
-        return 0;
-      });
-  }, [year, search, filterViol, sortKey, violKeys]);
-
-  // Crop summary for year
-  const cropSummary = useMemo(() => {
-    const cm = {};
-    Object.values(histData).forEach(d => {
-      const crop = d.history[year];
-      if (!crop) return;
-      if (!cm[crop]) cm[crop] = { acres: 0, fields: 0 };
-      cm[crop].acres += d.acres;
-      cm[crop].fields++;
-    });
-    return Object.entries(cm).sort((a,b) => b[1].acres - a[1].acres);
-  }, [year]);
-
-  const totalAcres = rows.reduce((s,[,d]) => s+d.acres, 0);
-  const yr = +year;
-
-  const Th = ({label,k}) => (
-    <th onClick={()=>setSortKey(k)}
-      style={{padding:"6px 10px",background:"#1e3a18",color:sortKey===k?"#c8ffa0":"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,cursor:"pointer",textAlign:"left",whiteSpace:"nowrap",fontWeight:sortKey===k?700:500}}>
-      {label}{sortKey===k?" ↓":""}
-    </th>
-  );
-
-  return (
-    <div>
-      {/* Year nav */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"#1a4010"}}>Crop History</div>
-        <div style={{display:"flex",alignItems:"center",gap:4,background:"#e8f0d8",borderRadius:6,padding:"4px 6px",border:"1px solid #ccdda0"}}>
-          <button onClick={()=>setYear(y=>HIST_YEARS[Math.max(0,HIST_YEARS.indexOf(y)-1)])}
-            disabled={year===HIST_YEARS[0]}
-            style={{background:"none",border:"none",fontSize:16,cursor:"pointer",color:"#3a7020",padding:"0 4px",opacity:year===HIST_YEARS[0]?0.3:1}}>‹</button>
-          {HIST_YEARS.map(y=>(
-            <button key={y} onClick={()=>setYear(y)}
-              style={{padding:"4px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:12,fontWeight:y===year?700:400,
-                background:y===year?"#1e3a18":"transparent",color:y===year?"#c8ffa0":"#527a38",fontFamily:"'IBM Plex Mono',monospace"}}>
-              {y}
-            </button>
-          ))}
-          <button onClick={()=>setYear(y=>HIST_YEARS[Math.min(HIST_YEARS.length-1,HIST_YEARS.indexOf(y)+1)])}
-            disabled={year===HIST_YEARS[HIST_YEARS.length-1]}
-            style={{background:"none",border:"none",fontSize:16,cursor:"pointer",color:"#3a7020",padding:"0 4px",opacity:year===HIST_YEARS[HIST_YEARS.length-1]?0.3:1}}>›</button>
-        </div>
-        <input placeholder="🔍 search..." value={search} onChange={e=>setSearch(e.target.value)}
-          style={{background:"#fff",border:"1px solid #b8d09a",borderRadius:4,padding:"5px 10px",fontSize:11,outline:"none",width:160,color:"#1a3010"}}/>
-        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,cursor:"pointer",color:violations.length>0?"#c02020":"#7a9260"}}>
-          <input type="checkbox" checked={filterViol} onChange={e=>setFilterViol(e.target.checked)} style={{accentColor:"#c02020"}}/>
-          Violations only ({violations.length})
-        </label>
-        <div style={{marginLeft:"auto",fontSize:11,color:"#7a9260"}}>{rows.length} fields · {totalAcres.toFixed(0)} ac</div>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:16,alignItems:"start"}}>
-        {/* Main table */}
-        <div>
-          {/* Violation banner */}
-          {violations.length > 0 && (
-            <div style={{background:"#fff8f0",border:"1px solid #f0c090",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:600,color:"#8a4010",marginBottom:6}}>
-                ⚠ {violations.length} Rotation Violation{violations.length!==1?"s":""} for {year}
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:5}}>
-                {violations.map(v=>{
-                  // Find matching field in allFields to navigate to
-                  const targetField = allFields && allFields.find(f =>
-                    f.common === v.common && f.fieldNum === (v.fieldNum||"")
-                  ) || (allFields && allFields.find(f => f.common === v.common));
-                  const clickable = !!targetField;
-                  return(
-                    <div key={v.key}
-                      onClick={clickable ? ()=>onSelectField(targetField.id) : undefined}
-                      style={{background:"#fff",border:"1px solid #f0c090",borderRadius:4,padding:"6px 9px",
-                        cursor:clickable?"pointer":"default",
-                        transition:"box-shadow 0.15s",
-                        boxShadow:clickable?"0 1px 3px rgba(0,0,0,0.06)":""}}
-                      onMouseEnter={e=>{if(clickable)e.currentTarget.style.boxShadow="0 3px 10px rgba(200,100,0,0.2)";}}
-                      onMouseLeave={e=>{if(clickable)e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.06)";}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,marginBottom:2}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <span style={{background:cropColor(v.crop),padding:"1px 7px",borderRadius:3,fontSize:9,color:"#fff",fontWeight:600}}>{v.crop}</span>
-                          <span style={{fontSize:11,fontWeight:600,color:"#1a3010"}}>{v.common}</span>
-                          {v.fieldNum&&<span style={{fontSize:9,color:"#8a9a70"}}>#{v.fieldNum}</span>}
-                        </div>
-                        {clickable&&<span style={{fontSize:9,color:"#c06020",opacity:0.7}}>→ Edit</span>}
-                      </div>
-                      {v.msgs.map((m,i)=><div key={i} style={{fontSize:9,color:"#c05010"}}>• {m}</div>)}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr>
-                <Th label="Farm" k="farm"/>
-                <Th label="Field" k="common"/>
-                <th style={{padding:"6px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"left"}}>Field #</th>
-                <Th label="Acres" k="acres"/>
-                <Th label="Crop" k="crop"/>
-                <th style={{padding:"6px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"left"}}>Prev Year</th>
-                <th style={{padding:"6px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"left"}}>2 Yrs Ago</th>
-                <th style={{padding:"6px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"left"}}>3 Yrs Ago</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(([key,d],i)=>{
-                const crop = d.history[year];
-                const prev1 = d.history[String(yr-1)];
-                const prev2 = d.history[String(yr-2)];
-                const prev3 = d.history[String(yr-3)];
-                const isViol = violKeys.has(key);
-                const CropBadge = ({c}) => c ? (
-                  <span style={{display:"inline-block",padding:"2px 7px",borderRadius:3,background:cropColor(c),color:"#fff",fontSize:10,fontWeight:600}}>{c}</span>
-                ) : <span style={{color:"#ccc",fontSize:10}}>—</span>;
-                return(
-                  <tr key={key} style={{background:isViol?"#fff8f0":i%2===0?"#f6f9f0":"#ffffff"}}>
-                    <td style={{padding:"5px 10px",color:"#527a38",fontSize:11,borderBottom:"1px solid #e0eccc"}}>{d.farm||"—"}</td>
-                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}>
-                      <span style={{fontWeight:600,color:"#1a3010"}}>{d.common}</span>
-                      {isViol&&<span style={{marginLeft:5,fontSize:10,color:"#c05010"}}>⚠</span>}
-                    </td>
-                    <td style={{padding:"5px 10px",color:"#8a9a70",fontSize:10,borderBottom:"1px solid #e0eccc"}}>{d.fieldNum||"—"}</td>
-                    <td style={{padding:"5px 10px",color:"#527a38",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #e0eccc"}}>{d.acres.toFixed(0)}</td>
-                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:5}}>
-                        <CropBadge c={crop}/>
-                        {crop&&onDeleteAphCrop&&aphData?.[d.common]?.[crop]&&(
-                          <button
-                            title={`Remove "${crop}" from ${d.common}'s imported APH history — this cannot be undone`}
-                            onClick={()=>{
-                              if(window.confirm(`Remove "${crop}" from ${d.common}'s imported APH history? This deletes it for every year, not just ${year}. Use this if a crop got attributed to the wrong field during import.`)){
-                                onDeleteAphCrop(d.common,crop);
-                              }
-                            }}
-                            style={{background:"none",border:"none",color:"#c04040",cursor:"pointer",fontSize:11,padding:"0 2px",opacity:0.6}}>✕</button>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={prev1}/></td>
-                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={prev2}/></td>
-                    <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}><CropBadge c={prev3}/></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{background:"#e4f0d0"}}>
-                <td colSpan={3} style={{padding:"7px 10px",fontSize:11,fontWeight:600,color:"#3a6020"}}>TOTALS — {rows.length} fields</td>
-                <td style={{padding:"7px 10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,fontWeight:600,color:"#3a6020"}}>{totalAcres.toFixed(0)}</td>
-                <td colSpan={4}></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        {/* Crop summary sidebar */}
-        <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"14px",position:"sticky",top:0,maxHeight:"90vh",overflowY:"auto"}}>
-          <div style={{fontSize:11,fontWeight:600,color:"#3a6020",textTransform:"uppercase",letterSpacing:0.8,marginBottom:10}}>{year} Crop Summary</div>
-          {[["All",null],...([...new Set((allFields||[]).map(f=>f.entity))].filter(Boolean).map(e=>[e,e]))].map(([label,entityFilter])=>{
-            // Build crop summary for this entity filter — matched against this
-            // tenant's own real fields (allFields), never the hardcoded
-            // Flat Acre seed list, so another tenant's entities are what show up.
-            const filtered = Object.values(histData).filter(d=>{
-              if(!d.history[year]) return false;
-              if(!entityFilter) return true;
-              const match = (allFields||[]).find(f=>f.common===d.common&&f.fieldNum===d.fieldNum);
-              return match ? match.entity===entityFilter : false;
-            });
-            if(entityFilter&&filtered.length===0) return null;
-            const cm={};
-            filtered.forEach(d=>{
-              const crop=d.history[year];
-              if(!cm[crop]) cm[crop]={acres:0,fields:0};
-              cm[crop].acres+=d.acres; cm[crop].fields++;
-            });
-            const totalAc=filtered.reduce((s,d)=>s+d.acres,0);
-            const sorted=Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres);
-            if(sorted.length===0) return null;
-            return(
-              <div key={label} style={{marginBottom:16}}>
-                <div style={{fontSize:10,color:"#3a6020",
-                  textTransform:"uppercase",letterSpacing:0.8,fontWeight:700,marginBottom:8,
-                  background:entityFilter?"#e8f8e0":"transparent",
-                  padding:label!=="All"?"3px 7px":"0",borderRadius:3,display:"inline-block"}}>
-                  {label} — {totalAc.toFixed(0)} ac
-                </div>
-                {sorted.map(([crop,d])=>{
-                  const pct=(d.acres/totalAc*100).toFixed(1);
-                  return(
-                    <div key={crop} style={{marginBottom:7}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                        <span style={{background:cropColor(crop),color:"#fff",padding:"1px 7px",borderRadius:3,fontSize:10,fontWeight:600}}>{crop}</span>
-                        <span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:10,color:"#527a38"}}>{d.acres.toFixed(0)} ac</span>
-                      </div>
-                      <div style={{height:5,background:"#e8f0d8",borderRadius:3,overflow:"hidden"}}>
-                        <div style={{height:"100%",background:cropColor(crop),width:pct+"%",borderRadius:3,opacity:0.8}}/>
-                      </div>
-                      <div style={{fontSize:9,color:"#8a9a70",marginTop:1}}>{pct}% · {d.fields} field{d.fields!==1?"s":""}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-
-// ── Farm Expenses View ────────────────────────────────────────────────────────
-function FarmExpensesView({ fields, activeYear, onApplyExpenses, onApplyActualExpenses }) {
-  const entities = [...new Set(fields.map(f=>f.entity).filter(Boolean))];
-  const [activeEntity, setActiveEntity] = useState(()=>entities[0]||"");
-  // "projected" edits expenseOverrides (the plan's $/ac rate). "actual" edits
-  // actualExpenses (real $ spent, scaled per field by acres) — same total ÷
-  // acres mechanism, just a different destination on the field record.
-  const [mode, setMode] = useState("projected");
-  const emptyTotals = () => { const t = {}; entities.forEach(entity => { t[entity] = {}; EXP.forEach(([key]) => { t[entity][key] = ""; }); }); return t; };
-  const [totals, setTotals] = useState(emptyTotals);
-  const [actualTotals, setActualTotals] = useState(emptyTotals);
-  const [applied, setApplied] = useState(false);
-
-  const entityFields = fields.filter(f => f.entity === activeEntity);
-  const totalAcres = entityFields.reduce((s, f) => s + f.acres, 0);
-
-  // Current per-acre rates — projected from expenseOverrides/crop defaults,
-  // actual blended from whatever's already been entered on each field
-  // (actualExpenses $ ÷ that field's acres, averaged across the entity).
-  const currentRates = useMemo(() => {
-    const rates = {};
-    EXP.forEach(([key]) => {
-      const avg = entityFields.length > 0
-        ? entityFields.reduce((s, f) => s + getRate(f, key), 0) / entityFields.length
-        : 0;
-      rates[key] = avg;
-    });
-    return rates;
-  }, [entityFields, activeEntity]);
-
-  const currentActualRates = useMemo(() => {
-    const rates = {};
-    EXP.forEach(([key]) => {
-      const sum = entityFields.reduce((s, f) => s + (parseFloat(f.actualExpenses?.[key]) || 0), 0);
-      rates[key] = totalAcres > 0 ? sum / totalAcres : 0;
-    });
-    return rates;
-  }, [entityFields, activeEntity, totalAcres]);
-
-  const activeTotals = mode === "actual" ? actualTotals : totals;
-  const setActiveTotals = mode === "actual" ? setActualTotals : setTotals;
-  const activeCurrentRates = mode === "actual" ? currentActualRates : currentRates;
-
-  const handleTotalChange = (key, val) => {
-    setActiveTotals(t => ({ ...t, [activeEntity]: { ...t[activeEntity], [key]: val } }));
-    setApplied(false);
-  };
-
-  const getRateFromTotal = (key) => {
-    const total = parseFloat(activeTotals[activeEntity]?.[key]);
-    if (!total || !totalAcres) return null;
-    return total / totalAcres;
-  };
-
-  const totalEntered = EXP.reduce((s, [key]) => s + (parseFloat(activeTotals[activeEntity]?.[key]) || 0), 0);
-  const totalCurrent = EXP.reduce((s, [key]) => s + activeCurrentRates[key] * totalAcres, 0);
-
-  const handleApply = () => {
-    const updates = {};
-    EXP.forEach(([key]) => {
-      const rate = getRateFromTotal(key);
-      if (rate !== null) updates[key] = Math.round(rate * 100) / 100;
-    });
-    if (mode === "actual") onApplyActualExpenses(activeEntity, updates);
-    else onApplyExpenses(activeEntity, updates);
-    setApplied(true);
-    setTimeout(() => setApplied(false), 2500);
-  };
-
-  const handleLoadCurrent = () => {
-    // Pre-fill totals from current $/ac × acres
-    const t = {};
-    EXP.forEach(([key]) => {
-      const total = activeCurrentRates[key] * totalAcres;
-      t[key] = total > 0 ? f2(total) : "";
-    });
-    setActiveTotals(prev => ({ ...prev, [activeEntity]: t }));
-    setApplied(false);
-  };
-
-  return (
-    <div style={{padding:"24px",maxWidth:1100,margin:"0 auto"}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
-        <div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#1a3010"}}>Farm Expenses — {activeYear}</div>
-          <div style={{fontSize:12,color:"#7a9260",marginTop:2}}>
-            {mode === "actual"
-              ? "Enter what was actually spent, total — the app divides by total acres and scales real $ back out to each field"
-              : "Enter total dollar amounts — the app divides by total acres to calculate per-acre rates for each field"}
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={handleLoadCurrent}
-            style={{background:"#f4f8ee",border:"1px solid #b8d09a",borderRadius:5,padding:"7px 14px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"'Barlow',sans-serif"}}>
-            ↻ Load Current {mode==="actual"?"Actuals":"Rates"}
-          </button>
-          <button onClick={handleApply}
-            disabled={totalEntered === 0}
-            style={{background:applied?"#4a9030":totalEntered>0?"#2a7a18":"#aac890",border:"none",borderRadius:5,padding:"7px 18px",fontSize:12,fontWeight:600,cursor:totalEntered>0?"pointer":"not-allowed",color:"#fff",fontFamily:"'Barlow',sans-serif"}}>
-            {applied ? "✓ Applied!" : `Apply ${mode==="actual"?"Actual":""} to All ${activeEntity} Fields`}
-          </button>
-        </div>
-      </div>
-
-      {/* Projected / Actual mode toggle */}
-      <div style={{display:"flex",gap:6,marginBottom:16}}>
-        {[["projected","📋 Projected (Budget)"],["actual","💰 Actual (Real $ Spent)"]].map(([m,l])=>(
-          <button key={m} onClick={()=>{setMode(m);setApplied(false);}}
-            style={{padding:"7px 16px",borderRadius:5,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
-              background:mode===m?"#8a5030":"#f4ecd8",
-              color:mode===m?"#fff":"#8a5030"}}>
-            {l}
-          </button>
-        ))}
-      </div>
-
-      {/* Entity tabs */}
-      <div style={{display:"flex",gap:8,marginBottom:20}}>
-        {entities.map(e => (
-          <button key={e} onClick={()=>{setActiveEntity(e);setApplied(false);}}
-            style={{padding:"6px 18px",borderRadius:5,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-              background:e===activeEntity?"#2a7010":"#e8f0d8",
-              color:e===activeEntity?"#fff":"#2a7010"}}>
-            {e} — {fields.filter(f=>f.entity===e).reduce((s,f)=>s+f.acres,0).toFixed(0)} ac
-          </button>
-        ))}
-      </div>
-
-      {/* Summary strip */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
-        <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
-          <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Total Acres</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#1a3010"}}>{totalAcres.toFixed(0)}</div>
-        </div>
-        <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
-          <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Current {mode==="actual"?"Actual":"Total"} Expenses</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#c05010"}}>{f$(totalCurrent)}</div>
-          <div style={{fontSize:10,color:"#8a9a70"}}>${f2(totalAcres>0?totalCurrent/totalAcres:0)}/ac</div>
-        </div>
-        <div style={{background:totalEntered>0?"#f4fce8":"#f8fbf5",border:`1px solid ${totalEntered>0?"#88c878":"#ccdda0"}`,borderRadius:8,padding:"12px 16px"}}>
-          <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>New Total Entered</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:totalEntered>0?"#2a7010":"#aab8a0"}}>{totalEntered>0?f$(totalEntered):"—"}</div>
-          <div style={{fontSize:10,color:"#8a9a70"}}>{totalEntered>0&&totalAcres>0?`$${f2(totalEntered/totalAcres)}/ac`:""}</div>
-        </div>
-      </div>
-
-      {/* Expense rows */}
-      <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,overflow:"hidden"}}>
-        {/* Column headers */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,background:mode==="actual"?"#4a2e18":"#1e3a18",padding:"8px 16px"}}>
-          {["Category","Total $ Entered","÷ Acres","= $/Ac",`Current ${mode==="actual"?"Actual":""} $/Ac`].map((h,i)=>(
-            <div key={h} style={{fontSize:9,color:mode==="actual"?"#f0c8a0":"#c8e8a0",textTransform:"uppercase",letterSpacing:0.7,textAlign:i>0?"right":"left"}}>{h}</div>
-          ))}
-        </div>
-
-        {EXP.map(([key, label], i) => {
-          const calcRate = getRateFromTotal(key);
-          const curRate = activeCurrentRates[key];
-          const diff = calcRate !== null ? calcRate - curRate : null;
-          return (
-            <div key={key}
-              style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,padding:"8px 16px",
-                background:i%2===0?"#f8fbf5":"#fff",borderBottom:"1px solid #eef4e8",alignItems:"center"}}>
-              {/* Label */}
-              <div style={{fontSize:12,color:"#1a3010",fontWeight:500}}>{label}</div>
-              {/* Total input */}
-              <div style={{textAlign:"right"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
-                  <span style={{fontSize:11,color:"#7a9260"}}>$</span>
-                  <input type="number" min="0" step="100"
-                    value={activeTotals[activeEntity]?.[key] ?? ""}
-                    onChange={e=>handleTotalChange(key, e.target.value)}
-                    placeholder={f2(curRate * totalAcres)}
-                    style={{width:110,textAlign:"right",background:mode==="actual"?"#fff8f0":"#f0f8e8",border:`1px solid ${mode==="actual"?"#e0b078":"#b8d09a"}`,
-                      borderRadius:4,padding:"5px 8px",fontSize:12,fontFamily:"'IBM Plex Mono',monospace",
-                      color:"#1a3010",outline:"none"}}/>
-                </div>
-              </div>
-              {/* Acres */}
-              <div style={{textAlign:"right",fontSize:11,color:"#8a9a70",fontFamily:"'IBM Plex Mono',monospace"}}>
-                ÷ {totalAcres.toFixed(0)}
-              </div>
-              {/* Calculated $/ac */}
-              <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,
-                color:calcRate!==null?(diff>0.5?"#c05010":diff<-0.5?"#2a7010":"#1a3010"):"#b0c0a0",fontWeight:calcRate!==null?600:400}}>
-                {calcRate !== null ? (
-                  <span>${f2(calcRate)}
-                    {diff!==null&&Math.abs(diff)>0.1&&<span style={{fontSize:9,marginLeft:4,color:diff>0?"#c05010":"#2a7010"}}>
-                      ({diff>0?"+":""}{f2(diff)})
-                    </span>}
-                  </span>
-                ) : <span style={{color:"#c0c8b0"}}>—</span>}
-              </div>
-              {/* Current $/ac */}
-              <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260"}}>
-                ${f2(curRate)}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Total row */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 150px 130px 130px 110px",gap:0,padding:"10px 16px",background:mode==="actual"?"#4a2e18":"#1e3a18",alignItems:"center"}}>
-          <div style={{fontSize:11,fontWeight:700,color:mode==="actual"?"#f0c8a0":"#c8e8a0",textTransform:"uppercase",letterSpacing:0.8}}>Total</div>
-          <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,fontWeight:700,color:totalEntered>0?"#90e870":"#5a7a50"}}>{totalEntered>0?`$${f$(totalEntered)}`:"—"}</div>
-          <div/>
-          <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,fontWeight:700,color:"#90e870"}}>{totalEntered>0&&totalAcres>0?`$${f2(totalEntered/totalAcres)}/ac`:""}</div>
-          <div style={{textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:mode==="actual"?"#e0b090":"#5a8a50"}}>${f2(totalAcres>0?totalCurrent/totalAcres:0)}</div>
-        </div>
-      </div>
-
-      <div style={{fontSize:10,color:"#8a9a70",marginTop:10,fontStyle:"italic"}}>
-        {mode === "actual"
-          ? `Clicking "Apply" sets real $ spent (scaled to each field's own acres) on every ${activeEntity} field's actualExpenses — that's what each field's Expenses tab compares against its projected rate, and what rolls into the Home dashboard's actual net figure.`
-          : `Clicking "Apply" sets the $/ac rate as an override on every ${activeEntity} field. Individual fields can still be overridden separately in the field detail view.`}
-        {" "}Use "↻ Load Current {mode==="actual"?"Actuals":"Rates"}" to pre-fill with existing values.
-      </div>
-    </div>
-  );
-}
-
-// ── Farm-wide Harvest Entry ─────────────────────────────────────────────────
-// Mirrors FarmExpensesView's total-÷-acres mechanism, but for actual bushels
-// instead of $ — pick an entity, pick a crop, enter the total bushels
-// actually harvested across every field growing that crop, and it splits
-// proportional to acres and writes into fieldHistory (source:"manual"). For
-// tenants without AgriScale weigh-ticket sync, this is the only way to get
-// real yield numbers into the app at all.
-function FarmHarvestView({ fields, activeYear, fieldHistory, onApplyHarvest }) {
-  const entities = [...new Set(fields.map(f=>f.entity).filter(Boolean))];
-  const [activeEntity, setActiveEntity] = useState(()=>entities[0]||"");
-  const entityFields = fields.filter(f=>f.entity===activeEntity);
-  const crops = [...new Set(entityFields.map(f=>f.crop).filter(Boolean))];
-  const [activeCrop, setActiveCrop] = useState(()=>crops[0]||"");
-  useEffect(()=>{ if(!crops.includes(activeCrop)) setActiveCrop(crops[0]||""); },[activeEntity]);
-
-  const cropFields = entityFields.filter(f=>f.crop===activeCrop);
-  const totalAcres = cropFields.reduce((s,f)=>s+f.acres,0);
-  const [totalBu, setTotalBu] = useState("");
-  const [applied, setApplied] = useState(false);
-
-  const currentTotal = cropFields.reduce((s,f)=>s+(parseFloat(fieldHistory?.[f.common]?.[activeYear]?.bushels)||0),0);
-  const projTotal = cropFields.reduce((s,f)=>s+(f.income?.bushelProjection||0)*f.acres,0);
-  const enteredBu = parseFloat(totalBu)||0;
-  const perAcre = totalAcres>0?enteredBu/totalAcres:0;
-
-  const handleApply = () => {
-    if (!enteredBu || !totalAcres) return;
-    const updates = {};
-    cropFields.forEach(f=>{ updates[f.common] = Math.round(perAcre*f.acres*100)/100; });
-    onApplyHarvest(updates);
-    setApplied(true); setTotalBu(""); setTimeout(()=>setApplied(false),2500);
-  };
-
-  return (
-    <div style={{padding:"24px",maxWidth:900,margin:"0 auto"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
-        <div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#1a3010"}}>Harvest Entry — {activeYear}</div>
-          <div style={{fontSize:12,color:"#7a9260",marginTop:2}}>Enter total bushels for one crop across an entity — the app splits it across every field growing that crop, by acres</div>
-        </div>
-        <button onClick={handleApply} disabled={!enteredBu||!totalAcres}
-          style={{background:applied?"#4a9030":enteredBu?"#2a7a18":"#aac890",border:"none",borderRadius:5,padding:"7px 18px",fontSize:12,fontWeight:600,cursor:enteredBu?"pointer":"not-allowed",color:"#fff",fontFamily:"'Barlow',sans-serif"}}>
-          {applied?"✓ Applied!":`Apply to All ${activeCrop||"—"} Fields`}
-        </button>
-      </div>
-
-      <div style={{display:"flex",gap:8,marginBottom:12}}>
-        {entities.map(e=>(
-          <button key={e} onClick={()=>setActiveEntity(e)} style={{padding:"6px 18px",borderRadius:5,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:e===activeEntity?"#2a7010":"#e8f0d8",color:e===activeEntity?"#fff":"#2a7010"}}>
-            {e} — {fields.filter(f=>f.entity===e).reduce((s,f)=>s+f.acres,0).toFixed(0)} ac
-          </button>
-        ))}
-      </div>
-
-      {crops.length===0?(
-        <div style={{padding:"16px",background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,color:"#7a9260",fontSize:12}}>No crops planted for {activeEntity} this year.</div>
-      ):(<>
-        <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-          {crops.map(c=>(
-            <button key={c} onClick={()=>setActiveCrop(c)} style={{padding:"6px 14px",borderRadius:5,border:`1px solid ${c===activeCrop?"#c07010":"#ccdda0"}`,cursor:"pointer",fontSize:12,fontWeight:600,background:c===activeCrop?cropColor(c):"#fff",color:c===activeCrop?"#fff":"#5a7a48"}}>
-              {c}
-            </button>
-          ))}
-        </div>
-
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
-          <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
-            <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Acres ({activeCrop})</div>
-            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#1a3010"}}>{totalAcres.toFixed(0)}</div>
-            <div style={{fontSize:10,color:"#8a9a70"}}>{cropFields.length} field{cropFields.length!==1?"s":""}</div>
-          </div>
-          <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"12px 16px"}}>
-            <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>Currently Recorded</div>
-            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:700,color:"#c05010"}}>{currentTotal>0?Math.round(currentTotal).toLocaleString():"—"}</div>
-            <div style={{fontSize:10,color:"#8a9a70"}}>{currentTotal>0&&totalAcres>0?`${(currentTotal/totalAcres).toFixed(1)} bu/ac`:`proj. ${totalAcres>0?(projTotal/totalAcres).toFixed(1):0} bu/ac`}</div>
-          </div>
-          <div style={{background:enteredBu>0?"#f4fce8":"#f8fbf5",border:`1px solid ${enteredBu>0?"#88c878":"#ccdda0"}`,borderRadius:8,padding:"12px 16px"}}>
-            <div style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:4}}>New Total Entered</div>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <input type="number" min="0" value={totalBu} onChange={e=>setTotalBu(e.target.value)} placeholder={Math.round(currentTotal||projTotal)||"0"}
-                style={{width:"100%",background:"#fff",border:"1px solid #b8d09a",borderRadius:4,padding:"5px 8px",fontSize:14,fontFamily:"'IBM Plex Mono',monospace",color:"#1a3010",outline:"none"}}/>
-              <span style={{fontSize:11,color:"#7a9260"}}>bu</span>
-            </div>
-            <div style={{fontSize:10,color:"#8a9a70",marginTop:4}}>{enteredBu>0&&totalAcres>0?`${perAcre.toFixed(1)} bu/ac`:""}</div>
-          </div>
-        </div>
-
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
-            {["Field","Acres","Recorded Bu","Recorded Bu/Ac","Will Become (if applied)"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:h==="Field"?"left":"right",fontSize:9,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {cropFields.map((f,i)=>{
-              const rec=parseFloat(fieldHistory?.[f.common]?.[activeYear]?.bushels)||0;
-              const willBe=enteredBu>0?Math.round(perAcre*f.acres*100)/100:null;
-              return (
-                <tr key={f.id} style={{background:i%2===0?"#f8fbf5":"#fff",borderBottom:"1px solid #eef4e8"}}>
-                  <td style={{padding:"5px 8px",fontWeight:600,color:"#1a3010"}}>{f.common}</td>
-                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{f.acres.toFixed(1)}</td>
-                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:rec>0?"#2a5a18":"#b0c0a0"}}>{rec>0?Math.round(rec).toLocaleString():"—"}</td>
-                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#7a9260"}}>{rec>0&&f.acres>0?(rec/f.acres).toFixed(1):"—"}</td>
-                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,color:willBe!=null?"#2a7010":"#c0c8b0"}}>{willBe!=null?Math.round(willBe).toLocaleString():"—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div style={{fontSize:10,color:"#8a9a70",marginTop:10,fontStyle:"italic"}}>
-          Clicking "Apply" overwrites each {activeCrop} field's recorded bushels for {activeYear} with its acre-weighted share of the total entered above. Individual fields can still be corrected one at a time from their own Income tab.
-        </div>
-      </>)}
-    </div>
-  );
-}
-
-// ── CSV Export ────────────────────────────────────────────────────────────────
-// tenantId/fieldHistory/activeYear are only used to compute each tenant's OWN
-// real actual-vs-projected figures (calcFieldActuals) — nothing here ever
-// reads the hardcoded ACTUALS_2023/BUDGET_2024/etc year-over-year benchmarks,
-// which were Flat Acre Farms' own real budget history and had no business
-// showing up in another tenant's export. Those are only referenced anymore in
-// FieldDetail's "Compare to" tool, gated behind isFlatAcreTenant.
-function exportCSV(fields,tenantId,farmName,fieldHistory={},activeYear,contractedByCrop={}){
-  const sep=",";const q=v=>`"${String(v).replace(/"/g,'""')}"`;const rows=[];
-  const label=farmName?`${farmName} — `:"";
-  rows.push([q(`AGRILOGIX — ${label}FULL FARM INCOME & EXPENSE REPORT`),q(""),q("Date: "+new Date().toLocaleDateString())].join(sep));
-  rows.push("");
-  const totalAcres=fields.reduce((s,f)=>s+f.acres,0);
-  const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
-  const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);
-  const fieldActuals=fields.map(f=>({f,a:calcFieldActuals(f,fieldHistory,activeYear)}));
-  const totActualRev=fieldActuals.reduce((s,{a})=>s+a.actualRevenue,0);
-  const totActualExp=fieldActuals.reduce((s,{a})=>s+a.actualExpenses,0);
-  const anyActual=fieldActuals.some(({a})=>a.hasAny);
-  // Grain marketing contracts, mirrored from AgriScale — a forward
-  // commitment (price locked in, not yet necessarily hauled/paid), so kept
-  // separate from "Actual" (realized) rather than blended into it. AgriScale
-  // stores crop names uppercase (grain commodity names); AgriPlan's crop
-  // field is title-case, so the join has to be case-insensitive.
-  const ctByCropLower={};Object.entries(contractedByCrop||{}).forEach(([k,v])=>{ctByCropLower[k.toLowerCase()]=v;});
-  const totContractedRev=Object.values(contractedByCrop||{}).reduce((s,v)=>s+(parseFloat(v?.contractedRevenue)||0),0);
-  const totContractedBu=Object.values(contractedByCrop||{}).reduce((s,v)=>s+(parseFloat(v?.contractedBu)||0),0);
-
-  rows.push(q("=== ACTUAL VS PROJECTED — FARM TOTAL ==="));
-  rows.push(["","Projected","Actual","Variance"].map(q).join(sep));
-  rows.push([q("Revenue"),totRev.toFixed(2),anyActual?totActualRev.toFixed(2):"",anyActual?(totActualRev-totRev).toFixed(2):""].join(sep));
-  rows.push([q("Expenses"),totExp.toFixed(2),anyActual?totActualExp.toFixed(2):"",anyActual?(totActualExp-totExp).toFixed(2):""].join(sep));
-  rows.push([q("Net Income"),(totRev-totExp).toFixed(2),anyActual?(totActualRev-totActualExp).toFixed(2):"",anyActual?((totActualRev-totActualExp)-(totRev-totExp)).toFixed(2):""].join(sep));
-  if(totContractedBu>0) rows.push([q("Contracted Revenue (forward-sold via AgriScale, not yet realized)"),totContractedRev.toFixed(2)].join(sep));
-  rows.push("");
-
-  rows.push(q("=== FIELD DETAIL ==="));
-  rows.push(["Entity","Farm","Legal","Common","Field #","Acres","Crop","Bu Guarantee","Price Guarantee","Value/Ac","Ins. Guarantee","Bu Projection","Curr Price","Proj Revenue","Risk",...EXP.map(([,l])=>l),"Total Exp $/Ac","Total Expenses","Net Income","Actual Bushels","Actual Bu/Ac","Actual Revenue","Actual Expenses","Actual Net"].map(q).join(sep));
-  fieldActuals.forEach(({f,a})=>{const c=calc(f);rows.push([q(f.entity),q(f.farm),q(f.legal),q(f.common),q(f.fieldNum),f.acres.toFixed(2),q(f.crop),f.income.bushelGuarantee,f.income.priceGuarantee,c.valAcre.toFixed(2),c.guarantee.toFixed(2),f.income.bushelProjection,f.income.currentPrice,c.revenue.toFixed(2),c.risk.toFixed(2),...EXP.map(([k])=>getRate(f,k).toFixed(2)),c.expRate.toFixed(2),c.expenses.toFixed(2),c.net.toFixed(2),a.bushels>0?a.bushels.toFixed(1):"",a.bushels>0&&f.acres>0?(a.bushels/f.acres).toFixed(2):"",a.hasRevenue?a.actualRevenue.toFixed(2):"",a.hasExpenses?a.actualExpenses.toFixed(2):"",a.hasAny?a.actualNet.toFixed(2):""].join(sep));});
-  rows.push("");
-  rows.push(q("=== CROP SUMMARY — PROJECTED VS ACTUAL ==="));
-  rows.push(["Crop","Acres","% of Total","Proj Revenue","Rev $/Ac","Ins Guarantee","Proj Expenses","Exp $/Ac","Proj Net","Net $/Ac","Actual Bushels","Actual Bu/Ac","Actual Revenue","Actual Expenses","Actual Net","Contracted Bushels","Contracted Revenue"].map(q).join(sep));
-  const cm={};fieldActuals.forEach(({f,a})=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0,actRevenue:0,actExpenses:0,actBushels:0,actBuAcres:0,anyActual:false};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;if(a.hasRevenue)cm[f.crop].actRevenue+=a.actualRevenue;if(a.hasExpenses)cm[f.crop].actExpenses+=a.actualExpenses;if(a.bushels>0){cm[f.crop].actBushels+=a.bushels;cm[f.crop].actBuAcres+=f.acres;}if(a.hasAny)cm[f.crop].anyActual=true;});
-  Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).forEach(([crop,d])=>{const net=d.revenue-d.expenses;const actNet=d.anyActual?(d.actRevenue-d.actExpenses):null;const ct=ctByCropLower[crop.toLowerCase()];rows.push([q(crop),d.acres.toFixed(1),(d.acres/totalAcres*100).toFixed(1)+"%",d.revenue.toFixed(2),(d.revenue/d.acres).toFixed(2),d.guarantee.toFixed(2),d.expenses.toFixed(2),(d.expenses/d.acres).toFixed(2),net.toFixed(2),(net/d.acres).toFixed(2),d.actBushels>0?d.actBushels.toFixed(1):"",d.actBushels>0?(d.actBushels/d.actBuAcres).toFixed(2):"",d.anyActual?d.actRevenue.toFixed(2):"",d.anyActual?d.actExpenses.toFixed(2):"",actNet!=null?actNet.toFixed(2):"",ct?.contractedBu>0?ct.contractedBu.toFixed(1):"",ct?.contractedBu>0?(ct.contractedRevenue||0).toFixed(2):""].join(sep));});
-  rows.push("");
-  rows.push(q("=== EXPENSE CATEGORY — PROJECTED VS ACTUAL ==="));
-  rows.push(["Category","Projected Total $","Projected $/Ac","Actual Total $","Actual $/Ac","Variance $","% of Rev (Proj)"].map(q).join(sep));
-  EXP.forEach(([key,label])=>{
-    const projTot=fields.reduce((s,f)=>s+getRate(f,key)*f.acres,0);
-    const projAvg=projTot/totalAcres;
-    const actTot=fields.reduce((s,f)=>s+(parseFloat(f.actualExpenses?.[key])||0),0);
-    const actAvg=totalAcres>0?actTot/totalAcres:0;
-    rows.push([q(label),projTot.toFixed(2),projAvg.toFixed(2),actTot>0?actTot.toFixed(2):"",actTot>0?actAvg.toFixed(2):"",actTot>0?(actTot-projTot).toFixed(2):"",(totRev>0?projTot/totRev*100:0).toFixed(1)+"%"].join(sep));
-  });
-  const blob=new Blob([rows.join("\n")],{type:"text/csv"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`AgriLogix_${(farmName||"Budget").replace(/[^a-z0-9]+/gi,"_")}_${activeYear||""}.csv`;a.click();
-}
-
-// ── Print / PDF ───────────────────────────────────────────────────────────────
-// See exportCSV's comment — same rule here: tenantId/fieldHistory/activeYear
-// only feed calcFieldActuals (each tenant's own real numbers). The old
-// hardcoded ACTUALS_2023/BUDGET_2024 year-over-year table is gone from this
-// report entirely, replaced by real Actual $ vs Projected $.
-function openPrint(fields,entityFilter,tenantId,farmName,fieldHistory={},activeYear,contractedByCrop={}){
-  const title=entityFilter==="all"?(farmName||"Farm Budget"):entityFilter;
-  const totAc=fields.reduce((s,f)=>s+f.acres,0);const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);
-  const totGuar=fields.reduce((s,f)=>s+calc(f).guarantee,0);const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);const totNet=totRev-totExp;
-  const fmt=n=>"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
-  const fmtN=n=>n<0?"("+fmt(n)+")":fmt(n);
-  const fmtR=n=>"$"+n.toFixed(2);
-  const pct=(a,b)=>b>0?(a/b*100).toFixed(1)+"%":"—";
-  const fieldActuals=fields.map(f=>({f,a:calcFieldActuals(f,fieldHistory,activeYear)}));
-  const totActualRev=fieldActuals.reduce((s,{a})=>s+a.actualRevenue,0);
-  const totActualExp=fieldActuals.reduce((s,{a})=>s+a.actualExpenses,0);
-  const totActualNet=totActualRev-totActualExp;
-  const totActualBushels=fieldActuals.reduce((s,{a})=>s+(a.bushels>0?a.bushels:0),0);
-  const totActualBuAcres=fieldActuals.reduce((s,{f,a})=>s+(a.bushels>0?f.acres:0),0);
-  const anyActual=fieldActuals.some(({a})=>a.hasAny);
-  // Grain marketing contracts, mirrored from AgriScale — see exportCSV's
-  // comment above for why this is kept separate from "Actual" (a forward
-  // commitment isn't realized production) and why the crop-name join has to
-  // be case-insensitive (AgriScale's grain names are uppercase).
-  const ctByCropLower={};Object.entries(contractedByCrop||{}).forEach(([k,v])=>{ctByCropLower[k.toLowerCase()]=v;});
-  const totContractedRev=Object.values(contractedByCrop||{}).reduce((s,v)=>s+(parseFloat(v?.contractedRevenue)||0),0);
-  const totContractedBu=Object.values(contractedByCrop||{}).reduce((s,v)=>s+(parseFloat(v?.contractedBu)||0),0);
-  // Crop/entity rollups carry the same actual figures as the field detail
-  // table and farm totals above, instead of stopping at projected — so
-  // "Actual" isn't only visible per-field, it rolls up everywhere else too.
-  const cm={};fieldActuals.forEach(({f,a})=>{if(!cm[f.crop])cm[f.crop]={acres:0,revenue:0,guarantee:0,expenses:0,actRevenue:0,actExpenses:0,actBushels:0,actBuAcres:0,anyActual:false};const c=calc(f);cm[f.crop].acres+=f.acres;cm[f.crop].revenue+=c.revenue;cm[f.crop].guarantee+=c.guarantee;cm[f.crop].expenses+=c.expenses;if(a.hasRevenue)cm[f.crop].actRevenue+=a.actualRevenue;if(a.hasExpenses)cm[f.crop].actExpenses+=a.actualExpenses;if(a.bushels>0){cm[f.crop].actBushels+=a.bushels;cm[f.crop].actBuAcres+=f.acres;}if(a.hasAny)cm[f.crop].anyActual=true;});
-  const expTots={};EXP.forEach(([k])=>{expTots[k]=fields.reduce((s,f)=>s+getRate(f,k)*f.acres,0);});
-  const actualCatTots={};EXP.forEach(([k])=>{actualCatTots[k]=fields.reduce((s,f)=>s+(parseFloat(f.actualExpenses?.[k])||0),0);});
-  const entMap={};fieldActuals.forEach(({f,a})=>{if(!entMap[f.entity])entMap[f.entity]={acres:0,revenue:0,guarantee:0,expenses:0,actRevenue:0,actExpenses:0,anyActual:false};const c=calc(f);entMap[f.entity].acres+=f.acres;entMap[f.entity].revenue+=c.revenue;entMap[f.entity].guarantee+=c.guarantee;entMap[f.entity].expenses+=c.expenses;if(a.hasRevenue)entMap[f.entity].actRevenue+=a.actualRevenue;if(a.hasExpenses)entMap[f.entity].actExpenses+=a.actualExpenses;if(a.hasAny)entMap[f.entity].anyActual=true;});
-
-  const css=`
-    @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Barlow+Condensed:wght@400;500;600;700&display=swap');
-    *{margin:0;padding:0;box-sizing:border-box}body{font-family:'Barlow Condensed',sans-serif;font-size:10.5px;color:#111;background:#fff;padding:0}
-    @page{margin:14mm 10mm;size:letter landscape}
-    .page{padding:6mm 8mm}
-    h1{font-family:'Libre Baskerville',serif;font-size:20px;color:#1a3a10;margin-bottom:2px}
-    h2{font-family:'Libre Baskerville',serif;font-size:12px;color:#2a5a20;margin:14px 0 5px;border-bottom:2px solid #4a8a30;padding-bottom:3px;text-transform:uppercase;letter-spacing:0.5px}
-    .meta{font-size:9.5px;color:#5a7a4a;margin-bottom:10px}
-    .sg{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:14px}
-    .sc{border:1px solid #c8dca8;padding:7px 9px;border-radius:3px;background:#f8fcf4}
-    .sc .lb{font-size:7.5px;text-transform:uppercase;letter-spacing:0.8px;color:#6a9a50}
-    .sc .vl{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:500;color:#1a3a10;margin-top:1px}
-    .sc .sb{font-size:7.5px;color:#8aaa70;margin-top:1px}
-    table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:9.5px}
-    thead th{background:#1e3a18;color:#c8e8a0;font-size:8px;text-transform:uppercase;letter-spacing:0.5px;padding:4px 6px;text-align:left}
-    thead th.r{text-align:right}thead th.c{text-align:center}
-    tbody tr:nth-child(even){background:#f4f9f0}
-    td{padding:3.5px 6px;border-bottom:1px solid #e0eccc}
-    td.r{text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px}
-    td.neg{color:#b52020}td.pos{color:#1a6a10}td.warn{color:#8a6000}
-    tfoot td{background:#e8f4d8;font-weight:600;border-top:2px solid #4a8a30;font-size:10px}
-    .pb{page-break-before:always}.nop{page-break-before:avoid}
-    .badge{display:inline-block;padding:1px 5px;border-radius:2px;font-size:7.5px;font-weight:600}
-    .ent{background:#e8f0d8;color:#2a5a10}
-    .dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:3px;vertical-align:middle}
-    .dg{background:#3a9a28}.dr{background:#c02020}
-    .toolbar{background:#2a5a20;padding:10px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px}
-    .btn{border:none;padding:7px 18px;border-radius:3px;font-size:12px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:600}
-    @media print{.toolbar{display:none}}
-  `;
-
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AgriLogix — ${title}</title><style>${css}</style></head><body>
-<div class="toolbar">
-  <span style="color:#c8e8a0;font-size:17px;font-weight:700">🌾 AgriLogix — ${title}</span>
-  <button class="btn" style="background:#5cb850;color:#fff" onclick="window.print()">🖨 Print / Save PDF</button>
-  <button class="btn" style="background:#3a3a3a;color:#ccc" onclick="window.close()">Close</button>
+// ── Grain marketing contract form — shared for both "+ Add Contract" and
+// editing an existing one (pass `initial` to pre-fill). Price is only shown
+// to roles with canViewCosts — bushels/buyer/delivery aren't $ figures, but
+// price and any $ value derived from it are gated the same way AgriPlan and
+// ServiceLog already gate their own cost data.
+function ContractForm({ initial, grains, canViewCosts, onSave, onCancel }) {
+const [buyer, setBuyer] = useState(initial?.buyer || "");
+const [crop, setCrop] = useState(initial?.crop || grains[0]?.name || "");
+const [bushels, setBushels] = useState(initial?.bushels || "");
+const [price, setPrice] = useState(initial?.price || "");
+const [delivery, setDelivery] = useState(initial?.delivery || "");
+const [notes, setNotes] = useState(initial?.notes || "");
+const inputStyle = {width:"100%",boxSizing:"border-box",padding:"6px 8px",fontSize:"12px",fontFamily:"'IBM Plex Mono',monospace",border:"1px solid #ccc4b8",borderRadius:"4px",background:"#fff",color:"#2a2a26"};
+const labelStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em",marginBottom:"2px"};
+const submit = () => {
+if(!crop || !(parseFloat(bushels)>0)) return;
+onSave({ id: initial?.id || genId(), farmId: initial?.farmId, buyer: buyer.trim(), crop, bushels, price, delivery: delivery.trim(), notes: notes.trim() });
+};
+return (
+<div style={{background:"#fbf9f5",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"8px"}}>
+<div><div style={labelStyle}>BUYER / ELEVATOR</div><input value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="e.g. CHS Big Sandy" style={inputStyle}/></div>
+<div><div style={labelStyle}>CROP</div>
+<select value={crop} onChange={e=>setCrop(e.target.value)} style={inputStyle}>
+{grains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}
+</select>
 </div>
-<div class="page">
-<h1>${title}</h1>
-<p style="font-family:'Libre Baskerville',serif;font-size:13px;color:#5a7a4a;font-style:italic;margin-bottom:4px">${activeYear||""} Projected Farm Income &amp; Expense Budget</p>
-<div class="meta">Generated ${new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})} &nbsp;·&nbsp; ${fields.length} field units &nbsp;·&nbsp; ${totAc.toFixed(1)} total acres</div>
+<div><div style={labelStyle}>BUSHELS</div><input type="number" value={bushels} onChange={e=>setBushels(e.target.value)} placeholder="e.g. 5000" style={inputStyle}/></div>
+{canViewCosts && <div><div style={labelStyle}>PRICE ($/bu)</div><input type="number" step="0.01" value={price} onChange={e=>setPrice(e.target.value)} placeholder="e.g. 6.25" style={inputStyle}/></div>}
+<div><div style={labelStyle}>DELIVERY BY</div><input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(delivery)?delivery:""} onChange={e=>setDelivery(e.target.value)} style={inputStyle}/>
+{delivery && !/^\d{4}-\d{2}-\d{2}$/.test(delivery) && <div style={{fontSize:"9px",color:"#8a8478",marginTop:"2px"}}>Existing value "{delivery}" — pick a date above to enable delivery reminders</div>}
+</div>
+<div style={{gridColumn:canViewCosts?"auto":"1 / -1"}}><div style={labelStyle}>NOTES</div><input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Contract #, terms, etc." style={inputStyle}/></div>
+</div>
+<div style={{display:"flex",gap:"6px"}}>
+<button onClick={submit} disabled={!crop||!(parseFloat(bushels)>0)} style={{cursor:"pointer",flex:1,padding:"7px",fontSize:"10px",fontWeight:700,letterSpacing:"0.08em",borderRadius:"4px",border:"none",background:(!crop||!(parseFloat(bushels)>0))?"#ccc4b8":"#4a7535",color:"#fff"}}>SAVE</button>
+<button onClick={onCancel} style={{cursor:"pointer",padding:"7px 14px",fontSize:"10px",fontWeight:700,letterSpacing:"0.08em",borderRadius:"4px",border:"1px solid #ccc4b8",background:"#fff",color:"#6a7280"}}>CANCEL</button>
+</div>
+</div>
+);
+}
 
-<div class="sg">
-  <div class="sc"><div class="lb">Total Acres</div><div class="vl">${totAc.toFixed(0)}</div><div class="sb">${fields.length} field units</div></div>
-  <div class="sc"><div class="lb">Projected Revenue</div><div class="vl">${fmt(totRev)}</div><div class="sb">${fmtR(totRev/totAc)}/ac avg</div></div>
-  <div class="sc"><div class="lb">Ins. Guarantee</div><div class="vl">${fmt(totGuar)}</div><div class="sb">${fmtR(totGuar/totAc)}/ac avg</div></div>
-  <div class="sc"><div class="lb">Total Expenses</div><div class="vl">${fmt(totExp)}</div><div class="sb">${fmtR(totExp/totAc)}/ac avg</div></div>
-  <div class="sc"><div class="lb">Net Income</div><div class="vl" style="color:${totNet>=0?"#1a5a10":"#b52020"}">${fmtN(totNet)}</div><div class="sb">${fmtR(totNet/totAc)}/ac avg</div></div>
+// ── BinGauge SVG (matches original exactly) ───────────────────────
+function BinGauge({ bin, grains, small }) {
+const grain = (grains||[]).filter(Boolean).find(g=>g.name===bin.grainName) || FALLBACK_GRAIN;
+const storedBu = bin.storedLbs / (grain.bushel_lbs||60);
+const pct = bin.capacityBu > 0 ? Math.min(100, storedBu / bin.capacityBu * 100) : 0;
+const remaining = Math.max(0, bin.capacityBu - storedBu);
+const fillColor = pct >= 95 ? "#e74c3c" : pct >= 80 ? "#c47d0a" : "#4a5568";
+const fillGlow = fillColor;
+
+const binH = small ? 100 : 160;
+const binW = small ? 60 : 90;
+const roofH = small ? 18 : 28;
+const neckW = small ? 18 : 28;
+const fillH = pct / 100 * binH;
+const fillY = roofH + binH - fillH;
+const svgW = binW + 20;
+const svgH = roofH + binH + (small ? 10 : 20);
+
+const bodyPts = `${10+neckW/2},${roofH} ${10+binW-neckW/2},${roofH} ${10+binW},${roofH+binH} ${10},${roofH+binH}`;
+const roofPts = `${10+binW/2},4 ${10+neckW/2},${roofH} ${10+binW-neckW/2},${roofH}`;
+
+return (
+<div style={{background:"#ede9e4",border:"2px solid #b0c8a0",borderRadius:"8px",padding:small?"10px 12px 8px":"16px 20px 12px",boxShadow:"inset 0 2px 8px rgba(0,0,0,.05)"}}>
+<div style={{display:"flex",gap:small?"10px":"16px",alignItems:"center"}}>
+<div style={{flexShrink:0}}>
+<svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}>
+<defs>
+<linearGradient id={`fg-${bin.id}`} x1="0" y1="0" x2="1" y2="0">
+<stop offset="0%" stopColor={fillColor} stopOpacity="0.5"/>
+<stop offset="50%" stopColor={fillColor} stopOpacity="0.8"/>
+<stop offset="100%" stopColor={fillColor} stopOpacity="0.5"/>
+</linearGradient>
+<clipPath id={`bc-${bin.id}`}>
+<polygon points={bodyPts}/>
+</clipPath>
+</defs>
+{/* Body outline */}
+<polygon points={bodyPts} fill="none" stroke="#6a7280" strokeWidth="2"/>
+{/* Roof */}
+<polygon points={roofPts} fill="#e0eed8" stroke="#6a7280" strokeWidth="1.5"/>
+{/* Fill */}
+{pct > 0 && <rect x={0} y={fillY} width={binW+20} height={fillH+binH} fill={`url(#fg-${bin.id})`} clipPath={`url(#bc-${bin.id})`}/>}
+{/* Glow outline */}
+<polygon points={bodyPts} fill="none" stroke={fillColor} strokeWidth="1.5" style={{filter:pct>0?`drop-shadow(0 0 4px ${fillGlow})`:"none"}}/>
+{/* Pct label */}
+{pct > 12 && <text x={10+binW/2} y={fillY+fillH/2+5} textAnchor="middle" fontFamily="IBM Plex Mono, monospace" fontSize={small?"10":"13"} fontWeight="bold" fill="#fff" >{pct.toFixed(1)}%</text>}
+{/* Tick marks */}
+{[25,50,75].map(t=>{
+const ty=roofH+binH-t/100*binH;
+const x0=10+(binW-neckW)*(1-t/100)*0.5+neckW/2-2;
+return <line key={t} x1={x0} y1={ty} x2={x0-6} y2={ty} stroke="#c0b8ac" strokeWidth="1"/>;
+})}
+</svg>
+</div>
+<div style={{flex:1}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:small?"11px":"13px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"4px"}}>{bin.name}</div>
+{bin.location&&<div style={{fontSize:small?"9px":"10px",color:"#8a9880",letterSpacing:"0.06em",marginBottom:"2px"}}>📍 {bin.location}</div>}
+<div style={{fontSize:small?"9px":"10px",color:"#6a7280",letterSpacing:"0.06em",lineHeight:1.7}}>
+<div><span style={{color:fillColor,fontWeight:"bold"}}>{pct.toFixed(1)}%</span> FULL</div>
+<div>{storedBu.toFixed(0)} / {bin.capacityBu.toLocaleString()} BU</div>
+<div>{remaining.toFixed(0)} BU REMAINING</div>
+<div>{(bin.storedLbs/2000).toFixed(1)} TONS</div>
+</div>
+</div>
+</div>
+</div>
+);
+}
+
+// ── Breakdown by Insurance Unit / Field / Crop — used by both the on-screen
+// REPORT tab and the printable report. Each load already carries its own
+// insuranceUnit, fieldId (via the field it's stored on) and grainName/grainBushelLbs
+// at the time it was recorded, so this is a straight group-and-sum with no lookups.
+function buildUnitFieldCropBreakdown(fields) {
+// Field-level totals first — this is the whole field's bushels/acres regardless
+// of how its loads split across insurance units or crops, so "field bu/ac" means
+// the same thing on every row for that field rather than a per-unit fraction.
+const fieldTotals = {};
+const unitAcresByField = {};
+(fields||[]).forEach(field=>{
+const totBu = (field.loads||[]).filter(Boolean).reduce((s,l)=>s+l.net/(l.grainBushelLbs||60),0);
+const acres = parseFloat(field.acres)||0;
+fieldTotals[field.name] = { totBu, acres, yieldPerAc: acres>0 ? totBu/acres : null };
+// Insurance units are stored as {name,acres} (older data may just be plain name strings —
+// those have no acres info, so unit-level yield falls back to "—" for them).
+const uMap = {};
+(field.insuranceUnits||[]).forEach(u=>{
+if(typeof u==="string" || !u?.name) return;
+const a = parseFloat(u.acres)||0;
+if(a>0) uMap[u.name] = a;
+});
+unitAcresByField[field.name] = uMap;
+});
+const rows = {};
+(fields||[]).forEach(field=>{
+(field.loads||[]).filter(Boolean).forEach(load=>{
+const unit = (load.insuranceUnit && load.insuranceUnit!=="none") ? load.insuranceUnit : "None";
+const crop = load.grainName || "—";
+const key = `${field.name}||${unit}||${crop}`;
+if(!rows[key]) rows[key] = {
+fieldName:field.name, unit, crop, loads:0, totLbs:0, totBu:0, grainPrice:field.grainPrice, acres:parseFloat(field.acres)||0,
+fieldYieldPerAc: fieldTotals[field.name]?.yieldPerAc ?? null,
+unitAcres: unitAcresByField[field.name]?.[unit] ?? null,
+};
+rows[key].loads += 1;
+rows[key].totLbs += load.net;
+rows[key].totBu += load.net/(load.grainBushelLbs||60);
+});
+});
+Object.values(rows).forEach(r=>{ r.unitYieldPerAc = (r.unitAcres>0) ? r.totBu/r.unitAcres : null; });
+return Object.values(rows).sort((a,b)=>
+(a.fieldName||"").localeCompare(b.fieldName||"", undefined,{numeric:true,sensitivity:"base"})
+|| a.unit.localeCompare(b.unit)
+|| a.crop.localeCompare(b.crop)
+);
+}
+
+// ── Breakdown by Insurance Unit, THEN Field — same underlying load data as
+// buildUnitFieldCropBreakdown above, just re-grouped so the insurance unit is
+// the top-level heading and each field that fed into it is a sub-row beneath
+// it, with its own bushels/acres/yield. Fields with no insurance unit set are
+// left out entirely (that's what "Summary by Field" above already covers).
+// Grouping only works if the same unit name is typed identically on every
+// field that belongs to it (e.g. "Unit 4021-A" everywhere) — this is a
+// straight string match, there is no separate "unit" record to link to.
+function buildUnitBreakdown(fields) {
+const units = {};
+(fields||[]).forEach(field=>{
+// acres this field contributes to each of its named units
+const unitAcresMap = {};
+(field.insuranceUnits||[]).forEach(u=>{
+if(typeof u==="string" || !u?.name) return;
+const a = parseFloat(u.acres)||0;
+if(a>0) unitAcresMap[u.name] = a;
+});
+// this field's loads grouped by unit+crop
+const fieldRows = {};
+(field.loads||[]).filter(Boolean).forEach(load=>{
+const unit = (load.insuranceUnit && load.insuranceUnit!=="none") ? load.insuranceUnit : "None";
+if(unit==="None") return;
+const crop = load.grainName || "—";
+const key = `${unit}||${crop}`;
+if(!fieldRows[key]) fieldRows[key] = { unit, crop, loads:0, totLbs:0, totBu:0 };
+fieldRows[key].loads += 1;
+fieldRows[key].totLbs += load.net;
+fieldRows[key].totBu += load.net/(load.grainBushelLbs||60);
+});
+Object.values(fieldRows).forEach(r=>{
+if(!units[r.unit]) units[r.unit] = { unit:r.unit, totBu:0, totLoads:0, fields:[] };
+const u = units[r.unit];
+u.totBu += r.totBu;
+u.totLoads += r.loads;
+u.fields.push({
+fieldName: field.name, crop:r.crop, loads:r.loads, totLbs:r.totLbs, totBu:r.totBu,
+unitAcres: unitAcresMap[r.unit] ?? null, grainPrice: field.grainPrice,
+});
+});
+});
+Object.values(units).forEach(u=>{
+// Sum each distinct field's unit-acres once (a field with 2 crop rows under
+// the same unit shouldn't have its acres counted twice).
+const acresByField = {};
+u.fields.forEach(f=>{ if(f.unitAcres!=null) acresByField[f.fieldName]=f.unitAcres; });
+const acresVals = Object.values(acresByField);
+u.totAcres = acresVals.length ? acresVals.reduce((s,a)=>s+a,0) : null;
+u.unitYieldPerAc = (u.totAcres && u.totAcres>0) ? u.totBu/u.totAcres : null;
+u.fields.sort((a,b)=>
+a.fieldName.localeCompare(b.fieldName, undefined,{numeric:true,sensitivity:"base"})
+|| a.crop.localeCompare(b.crop)
+);
+// Per-crop subtotal within this unit — e.g. "Total Spring Wheat for Unit A
+// North", separate from "Total Barley for Unit A North", since a unit can
+// carry more than one crop across its fields.
+const cropMap = {};
+u.fields.forEach(f=>{ cropMap[f.crop] = (cropMap[f.crop]||0) + f.totBu; });
+u.crops = Object.entries(cropMap).sort((a,b)=>a[0].localeCompare(b[0])).map(([crop,totBu])=>({crop,totBu}));
+});
+return Object.values(units).sort((a,b)=>a.unit.localeCompare(b.unit, undefined,{numeric:true,sensitivity:"base"}));
+}
+
+// ── Main module ───────────────────────────────────────────────────
+// (buildBinSummary — how full each bin is, its actual crop, and which fields
+// fed it — now lives in core/agriscale.js, shared and unit-tested there.)
+function PrintReport({ fields, bins, grains, onClose }) {
+const reportRef = useRef(null);
+const allLoads = [];
+(fields||[]).forEach(field => (field.loads||[]).forEach(load => allLoads.push({...load, fieldName: field.name})));
+allLoads.sort((a,b)=>(a.ts||0)-(b.ts||0));
+const grainFor = (name) => (grains||[]).find(g=>g.name===name) || FALLBACK_GRAIN;
+const buOf = (load) => load.net / ((grainFor(load.grainName).bushel_lbs)||60);
+const grandTotalLbs = allLoads.reduce((s,l)=>s+l.net,0);
+const grandTotalBu = allLoads.reduce((s,l)=>s+buOf(l),0);
+// Rows with no insurance unit are dropped here — "Summary by Field" above
+// already covers plain field totals, so a unit-less row would just repeat it.
+const unitBreakdown = buildUnitBreakdown(fields);
+const binSummaryRows = buildBinSummary(fields, bins, grains);
+const reportDate = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+const printTime = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+
+const handlePrint = () => {
+const content = reportRef.current.innerHTML;
+const win = window.open("", "_blank");
+let html = "<!DOCTYPE html><html><head><title>AgriScale Load Report</title><style>";
+html += "* { box-sizing: border-box; margin:0; padding:0; }";
+html += "body { font-family: 'IBM Plex Sans', sans-serif; background:#fff; color:#111; padding:32px 40px; font-size:11pt; }";
+html += ".report-wrap { max-width: 760px; margin:0 auto; }";
+html += "table { width:100%; border-collapse:collapse; font-size:10pt; margin-bottom:16px; }";
+html += "th { font-family:'IBM Plex Mono',monospace; font-size:8pt; letter-spacing:0.12em; text-transform:uppercase; padding:6px 10px; text-align:left; color:#444; border-bottom:2px solid #111; }";
+html += "td { padding:7px 10px; border-bottom:1px solid #eee; }";
+html += "tr:nth-child(even) td { background:#f9f9f9; }";
+html += "@media print { body{padding:16px 20px;} }";
+html += "</style></head><body><div class=\"report-wrap\">" + content + "</div></body></html>";
+win.document.write(html);
+win.document.close();
+win.focus();
+setTimeout(()=>win.print(), 400);
+};
+
+const th = {fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.12em",color:"#666",padding:"6px 10px",borderBottom:"2px solid #111",textAlign:"left"};
+const td = {padding:"7px 10px",borderBottom:"1px solid #eee",fontSize:"11px"};
+
+return (
+<div style={{position:"fixed",inset:0,background:"rgba(30,50,20,0.65)",zIndex:400,overflowY:"auto",padding:"20px"}}>
+<div style={{maxWidth:"800px",margin:"0 auto"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"}}>
+<span style={{color:"#e8f0e0",fontFamily:"'IBM Plex Mono',monospace",fontSize:"12px",letterSpacing:"0.15em"}}>PRINT PREVIEW</span>
+<div style={{display:"flex",gap:"8px"}}>
+<button onClick={handlePrint} style={{background:"#e8e2d8",border:"1px solid #4a5568",color:"#4a5568",fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",padding:"8px 20px",borderRadius:"4px",cursor:"pointer"}}>🖨 PRINT / SAVE PDF</button>
+<button onClick={onClose} style={{background:"#fff0f0",border:"1px solid #e0c0c0",color:"#c05040",fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",padding:"8px 16px",borderRadius:"4px",cursor:"pointer"}}>✕ CLOSE</button>
+</div>
+</div>
+<div ref={reportRef} style={{background:"#fff",color:"#111",fontFamily:"'IBM Plex Sans',sans-serif",padding:"28px 32px",borderRadius:"6px",border:"1px solid #ddd"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderBottom:"3px solid #111",paddingBottom:"14px",marginBottom:"20px"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"20px",fontWeight:700,letterSpacing:"0.05em"}}>AGRI<span style={{color:"#888"}}>SCALE</span></div>
+<div style={{textAlign:"right",fontSize:"11px",color:"#666",lineHeight:1.7}}>
+<div style={{fontWeight:700}}>{reportDate}</div>
+<div>Printed: {printTime}</div>
+</div>
 </div>
 
-${anyActual?`<h2>Actual — Season to Date</h2>
-<div class="sg" style="grid-template-columns:repeat(4,1fr)">
-  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Actual Revenue</div><div class="vl">${fmt(totActualRev)}</div><div class="sb">vs ${fmt(totRev)} projected</div></div>
-  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Actual Expenses</div><div class="vl">${fmt(totActualExp)}</div><div class="sb">vs ${fmt(totExp)} projected</div></div>
-  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Actual Net</div><div class="vl" style="color:${totActualNet>=0?"#1a5a10":"#b52020"}">${fmtN(totActualNet)}</div><div class="sb">vs ${fmtN(totNet)} projected</div></div>
-  <div class="sc" style="background:#fdf6ec;border-color:#e0c090"><div class="lb">Variance vs Plan</div><div class="vl" style="color:${(totActualNet-totNet)>=0?"#1a5a10":"#b52020"}">${fmtN(totActualNet-totNet)}</div><div class="sb">actual net − projected net</div></div>
-</div>`:""}
+<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"12px",marginBottom:"20px"}}>
+{[
+["TOTAL LOADS", String(allLoads.length)],
+["TOTAL WEIGHT", grandTotalLbs.toLocaleString()+" lbs"],
+["TOTAL BUSHELS", grandTotalBu.toLocaleString("en-US",{maximumFractionDigits:0})+" bu"],
+["FIELDS ACTIVE", (fields||[]).filter(f=>(f.loads||[]).length>0).length+" of "+(fields||[]).length],
+].map(([label,val])=>(
+<div key={label} style={{border:"1px solid #ddd",borderRadius:"4px",padding:"10px 14px"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"8px",letterSpacing:"0.18em",color:"#888",marginBottom:"4px"}}>{label}</div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"18px",fontWeight:700}}>{val}</div>
+</div>
+))}
+</div>
 
-${totContractedBu>0?`<h2>Contracted — Grain Marketing (AgriScale)</h2>
-<div class="sg" style="grid-template-columns:repeat(2,1fr)">
-  <div class="sc" style="background:#eef4fb;border-color:#a8c0dc"><div class="lb">Contracted Bushels</div><div class="vl">${totContractedBu.toLocaleString(undefined,{maximumFractionDigits:0})}</div><div class="sb">forward-sold, not yet realized</div></div>
-  <div class="sc" style="background:#eef4fb;border-color:#a8c0dc"><div class="lb">Contracted Revenue</div><div class="vl">${fmt(totContractedRev)}</div><div class="sb">locked-in price, not yet paid/hauled</div></div>
-</div>`:""}
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>ALL LOADS — DETAILED</div>
+<table>
+<thead><tr>
+{["#","DATE","TIME","OPERATOR","FIELD","PRODUCT","BIN","TRUCK","NET WEIGHT","BUSHELS"].map((h,i)=>(
+<th key={h} style={{...th,textAlign:i>=8?"right":"left"}}>{h}</th>
+))}
+</tr></thead>
+<tbody>
+{allLoads.map((load,i)=>{
+const binForLoad = (bins||[]).find(b=>b.id===load.binId);
+return (
+<tr key={load.id} style={{background:i%2===1?"#f9f9f9":"#fff"}}>
+<td style={{...td,fontFamily:"'IBM Plex Mono',monospace",color:"#aaa",fontSize:"10px"}}>#{load.splitLabel||i+1}</td>
+<td style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.date}</td>
+<td style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.timeOnly}</td>
+<td style={td}>{load.operator ? <span style={{background:"#e8f4e0",borderRadius:"3px",padding:"1px 7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#3a6a28"}}>{load.operator}</span> : <span style={{color:"#bbb",fontSize:"10px"}}>—</span>}</td>
+<td style={td}><span style={{background:"#f0f0f0",borderRadius:"3px",padding:"1px 7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.fieldName}</span></td>
+<td style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{load.grainName}</td>
+<td style={td}><span style={{background:"#e8f0e8",borderRadius:"3px",padding:"1px 7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>{binForLoad?binForLoad.name:"—"}</span></td>
+<td style={td}>
+{load.truckColor ? (
+<span style={{display:"inline-flex",alignItems:"center",gap:"5px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px"}}>
+<span style={{display:"inline-block",width:"10px",height:"10px",borderRadius:"2px",background:load.truckColor,border:"1px solid rgba(0,0,0,.2)",flexShrink:0}}/>
+{load.truckName||""}
+</span>
+) : <span style={{color:"#aaa",fontSize:"10px"}}>—</span>}
+</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600}}>{load.net.toLocaleString()} lbs</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:600,color:"#c47d0a"}}>{buOf(load).toFixed(1)} bu</td>
+</tr>
+);
+})}
+{allLoads.length===0 && <tr><td colSpan={10} style={{...td,textAlign:"center",color:"#bbb"}}>No loads recorded</td></tr>}
+{allLoads.length>0 && (
+<tr>
+<td colSpan={8} style={{...td,fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,fontSize:"10px",borderTop:"2px solid #111"}}>GRAND TOTAL ({allLoads.length} loads)</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,borderTop:"2px solid #111"}}>{grandTotalLbs.toLocaleString()} lbs</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,borderTop:"2px solid #111",color:"#c47d0a"}}>{grandTotalBu.toLocaleString("en-US",{maximumFractionDigits:0})} bu</td>
+</tr>
+)}
+</tbody>
+</table>
 
-<h2>Crop Summary</h2>
-<table><thead><tr>
-  <th>Crop</th><th class="r">Acres</th><th class="r">% Total</th>
-  <th class="r">Ins. Guarantee</th><th class="r">Guar $/Ac</th>
-  <th class="r">Proj. Revenue</th><th class="r">Rev $/Ac</th>
-  <th class="r">Proj. Expenses</th><th class="r">Exp $/Ac</th>
-  <th class="r">Proj. Net</th><th class="r">Net $/Ac</th>
-  ${anyActual?`<th class="r">Actual Bu/Ac</th><th class="r">Actual Revenue</th><th class="r">Actual Expenses</th><th class="r">Actual Net</th>`:""}
-  ${totContractedBu>0?`<th class="r">Contracted Bu</th><th class="r">Contracted Revenue</th>`:""}
-</tr></thead><tbody>
-${Object.entries(cm).sort((a,b)=>b[1].acres-a[1].acres).map(([crop,d])=>{const net=d.revenue-d.expenses;const ni=net>=0?"pos":"neg";const actNet=d.anyActual?(d.actRevenue-d.actExpenses):null;const ct=ctByCropLower[crop.toLowerCase()];return`<tr>
-  <td><strong>${crop}</strong></td>
-  <td class="r">${d.acres.toFixed(1)}</td><td class="r">${pct(d.acres,totAc)}</td>
-  <td class="r">${fmt(d.guarantee)}</td><td class="r">${fmtR(d.guarantee/d.acres)}</td>
-  <td class="r">${fmt(d.revenue)}</td><td class="r">${fmtR(d.revenue/d.acres)}</td>
-  <td class="r">${fmt(d.expenses)}</td><td class="r">${fmtR(d.expenses/d.acres)}</td>
-  <td class="r ${ni}">${fmtN(net)}</td><td class="r ${ni}">${fmtR(net/d.acres)}</td>
-  ${anyActual?`<td class="r">${d.actBushels>0?(d.actBushels/d.actBuAcres).toFixed(1):"—"}</td><td class="r">${d.anyActual?fmt(d.actRevenue):"—"}</td><td class="r">${d.anyActual?fmt(d.actExpenses):"—"}</td><td class="r ${actNet==null?"":actNet>=0?"pos":"neg"}">${actNet!=null?fmtN(actNet):"—"}</td>`:""}
-  ${totContractedBu>0?`<td class="r">${ct?.contractedBu>0?ct.contractedBu.toLocaleString(undefined,{maximumFractionDigits:0}):"—"}</td><td class="r">${ct?.contractedBu>0?fmt(ct.contractedRevenue||0):"—"}</td>`:""}
-</tr>`;}).join("")}
-</tbody><tfoot><tr>
-  <td><strong>TOTAL</strong></td><td class="r"><strong>${totAc.toFixed(1)}</strong></td><td class="r">100%</td>
-  <td class="r"><strong>${fmt(totGuar)}</strong></td><td class="r">${fmtR(totGuar/totAc)}</td>
-  <td class="r"><strong>${fmt(totRev)}</strong></td><td class="r">${fmtR(totRev/totAc)}</td>
-  <td class="r"><strong>${fmt(totExp)}</strong></td><td class="r">${fmtR(totExp/totAc)}</td>
-  <td class="r ${totNet>=0?"pos":"neg"}"><strong>${fmtN(totNet)}</strong></td><td class="r ${totNet>=0?"pos":"neg"}">${fmtR(totNet/totAc)}</td>
-  ${anyActual?`<td class="r"><strong>${totActualBushels>0?(totActualBushels/totActualBuAcres).toFixed(1):"—"}</strong></td><td class="r"><strong>${fmt(totActualRev)}</strong></td><td class="r"><strong>${fmt(totActualExp)}</strong></td><td class="r ${totActualNet>=0?"pos":"neg"}"><strong>${fmtN(totActualNet)}</strong></td>`:""}
-  ${totContractedBu>0?`<td class="r"><strong>${totContractedBu.toLocaleString(undefined,{maximumFractionDigits:0})}</strong></td><td class="r"><strong>${fmt(totContractedRev)}</strong></td>`:""}
-</tr></tfoot></table>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY FIELD</div>
+<table>
+<thead><tr>
+{["FIELD","ACRES","LOADS","TOTAL WEIGHT","TOTAL BU","YIELD / ACRE"].map((h,i)=>(
+<th key={h} style={{...th,textAlign:i>=3?"right":"left"}}>{h}</th>
+))}
+</tr></thead>
+<tbody>
+{[...(fields||[])].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"})).map(field=>{
+const loads=(field.loads||[]).filter(Boolean);
+if(!loads.length) return null;
+const totLbs=loads.reduce((s,l)=>s+l.net,0);
+const totBu=loads.reduce((s,l)=>s+buOf(l),0);
+const acres=parseFloat(field.acres)||0;
+return (
+<tr key={field.id}>
+<td style={td}>{field.name}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{acres||"—"}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{loads.length}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{totLbs.toLocaleString()} lbs</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{totBu.toFixed(0)} bu</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{acres>0?(totBu/acres).toFixed(1)+" bu/ac":"—"}</td>
+</tr>
+);
+})}
+</tbody>
+</table>
 
-<h2>Expense Category — Projected vs Actual</h2>
-<table><thead><tr>
-  <th>Category</th>
-  <th class="r">Projected Total $</th><th class="r">Projected $/Ac</th>
-  <th class="r">Actual Total $</th><th class="r">Actual $/Ac</th>
-  <th class="r">Variance $</th><th class="r">% of Rev (Proj)</th>
-</tr></thead><tbody>
-${EXP.map(([key,label])=>{
-  const tot=expTots[key];const avg=tot/totAc;const actTot=actualCatTots[key];const actAvg=totAc>0?actTot/totAc:0;const hasAct=actTot>0;const diff=actTot-tot;const cls=diff>0?"neg":diff<0?"pos":"";
-  return`<tr>
-    <td>${label}</td>
-    <td class="r">${fmt(tot)}</td><td class="r">${fmtR(avg)}</td>
-    <td class="r">${hasAct?fmt(actTot):"—"}</td><td class="r">${hasAct?fmtR(actAvg):"—"}</td>
-    <td class="r ${hasAct?cls:""}">${hasAct?`${diff>=0?"+":""}${fmtR(diff)}`:"—"}</td>
-    <td class="r">${pct(tot,totRev)}</td>
-  </tr>`;}).join("")}
-</tbody><tfoot><tr>
-  <td><strong>TOTAL</strong></td>
-  <td class="r"><strong>${fmt(totExp)}</strong></td>
-  <td class="r"><strong>${fmtR(totExp/totAc)}</strong></td>
-  <td class="r"><strong>${anyActual?fmt(totActualExp):"—"}</strong></td>
-  <td class="r"><strong>${anyActual&&totAc>0?fmtR(totActualExp/totAc):"—"}</strong></td>
-  <td class="r ${anyActual?((totActualExp-totExp)>0?"neg":"pos"):""}"><strong>${anyActual?fmtN(totActualExp-totExp):"—"}</strong></td>
-  <td class="r"><strong>${pct(totExp,totRev)}</strong></td>
-</tr></tfoot></table>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY INSURANCE UNIT</div>
+{unitBreakdown.length===0 && <p style={{fontSize:"11px",color:"#bbb",textAlign:"center",padding:"14px 0"}}>No loads with an insurance unit recorded</p>}
+{unitBreakdown.map(u=>(
+<div key={u.unit} style={{marginBottom:"18px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px",paddingBottom:"4px",borderBottom:"1px solid #ccc"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,fontSize:"13px"}}>{u.unit}</div>
+<div style={{fontSize:"11px",color:"#666"}}>
+{u.totAcres!=null?`${u.totAcres} ac · `:""}{u.totBu.toFixed(0)} bu{u.unitYieldPerAc!=null?` · ${u.unitYieldPerAc.toFixed(1)} bu/ac`:""}
+</div>
+</div>
+<table>
+<thead><tr>
+{["FIELD","CROP","LOADS","TOTAL BU","ACRES","BU/AC"].map((h,i)=>(
+<th key={h} style={{...th,textAlign:i>=2?"right":"left"}}>{h}</th>
+))}
+</tr></thead>
+<tbody>
+{u.fields.map((f,i)=>(
+<tr key={i}>
+<td style={td}>{f.fieldName}</td>
+<td style={td}>{f.crop}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{f.loads}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{f.totBu.toFixed(0)} bu</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{f.unitAcres!=null?f.unitAcres:"—"}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{(f.unitAcres>0)?(f.totBu/f.unitAcres).toFixed(1)+" bu/ac":"—"}</td>
+</tr>
+))}
+</tbody>
+</table>
+<div style={{marginTop:"8px",paddingTop:"6px",borderTop:"1px dashed #ccc"}}>
+{u.crops.map(c=>(
+<div key={c.crop} style={{fontSize:"11px",color:"#444",padding:"2px 0"}}>
+Total <strong>{c.crop}</strong> for {u.unit} = <span style={{fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a",fontWeight:700}}>{c.totBu.toFixed(0)} bu</span>
+</div>
+))}
+</div>
+</div>
+))}
 
-${Object.keys(entMap).length>1?`<h2>Entity Summary</h2>
-<table><thead><tr><th>Entity</th><th class="r">Acres</th><th class="r">Proj. Revenue</th><th class="r">Rev $/Ac</th><th class="r">Ins. Guarantee</th><th class="r">Proj. Expenses</th><th class="r">Exp $/Ac</th><th class="r">Proj. Net</th><th class="r">Net $/Ac</th>${anyActual?`<th class="r">Actual Revenue</th><th class="r">Actual Expenses</th><th class="r">Actual Net</th>`:""}</tr></thead><tbody>
-${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;const actNet=d.anyActual?(d.actRevenue-d.actExpenses):null;return`<tr><td><strong>${ent}</strong></td><td class="r">${d.acres.toFixed(1)}</td><td class="r">${fmt(d.revenue)}</td><td class="r">${fmtR(d.revenue/d.acres)}</td><td class="r">${fmt(d.guarantee)}</td><td class="r">${fmt(d.expenses)}</td><td class="r">${fmtR(d.expenses/d.acres)}</td><td class="r ${net>=0?"pos":"neg"}">${fmtN(net)}</td><td class="r ${net>=0?"pos":"neg"}">${fmtR(net/d.acres)}</td>${anyActual?`<td class="r">${d.anyActual?fmt(d.actRevenue):"—"}</td><td class="r">${d.anyActual?fmt(d.actExpenses):"—"}</td><td class="r ${actNet==null?"":actNet>=0?"pos":"neg"}">${actNet!=null?fmtN(actNet):"—"}</td>`:""}</tr>`;}).join("")}
-</tbody></table>`:""}
-
-<div class="pb"></div>
-
-<h2>Field Detail — All Fields</h2>
-<table><thead><tr>
-  <th>Ent</th><th>Farm / Landlord</th><th>Field Name</th><th class="c">Field #</th>
-  <th class="r">Acres</th><th>Crop</th>
-  <th class="r">Bu Proj</th>${anyActual?`<th class="r">Actual Bu/Ac</th>`:""}<th class="r">Price</th>
-  <th class="r">Ins. Guarantee</th><th class="r">Guar $/Ac</th>
-  <th class="r">Revenue</th><th class="r">Rev $/Ac</th>
-  <th class="r">Expenses</th><th class="r">Exp $/Ac</th>
-  <th class="r">Net Income</th>${anyActual?`<th class="r">Actual Net</th>`:""}
-</tr></thead><tbody>
-${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numeric:true,sensitivity:"base"})||(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f=>{const c=calc(f);const a=calcFieldActuals(f,fieldHistory,activeYear);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
-  <td><span class="badge ent">${(f.entity||"").slice(0,8)||"—"}</span></td>
-  <td>${f.farm}</td>
-  <td><strong>${f.common}</strong></td>
-  <td style="font-size:8.5px;color:#5a7a5a;text-align:center">${f.fieldNum}</td>
-  <td class="r">${f.acres.toFixed(1)}</td>
-  <td><span class="dot ${inelig?"dr":"dg"}"></span>${f.crop}</td>
-  <td class="r">${f.income.bushelProjection}</td>${anyActual?`<td class="r">${a.bushels>0&&f.acres>0?(a.bushels/f.acres).toFixed(1):"—"}</td>`:""}
-  <td class="r">$${f.income.currentPrice}</td>
-  <td class="r">${fmt(c.guarantee)}</td>
-  <td class="r">${fmtR(c.valAcre)}</td>
-  <td class="r">${fmt(c.revenue)}</td>
-  <td class="r">${fmtR(c.revenue/f.acres)}</td>
-  <td class="r">${fmt(c.expenses)}</td>
-  <td class="r">${fmtR(c.expRate)}</td>
-  <td class="r ${ni}">${fmtN(c.net)}</td>${anyActual?`<td class="r ${a.hasAny?(a.actualNet>=0?"pos":"neg"):""}">${a.hasAny?fmtN(a.actualNet):"—"}</td>`:""}
-</tr>`;}).join("")}
-</tbody><tfoot><tr>
-  <td colspan="4"><strong>TOTALS</strong></td>
-  <td class="r"><strong>${totAc.toFixed(1)}</strong></td>
-  <td colspan="${anyActual?4:3}"></td>
-  <td class="r"><strong>${fmt(totGuar)}</strong></td><td class="r">${fmtR(totGuar/totAc)}</td>
-  <td class="r"><strong>${fmt(totRev)}</strong></td><td class="r">${fmtR(totRev/totAc)}</td>
-  <td class="r"><strong>${fmt(totExp)}</strong></td><td class="r">${fmtR(totExp/totAc)}</td>
-  <td class="r ${totNet>=0?"pos":"neg"}"><strong>${fmtN(totNet)}</strong></td>${anyActual?`<td class="r ${totActualNet>=0?"pos":"neg"}"><strong>${fmtN(totActualNet)}</strong></td>`:""}
-</tr></tfoot></table>
-</div></body></html>`;
-
-  const w=window.open("","_blank");w.document.write(html);w.document.close();
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.2em",color:"#888",marginTop:"20px",marginBottom:"8px",paddingTop:"12px",borderTop:"1px solid #ddd"}}>SUMMARY BY BIN</div>
+<table>
+<thead><tr>
+{["BIN","CROP","% FULL","LOADS","TOTAL BU","FIELDS"].map((h,i)=>(
+<th key={h} style={{...th,textAlign:i>=2&&i<=4?"right":"left"}}>{h}</th>
+))}
+</tr></thead>
+<tbody>
+{binSummaryRows.map((b)=>(
+<tr key={b.id}>
+<td style={td}>{b.name}</td>
+<td style={td}>{b.crop}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{b.pctFull.toFixed(1)}%</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace"}}>{b.loads}</td>
+<td style={{...td,textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a"}}>{b.totBu.toFixed(0)} bu</td>
+<td style={td}>{b.fields.length ? b.fields.map(f=>`${f.name} (${f.bu.toFixed(0)} bu)`).join(", ") : "—"}</td>
+</tr>
+))}
+{binSummaryRows.length===0 && <tr><td colSpan={6} style={{...td,textAlign:"center",color:"#bbb"}}>No bins</td></tr>}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+);
 }
 
-// ── Shared UI ─────────────────────────────────────────────────────────────────
-function SCard({label,val,color,sub}){
-  return(<div style={{background:"#ffffff",border:"1px solid #ccdda8",borderRadius:8,padding:"14px 16px",boxShadow:"0 1px 4px rgba(30,58,24,0.07)"}}>
-    <div style={{fontSize:10,color:"#6a8a50",textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{label}</div>
-    <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:18,fontWeight:500,color}}>{val}</div>
-    {sub&&<div style={{fontSize:10,color:"#8a9a70",marginTop:3}}>{sub}</div>}
-  </div>);
+export default function AgriScaleModule({ tenantId, token, userProfile, persist, farmId, farmName, initialTab }) {
+const BASE = `tenants/${tenantId}/agriScale`;
+// Fields on non-default farms use the farm path
+const FIELD_BASE = (!farmId || farmId === "default")
+? `${BASE}/fields`
+: `tenants/${tenantId}/farms/${farmId}/agriScale/fields`;
+// AgriPlan is a separate module with its own farm scoping — reads from it
+// (planned crop, insurance/landlord data for imports) must follow the same
+// farm as this AgriScale instance, or Via Terra would always see Flat Acre's
+// AgriPlan data (and vice versa).
+const AP_BASE = (!farmId || farmId === "default")
+? `tenants/${tenantId}/agriPlan`
+: `tenants/${tenantId}/farms/${farmId}/agriPlan`;
+const perms = getPerms(userProfile);
+const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
+
+// Data
+const [fields, setFields] = useState(DEFAULT_FIELDS);
+const [bins, setBins] = useState(DEFAULT_BINS);
+const [grains, setGrains] = useState([FALLBACK_GRAIN]);
+const [trucks, setTrucks] = useState(DEFAULT_TRUCKS);
+// Grain marketing contracts — unlike fields/bins these are written one at a
+// time to their own sub-path (see addOrUpdateContract/deleteContract below),
+// never via the whole-list save(), so there's no risk of one farm's save
+// overwriting another farm's contracts the way fields/bins could before.
+const [contracts, setContracts] = useState([]);
+const [loading, setLoading] = useState(true);
+const [syncStatus, setSyncStatus] = useState("init");
+
+// Scale
+const [rawInput, setRawInput] = useState("0");
+const [tare, setTare] = useState(0);
+const [unit, setUnit] = useState("LBS");
+const [grainIdx, setGrainIdx] = useState(0);
+const [activeFieldId, setAFId] = useState(null);
+const [activeBinId, setABId] = useState(null);
+const [truckColor, setTruckColor] = useState(DEFAULT_TRUCKS[0].id);
+const [activeUnit, setActiveUnit] = useState("");
+
+// UI
+const [tab, setTab] = useState(initialTab || "SCALE");
+const [flImportModal, setFLImportModal] = useState(false);
+const [flFields, setFLFields] = useState([]);
+const [flSelected, setFLSelected] = useState(new Set());
+const [flLoading, setFLLoading] = useState(false);
+const [flApByName, setFlApByName] = useState({}); // field name (lowercase) -> matching AgriPlan record, for the import-name preview
+// Acres shown/edited per row in the import preview — pre-filled from
+// whatever's found on the source field (or its matched AgriPlan record), but
+// editable right there before importing, since acres often isn't set on a
+// FieldLog field at all (e.g. added without a boundary or drawn from a KML
+// with no acreage in it) and there was previously no way to notice or fix
+// that until you went looking for a missing yield later.
+const [flAcresOv, setFLAcresOv] = useState({}); // field.id -> acres string
+const [apImportModal, setAPImportModal] = useState(false);
+const [apFields, setAPFields] = useState([]);
+const [apSelected, setAPSelected] = useState(new Set());
+const [apAcresOv, setAPAcresOv] = useState({}); // field.common -> acres string
+const [apLoading, setAPLoading] = useState(false);
+// Shared by both import modals: "field" = just the field/common name (old
+// behavior, default so nothing changes unless you pick otherwise), "farmField"
+// = prefix with the farm/tract name (e.g. "Home - North Tiber Grade").
+const [importNameFormat, setImportNameFormat] = useState("field");
+// Whether to tack the AgriPlan field # onto the imported name (e.g. "Home - North Tiber Grade #1,2,3").
+const [includeFieldNum, setIncludeFieldNum] = useState(false);
+const buildImportName = (common, farmTract, fieldNum) => {
+let base = (importNameFormat === "farmField" && farmTract) ? `${farmTract} - ${common}` : common;
+if (includeFieldNum && fieldNum) base += ` #${fieldNum}`;
+return base;
+};
+const [apCrops, setApCrops] = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_apcrops_${tenantId}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> planned crop from AgriPlan
+const [flCrops, setFlCrops] = useState(()=>{ try{ return JSON.parse(localStorage.getItem(`as_flcrops_${tenantId}_${farmId||"default"}`))||{}; }catch(e){ return {}; } }); // field name (lowercase) -> actually-seeded crop from FieldLog
+const [flExportModal, setFLExportModal] = useState(false);
+const [flExportData, setFLExportData] = useState([]);
+const [flExportSel, setFLExportSel] = useState(new Set());
+const [flExporting, setFLExporting] = useState(false);
+const [sendActualsToAgriPlan, setSendActualsToAgriPlan] = useState(true);
+const [logFieldId, setLogFId] = useState(null);
+const [editField, setEF] = useState(null);
+const [editBin, setEB] = useState(null);
+const [editGrain, setEG] = useState(null);
+const [addGrain, setAG] = useState(false);
+const [editTruck, setET] = useState(null);
+const [addTruck, setAT] = useState(false);
+const [editLoad, setEL] = useState(null);
+const [showReport, setShowReport] = useState(false);
+const [addingContract, setAddingContract] = useState(false);
+const [editingContractId, setEditingContractId] = useState(null);
+
+const skipRef = useRef(false);
+const nextId = useRef(Date.now());
+// Full (ALL farms') copy of fields/bins as last synced from Firebase. The
+// `fields`/`bins` state above only ever holds the CURRENT farm's filtered
+// subset (for display) — save() must merge edits back into this full set
+// rather than writing the filtered subset as if it were everything, or
+// saving while on one farm silently wipes every OTHER farm's fields/bins
+// from the shared tenant-wide node (dbWrite is a full overwrite at that
+// path, not a merge). This is the root cause of fields disappearing when
+// you import for one farm, switch farms, then import/save on the other.
+const allFieldsRef = useRef([]);
+const allBinsRef = useRef([]);
+
+// ── Load ──────────────────────────────────────────────────────
+useEffect(()=>{
+if(!tenantId) return;
+dbRead(BASE,token).then(d=>{
+if(d){
+const fl=obj2arr(d.fields||{}).filter(Boolean);
+const bl=obj2arr(d.bins||{}).filter(Boolean);
+const gl=obj2arr(d.customGrains||{}).filter(Boolean);
+const tl=obj2arr(d.trucks||{}).filter(Boolean);
+const cl=obj2arr(d.contracts||{}).filter(Boolean);
+if(fl.length){
+allFieldsRef.current = fl;
+const farmFields = (!farmId||farmId==="default") ? fl.filter(f=>!f.farmId||f.farmId==="default") : fl.filter(f=>f.farmId===farmId);
+setFields(farmFields); setAFId(farmFields[0]?.id||null);
+}
+if(bl.length){ allBinsRef.current = bl; setBins(bl); setABId(bl[0].id); }
+if(gl.length) setGrains(gl);
+if(tl.length) setTrucks(tl.filter(Boolean)); else setTrucks(DEFAULT_TRUCKS);
+setContracts((!farmId||farmId==="default") ? cl.filter(c=>!c.farmId||c.farmId==="default") : cl.filter(c=>c.farmId===farmId));
+asSaveCache(d);
+} else {
+setAFId(DEFAULT_FIELDS[0].id);
+setABId(DEFAULT_BINS[0].id);
+}
+setSyncStatus("live");
+}).catch(()=>{
+const cached = asLoadCache();
+if(cached){
+const fl=obj2arr(cached.fields||{}).filter(Boolean);
+const bl=obj2arr(cached.bins||{}).filter(Boolean);
+const gl=obj2arr(cached.customGrains||{}).filter(Boolean);
+const tl=obj2arr(cached.trucks||{}).filter(Boolean);
+const cl=obj2arr(cached.contracts||{}).filter(Boolean);
+if(fl.length){ allFieldsRef.current = fl; const ff=(!farmId||farmId==="default")?fl.filter(f=>!f.farmId||f.farmId==="default"):fl.filter(f=>f.farmId===farmId); setFields(ff); setAFId(ff[0]?.id||null); }
+if(bl.length){ allBinsRef.current = bl; setBins(bl); setABId(bl[0].id); }
+if(gl.length) setGrains(gl);
+if(tl.length) setTrucks(tl.filter(Boolean));
+if(cl.length) setContracts((!farmId||farmId==="default") ? cl.filter(c=>!c.farmId||c.farmId==="default") : cl.filter(c=>c.farmId===farmId));
+setSyncStatus("offline");
+} else {
+setSyncStatus("error");
+}
+}).finally(()=>setLoading(false));
+},[tenantId,token]);
+
+useEffect(()=>{
+if(loading||!tenantId) return;
+return dbListen(BASE,token,({data:d})=>{
+if(skipRef.current||!d) return;
+if(d.fields){
+const allF = obj2arr(d.fields).filter(Boolean);
+allFieldsRef.current = allF;
+const farmFields = (!farmId||farmId==="default") ? allF.filter(f=>!f.farmId||f.farmId==="default") : allF.filter(f=>f.farmId===farmId);
+setFields(farmFields);
+}
+if(d.bins){
+const allB = obj2arr(d.bins).filter(Boolean);
+allBinsRef.current = allB;
+const farmBins = allB.filter(b => !b.farmId || b.farmId === farmId || b.farmId === "shared");
+setBins(farmBins);
+}
+if(d.customGrains) setGrains(obj2arr(d.customGrains).filter(Boolean));
+if(d.trucks) setTrucks(obj2arr(d.trucks).filter(Boolean));
+if(d.contracts){
+const allC = obj2arr(d.contracts).filter(Boolean);
+setContracts((!farmId||farmId==="default") ? allC.filter(c=>!c.farmId||c.farmId==="default") : allC.filter(c=>c.farmId===farmId));
+}
+asSaveCache(d);
+});
+},[loading,tenantId,token]);
+
+const QUEUE_KEY = `as_queue_${tenantId}`;
+const saveToQueue = d => { try{ localStorage.setItem(QUEUE_KEY, JSON.stringify({data:d,savedAt:Date.now()})); }catch(e){} };
+const clearQueue = () => { try{ localStorage.removeItem(QUEUE_KEY); }catch(e){} };
+const loadQueue = () => { try{ const r=localStorage.getItem(QUEUE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
+
+const AS_CACHE_KEY = `as_cache_${tenantId}`;
+const asSaveCache = d => { try{ localStorage.setItem(AS_CACHE_KEY, JSON.stringify({...d,_at:Date.now()})); }catch(e){} };
+const asLoadCache = () => { try{ const r=localStorage.getItem(AS_CACHE_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } };
+
+// Merge remote + local queued loads (handles offline concurrent adds)
+const mergeWithRemote = (remote, localData) => {
+if(!remote?.fields) return localData;
+const remoteIds = new Set();
+obj2arr(remote.fields||{}).filter(Boolean).forEach(f=>(f.loads||[]).forEach(l=>remoteIds.add(l.id)));
+const localFields = obj2arr(localData.fields||{}).filter(Boolean);
+const merged = obj2arr(remote.fields||{}).filter(Boolean).map(rf=>{
+const lf = localFields.find(f=>f.id===rf.id);
+const extra = lf ? (lf.loads||[]).filter(l=>!remoteIds.has(l.id)) : [];
+return {...rf, loads:[...(rf.loads||[]),...extra].sort((a,b)=>(a.ts||0)-(b.ts||0))};
+});
+localFields.forEach(lf=>{ if(!merged.find(mf=>mf.id===lf.id)) merged.push(lf); });
+const allLoads = merged.flatMap(f=>f.loads||[]);
+const mergedBins = obj2arr(remote.bins||{}).filter(Boolean).map(rb=>({...rb, storedLbs:allLoads.filter(l=>l.binId===rb.id).reduce((s,l)=>s+l.net,0)}));
+return {...localData, fields:Object.fromEntries(merged.map(f=>[f.id,f])), bins:Object.fromEntries(mergedBins.map(b=>[b.id,b]))};
+};
+
+// ── Retry queued saves when back online ───────────────────────
+useEffect(()=>{
+const retry = async () => {
+const q = loadQueue();
+if(!q||!tenantId) return;
+setSyncStatus("pushing");
+try {
+const remote = await dbRead(BASE, token).catch(()=>null);
+const merged = remote ? mergeWithRemote(remote, q.data) : q.data;
+await dbSafeWrite(BASE, merged, token);
+if(merged.fields){
+const allF = obj2arr(merged.fields).filter(Boolean);
+allFieldsRef.current = allF;
+setFields((!farmId||farmId==="default") ? allF.filter(f=>!f.farmId||f.farmId==="default") : allF.filter(f=>f.farmId===farmId));
+}
+if(merged.bins){
+const allB = obj2arr(merged.bins).filter(Boolean);
+allBinsRef.current = allB;
+setBins(allB.filter(b => !b.farmId || b.farmId === farmId || b.farmId === "shared"));
+}
+if(merged.customGrains) setGrains(obj2arr(merged.customGrains).filter(Boolean));
+if(merged.trucks) setTrucks(obj2arr(merged.trucks).filter(Boolean));
+clearQueue();
+setSyncStatus("live");
+} catch(e) {
+setSyncStatus("queued");
+}
+};
+window.addEventListener("online", retry);
+// Do NOT call retry() on mount
+return ()=>window.removeEventListener("online", retry);
+},[tenantId,token]);
+
+const save = useCallback(async (nf,nb,ng,nt)=>{
+const nextFields = nf||fields;
+const nextBins = nb||bins;
+// Safety guard: never write if we'd be wiping fields/bins that exist in current state
+if(fields.length > 0 && nextFields.length === 0) { console.warn("AgriScale save blocked: would wipe fields"); return; }
+if(bins.length > 0 && nextBins.length === 0) { console.warn("AgriScale save blocked: would wipe bins"); return; }
+// nextFields/nextBins only ever contain the CURRENT farm's subset (fields/
+// bins state is always farm-filtered). dbWrite below is a full overwrite of
+// the shared tenant-wide node, not a merge — so writing that subset directly
+// would delete every OTHER farm's fields/bins. mergeFarmFields/mergeFarmBins
+// (core/agriscale.js) pull out what belongs to other farms and merge this
+// farm's edits back in.
+const mergedFields = mergeFarmFields(allFieldsRef.current, nextFields, farmId);
+const mergedBins = mergeFarmBins(allBinsRef.current, nextBins, farmId);
+allFieldsRef.current = mergedFields;
+allBinsRef.current = mergedBins;
+const payload = {
+fields: Object.fromEntries(mergedFields.map(f=>[f.id,f])),
+bins: Object.fromEntries(mergedBins.map(b=>[b.id,b])),
+customGrains:Object.fromEntries((ng||grains).map((g,i)=>[i,g])),
+trucks: Object.fromEntries((nt||trucks).map((t,i)=>[i,t])),
+};
+// Always save locally first
+saveToQueue(payload);
+asSaveCache(payload); // keep the offline fallback snapshot current with local edits too
+skipRef.current = true;
+setSyncStatus("pushing");
+try {
+await dbSafeWrite(BASE, payload, token);
+clearQueue();
+setSyncStatus("live");
+} catch(e) {
+setSyncStatus("queued");
+}
+setTimeout(()=>{ skipRef.current=false; }, 1500);
+},[fields,bins,grains,trucks,token,BASE,farmId]);
+
+// ── Scale computed (null-safe) ────────────────────────────────
+const safeArr = a => (Array.isArray(a)?a:[]).filter(Boolean);
+const safeFields = safeArr(fields);
+const sortedFields = [...safeFields].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
+const safeBins = safeArr(bins);
+const sortedBins = [...safeBins].sort((a,b)=>(a.name||"").localeCompare(b.name||"", undefined, {numeric:true, sensitivity:"base"}));
+const safeGrains = safeArr(grains);
+const safeTrucks = safeArr(trucks);
+const grain = safeGrains[grainIdx] || FALLBACK_GRAIN;
+const rawLbs = Math.min(99999,Math.max(0,parseInt(rawInput.replace(/^0+(?=\d)/,""))||0));
+const netLbs = Math.max(0,rawLbs-tare);
+const canRecord = netLbs >= 100;
+const activeField = safeFields.find(f=>f.id===activeFieldId) || safeFields[0];
+const activeBin = safeBins.find(b=>b.id===activeBinId) || safeBins[0];
+const fieldInsUnits = (activeField?.insuranceUnits||[]).map(u=>typeof u==="string"?u:(u?.name||"")).filter(Boolean);
+const activeTruck = safeTrucks.find(t=>t.id===truckColor) || safeTrucks[0] || DEFAULT_TRUCKS[0];
+
+// ── Pull this year's PLANNED crop per field from AgriPlan, keyed by field name ──
+useEffect(()=>{
+if(!tenantId) return;
+const yr = new Date().getFullYear();
+dbRead(`${AP_BASE}/fields/${yr}`, token).then(d=>{
+const apArr = obj2arr(d||{}).filter(Boolean);
+const map = {};
+apArr.forEach(a=>{ if(a?.common && a?.crop && a.crop.trim().toLowerCase()!=="chem-fallow") map[a.common.trim().toLowerCase()] = normalizeCropName(a.crop); });
+setApCrops(map);
+try{ localStorage.setItem(`as_apcrops_${tenantId}`, JSON.stringify(map)); }catch(e){}
+}).catch(()=>{});
+},[tenantId, token]);
+
+// ── Pull the crop actually SEEDED per field from FieldLog's most recent seeding activity ──
+useEffect(()=>{
+if(!tenantId) return;
+const flBase = (!farmId || farmId === "default")
+? `tenants/${tenantId}/fieldlog`
+: `tenants/${tenantId}/farms/${farmId}/fieldlog`;
+Promise.all([
+dbRead(`${flBase}/fields`, token).catch(()=>null),
+dbRead(`${flBase}/activities`, token).catch(()=>null),
+]).then(([fieldData, actData])=>{
+const flFieldsAll = obj2arr(fieldData||{}).filter(Boolean);
+const flById = {};
+flFieldsAll.forEach(f=>{ if(f?.id) flById[f.id]=f; });
+const seedings = obj2arr(actData||{}).filter(Boolean).filter(a=>a.type==="seeding" && Array.isArray(a.data?.crops) && a.data.crops.length>0);
+// keep only the most recent seeding activity per FieldLog field
+const latestByField = {};
+seedings.forEach(a=>{
+const existing = latestByField[a.fieldId];
+if(!existing || new Date(a.date) > new Date(existing.date)) latestByField[a.fieldId]=a;
+});
+const map = {};
+Object.values(latestByField).forEach(a=>{
+const f = flById[a.fieldId];
+const cropNames = a.data.crops.map(c=>c?.crop).filter(Boolean);
+if(f?.name && cropNames.length) map[f.name.trim().toLowerCase()] = cropNames.join(" + ");
+});
+setFlCrops(map);
+try{ localStorage.setItem(`as_flcrops_${tenantId}_${farmId||"default"}`, JSON.stringify(map)); }catch(e){}
+}).catch(()=>{});
+},[tenantId, farmId, token]);
+
+// ── Look up a crop by field name, exact match only ──
+const exactCrop = (fieldName, cropMap) => {
+if(!fieldName) return null;
+return cropMap[fieldName.trim().toLowerCase()] || null;
+};
+// ── Look up a crop by field name, tolerating combined/partial names (last resort only) ──
+const fuzzyCrop = (fieldName, cropMap) => {
+if(!fieldName) return null;
+const name = fieldName.trim().toLowerCase();
+let best = null, bestLen = 0;
+for(const key in cropMap){
+if(key.length < 3) continue; // skip trivially short names to avoid false positives
+if((name.includes(key) || key.includes(name)) && key.length > bestLen){
+best = cropMap[key]; bestLen = key.length;
+}
+}
+return best;
+};
+
+// ── Auto-select the commodity that matches what's actually seeded on the active field ──
+// Priority: exact match (FieldLog seeding, then AgriPlan plan) beats ANY fuzzy match —
+// a fuzzy guess from either source should never override a real exact match from the other.
+useEffect(()=>{
+if(!activeField || !activeField.name) return;
+const crop = exactCrop(activeField.name, flCrops)
+|| exactCrop(activeField.name, apCrops)
+|| fuzzyCrop(activeField.name, flCrops)
+|| fuzzyCrop(activeField.name, apCrops);
+if(!crop) return;
+// Compare on letters/numbers only — AgriPlan and FieldLog don't always agree on how
+// to separate blend crops ("Austrians/Mustard" vs "Austrians Mustard" vs "Austrians + Mustard"),
+// so ignore spacing/punctuation entirely rather than requiring one exact delimiter convention.
+const canon = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g, "");
+const idx = safeGrains.findIndex(g => canon(g.name) === canon(crop));
+if(idx>=0 && idx!==grainIdx) setGrainIdx(idx);
+},[activeFieldId, apCrops, flCrops]); // eslint-disable-line react-hooks/exhaustive-deps
+
+// ── Reset the selected insurance unit when the active field changes (it's field-specific) ──
+useEffect(()=>{
+if(activeUnit && !fieldInsUnits.includes(activeUnit)) setActiveUnit("");
+},[activeFieldId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+// ── Numpad ────────────────────────────────────────────────────
+const onKey = k => {
+if(k==="CLR"||k==="C") { setRawInput("0"); return; }
+if(k==="⌫") { setRawInput(p=>p.length>1?p.slice(0,-1):"0"); return; }
+setRawInput(p=>{ const n=p==="0"?String(k):p+k; return n.length>5?p:n; });
+};
+
+// ── Record load ───────────────────────────────────────────────
+const recordLoad = () => {
+if(!canRecord) return;
+const mismatch = detectCropMismatch(safeFields, safeBins, activeBinId, grain.name);
+if(mismatch && !confirm(`⚠ Crop mismatch: ${mismatch.binName} already has ${mismatch.existing} recorded in it. You're about to add ${grain.name}. Continue and mix grains in this bin?`)) return;
+const overfill = detectBinOverfill(activeBin, grain, netLbs);
+if(overfill && !confirm(`⚠ ${overfill.binName}'s capacity is ${overfill.capacityBu.toLocaleString()} BU — this load would bring it to ${overfill.wouldBeBu.toFixed(0)} BU (${overfill.overBy.toFixed(0)} BU over). Continue anyway?`)) return;
+const now = new Date();
+const load = {
+id:nextId.current++, net:netLbs, ts:now.getTime(),
+date:now.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}),
+timeOnly:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
+time:now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}),
+grainName:grain.name, grainBushelLbs:grain.bushel_lbs,
+binId:activeBinId, truckId:truckColor, truckColor:activeTruck.hex, truckName:activeTruck.name, operator:operatorName,
+insuranceUnit:activeUnit||"none",
+};
+const nf = safeFields.map(f=>f.id===activeFieldId?{...f,loads:[...(f.loads||[]),load]}:f);
+const nb = safeBins.map(b=>b.id===activeBinId?{...b,storedLbs:b.storedLbs+netLbs}:b);
+setFields(nf); setBins(nb); save(nf,nb,grains);
+setRawInput("0"); setTare(0);
+};
+
+// ── Edit / delete / split a recorded load ──────────────────────
+// (shared by the FIELDS-tab load rows and the LoadMo modal)
+const findLoadOwner = (loadId) => safeFields.find(f=>(f.loads||[]).some(l=>l.id===loadId));
+
+const updateLoad = (updatedLoad) => {
+const owner = findLoadOwner(updatedLoad.id);
+if(!owner) return;
+const oldLoad = owner.loads.find(l=>l.id===updatedLoad.id);
+// Same crop-mismatch guard as recording a new load — catches reassigning an
+// existing load to a different bin (or correcting its grain) in a way that
+// would mix crops. Excludes this load's own prior entry from the "already
+// in the bin" check so fixing a typo on the bin's only load doesn't warn
+// against itself.
+if((updatedLoad.binId!==oldLoad.binId || updatedLoad.grainName!==oldLoad.grainName)){
+const mismatch = detectCropMismatch(safeFields, safeBins, updatedLoad.binId, updatedLoad.grainName, updatedLoad.id);
+if(mismatch && !confirm(`⚠ Crop mismatch: ${mismatch.binName} already has ${mismatch.existing} recorded in it. You're about to save this load as ${updatedLoad.grainName}. Continue and mix grains in this bin?`)) return;
+}
+// Same overfill guard as recording a new load — only relevant if the
+// target bin or the load's weight actually changed; editing something
+// unrelated (driver, truck, notes) shouldn't re-warn about a fill level
+// that was already true before this edit.
+if(updatedLoad.binId!==oldLoad.binId || updatedLoad.net!==oldLoad.net){
+const targetBin = safeBins.find(b=>b.id===updatedLoad.binId);
+if(targetBin){
+const baseStoredLbs = updatedLoad.binId===oldLoad.binId ? Math.max(0, targetBin.storedLbs-oldLoad.net) : targetBin.storedLbs;
+const targetGrain = safeGrains.find(g=>g.name===updatedLoad.grainName) || FALLBACK_GRAIN;
+const overfill = detectBinOverfill({...targetBin, storedLbs:baseStoredLbs}, targetGrain, updatedLoad.net);
+if(overfill && !confirm(`⚠ ${overfill.binName}'s capacity is ${overfill.capacityBu.toLocaleString()} BU — saving this load would bring it to ${overfill.wouldBeBu.toFixed(0)} BU (${overfill.overBy.toFixed(0)} BU over). Continue anyway?`)) return;
+}
+}
+const nb = safeBins.map(b=>{
+let s = b.storedLbs;
+if(b.id===oldLoad.binId) s = Math.max(0, s - oldLoad.net);
+if(b.id===updatedLoad.binId) s = s + updatedLoad.net;
+return {...b, storedLbs:s};
+});
+const nf = safeFields.map(f=>f.id===owner.id?{...f,loads:f.loads.map(l=>l.id===updatedLoad.id?updatedLoad:l)}:f);
+setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
+setEL(null);
+};
+
+const deleteLoad = (load) => {
+const owner = findLoadOwner(load.id);
+if(!owner) return;
+const nf= safeFields.map(f=>f.id===owner.id?{...f,loads:f.loads.filter(l=>l.id!==load.id)}:f);
+const nb = safeBins.map(b=>b.id===load.binId?{...b,storedLbs:Math.max(0,b.storedLbs-load.net)}:b);
+setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
+setEL(null);
+};
+
+// ── Grain marketing contracts ── written one record at a time to its own
+// sub-path (tenants/{tenantId}/agriScale/contracts/{id}) rather than through
+// the whole-list save() above — so, unlike fields/bins before the farm-merge
+// fix, there's no full-node overwrite involved at all and no way for one
+// farm's contract edit to touch another farm's contracts.
+const addOrUpdateContract = async (contract) => {
+const stamped = {...contract, farmId: contract.farmId || farmId || "default"};
+setContracts(cs => cs.some(c=>c.id===stamped.id) ? cs.map(c=>c.id===stamped.id?stamped:c) : [...cs, stamped]);
+try { await dbWrite(`${BASE}/contracts/${stamped.id}`, stamped, token); } catch(e) { console.warn("AgriScale contract save failed", e); }
+};
+const deleteContract = async (id) => {
+setContracts(cs => cs.filter(c=>c.id!==id));
+try { await dbWrite(`${BASE}/contracts/${id}`, null, token); } catch(e) { console.warn("AgriScale contract delete failed", e); }
+};
+
+// Mirror a crop-level contract summary into AgriPlan so contracted revenue
+// shows up in its Actual vs Projected reports alongside actual (realized)
+// revenue — kept as its own node (not merged into fieldHistory's actual
+// bushels) since a contract is a forward commitment, not yet-realized
+// production. Written under the current calendar year; contracts don't
+// carry their own year field, so this reflects "this marketing season's
+// contracts" rather than trying to infer a year from delivery dates that
+// may themselves be free text (see contractDeliveryStatus in core/agriscale.js).
+const mirrorContractsToAgriPlan = useCallback(async (list) => {
+if (!tenantId || !token) return;
+const year = new Date().getFullYear();
+const byCrop = {};
+(list || []).forEach(c => {
+const bu = parseFloat(c.bushels) || 0;
+const price = parseFloat(c.price) || 0;
+if (!c.crop || bu <= 0) return;
+if (!byCrop[c.crop]) byCrop[c.crop] = { contractedBu: 0, pricedBu: 0, contractedRevenue: 0 };
+byCrop[c.crop].contractedBu += bu;
+if (price > 0) { byCrop[c.crop].pricedBu += bu; byCrop[c.crop].contractedRevenue += bu * price; }
+});
+const payload = {};
+Object.entries(byCrop).forEach(([crop, v]) => {
+payload[crop] = { ...v, lastUpdated: new Date().toISOString(), source: "agriscale" };
+});
+try {
+await fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/contracts/${year}.json?auth=${token}`, {
+method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+});
+} catch (e) { console.warn("Contract mirror to AgriPlan failed", e); }
+}, [tenantId, token, AP_BASE]);
+
+// Re-mirror whenever contracts change (add/edit/delete) — gated on !loading
+// so the initial empty state before contracts finish loading doesn't briefly
+// overwrite AgriPlan's copy with nothing.
+useEffect(() => {
+if (loading) return;
+mirrorContractsToAgriPlan(contracts);
+}, [contracts, loading, mirrorContractsToAgriPlan]);
+
+const splitLoad = ({ load, splitA, splitB, binAId, binBId, labelBase }) => {
+const owner = findLoadOwner(load.id);
+if(!owner) return;
+const base = labelBase || owner.loads.findIndex(l=>l.id===load.id) + 1;
+const loadA = { ...load, net:splitA, binId:binAId, splitLabel:`${base}a` };
+const loadB = { ...load, id:nextId.current++, net:splitB, binId:binBId, splitLabel:`${base}b` };
+const nb = safeBins.map(b=>{
+let s = b.storedLbs;
+if(b.id===load.binId) s = Math.max(0, s - load.net);
+if(b.id===binAId) s = s + splitA;
+if(b.id===binBId) s = s + splitB;
+return {...b, storedLbs:s};
+});
+const nf = safeFields.map(f=>{
+if(f.id!==owner.id) return f;
+const newLoads = f.loads.map(l=>l.id===load.id?loadA:l);
+const idx = newLoads.findIndex(l=>l.id===loadA.id);
+newLoads.splice(idx+1, 0, loadB);
+return {...f, loads:newLoads};
+});
+setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
+setEL(null);
+};
+
+const totalLoads = safeFields.reduce((s,f)=>s+(f.loads||[]).length,0);
+// Rows with no insurance unit are dropped here — "Summary by Field" above
+// already covers plain field totals, so a unit-less row would just repeat it.
+const unitBreakdown = useMemo(()=>buildUnitBreakdown(safeFields), [safeFields]);
+const guaranteeProgress = useMemo(()=>buildGuaranteeProgress(safeFields), [safeFields]);
+const binSummary = useMemo(()=>buildBinSummary(safeFields, safeBins, safeGrains), [safeFields, safeBins, safeGrains]);
+const marketingSummary = useMemo(()=>buildMarketingSummary(safeFields, contracts), [safeFields, contracts]);
+const syncLabel = {live:"● LIVE",pushing:"SAVING...",queued:"⚠ QUEUED",error:"ERROR",init:"INIT"}[syncStatus]||"";
+const syncColor = {live:"#4a5568",pushing:"#C07010",queued:"#dc2626",error:"#c03030",init:"#aaa"}[syncStatus]||"#aaa";
+const btnBase = {cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s",border:"1px solid #ccc4b8"};
+
+// ── Import fields from FieldLog ──────────────────────────────────
+const openFLImport = async () => {
+setFLLoading(true); setFLImportModal(true); setFLSelected(new Set());
+try {
+const flBase = (!farmId || farmId === "default")
+? `tenants/${tenantId}/fieldlog`
+: `tenants/${tenantId}/farms/${farmId}/fieldlog`;
+const yr = new Date().getFullYear();
+const [fieldData, actData, apData] = await Promise.all([
+dbRead(`${flBase}/fields`, token).catch(() => null),
+dbRead(`${flBase}/activities`, token).catch(() => null),
+dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null),
+]);
+const flFields = obj2arr(fieldData || {}).filter(Boolean);
+const activities = obj2arr(actData || {}).filter(Boolean);
+// Farm/tract lookup by field name, for the Farm+Field naming preview below.
+const norm = s => (s||"").trim().toLowerCase();
+const apByName = {};
+obj2arr(apData || {}).filter(Boolean).forEach(a => { if (a?.common) apByName[norm(a.common)] = a; });
+setFlApByName(apByName);
+// Only fields that have at least one seeding activity
+const seededIds = new Set(
+activities.filter(a => a.type === "seeding").map(a => a.fieldId)
+);
+const seededFields = flFields.filter(f => seededIds.has(f.id));
+// Exclude fields already in AgriScale by name
+const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
+const newOnly = seededFields.filter(f => !existingNames.has((f.name||"").trim().toLowerCase()));
+setFLFields(newOnly);
+setFLSelected(new Set(newOnly.map(f => f.id)));
+setFLAcresOv(Object.fromEntries(newOnly.map(f => [f.id, String(f.acres || apByName[norm(f.name)]?.acres || "")])));
+} catch(e) { setFLFields([]); }
+finally { setFLLoading(false); }
+};
+
+// ── Make sure every crop coming in from an import exists as a commodity ──
+// ── Normalize a crop name so blends read the same everywhere, regardless of source ──
+// AgriPlan stores blends like "Austrians/Mustard"; FieldLog shows them as "Austrians + Mustard".
+// Canonical form used throughout AgriScale is " + ", so both sources resolve to one commodity.
+const normalizeCropName = (crop) => (crop||"").replace(/\s*\/\s*/g, " + ").trim();
+
+const ensureGrainsForCrops = (cropNames, currentGrains) => {
+const canon = s => (s||"").toLowerCase().replace(/[^a-z0-9]+/g, "");
+let ng = [...currentGrains];
+cropNames.forEach(crop => {
+if(!crop) return;
+const label = crop.trim().toUpperCase();
+if(!label || label.toLowerCase()==="chem-fallow") return;
+const exists = ng.some(g=>canon(g.name)===canon(label));
+if(!exists){
+const color = GRAIN_COLORS[ng.length % GRAIN_COLORS.length];
+ng.push({ name: label, bushel_lbs: 60, color });
+}
+});
+return ng;
+};
+
+const importFLFields = async () => {
+const toImport = flFields.filter(f => flSelected.has(f.id));
+if(!toImport.length) { setFLImportModal(false); return; }
+
+// Pull AgriPlan fields for this tenant to get insurance/landlord/share data
+let apFields = [];
+let cropPrices = {};
+try {
+const yr = new Date().getFullYear();
+const [apData, cpData] = await Promise.all([
+dbRead(`${AP_BASE}/fields/${yr}`, token).catch(()=>null),
+dbRead(`${AP_BASE}/cropPrices`, token).catch(()=>null),
+]);
+apFields = obj2arr(apData||{}).filter(Boolean);
+// cropPrices may be array or object
+const cpArr = Array.isArray(cpData) ? cpData : obj2arr(cpData||{});
+cpArr.forEach(p=>{ if(p?.crop) cropPrices[p.crop]={priceGuar:p.priceGuar||0,projPrice:p.projPrice||0}; });
+} catch(e) { console.warn("AgriScale: could not load AgriPlan data", e.message); }
+
+const norm = s => (s||"").trim().toLowerCase();
+
+const newFields = toImport.map(f => {
+// Match to AgriPlan field by name
+const ap = apFields.find(a => norm(a.common) === norm(f.name));
+// Get price election for the planned crop
+const cp = ap?.crop ? cropPrices[ap.crop] : null;
+// Farm/tract for the naming choice: prefer the matched AgriPlan record's
+// farm field, fall back to the "Farm: X" convention FieldLog notes use.
+const farmTract = ap?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "";
+
+return {
+id: genId(),
+name: buildImportName(f.name, farmTract, ap?.fieldNum),
+acres: parseFloat(flAcresOv[f.id]) || 0,
+farmId: farmId || "default",
+loads: [], costs: {},
+grainPrice: cp?.projPrice ? String(cp.projPrice) : "",
+// Pull from AgriPlan if available
+landlord: ap?.landlord || "",
+cropShare: ap?.sharePercent!=null ? String(ap.sharePercent) : "",
+insType: ap?.insuranceType || "",
+insCoverageLevel: ap?.coverageLevel!=null ? String(ap.coverageLevel) : "",
+insGuaranteedYield:ap?.aphYield!=null ? String(ap.aphYield) : "",
+insPriceElection: cp?.priceGuar ? String(cp.priceGuar) : "",
+insInsuredAcres: ap?.insuredAcres!=null ? String(ap.insuredAcres) : "",
+insuranceUnits: ap?.insuranceUnits || [],
+};
+});
+
+const cropsUsed = toImport.map(f => apFields.find(a => norm(a.common) === norm(f.name))?.crop).filter(Boolean).map(normalizeCropName);
+const ng = ensureGrainsForCrops(cropsUsed, grains);
+
+const nf = [...fields, ...newFields];
+setFields(nf); setGrains(ng); save(nf, bins, ng, trucks);
+setFLImportModal(false);
+};
+
+// ── Import fields directly from AgriPlan (for tenants not using FieldLog) ──
+const openAPImport = async () => {
+setAPLoading(true); setAPImportModal(true); setAPSelected(new Set());
+try {
+const yr = new Date().getFullYear();
+const apData = await dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null);
+const apAll = obj2arr(apData || {}).filter(Boolean);
+// Exclude fields already in AgriScale by name
+const existingNames = new Set(fields.map(f => f.name.trim().toLowerCase()));
+const newOnly = apAll.filter(a => a?.common && a.crop?.trim().toLowerCase()!=="chem-fallow" && !existingNames.has(a.common.trim().toLowerCase()));
+setAPFields(newOnly);
+setAPSelected(new Set(newOnly.map(a => a.common)));
+setAPAcresOv(Object.fromEntries(newOnly.map(a => [a.common, String(a.acres || "")])));
+} catch(e) { setAPFields([]); }
+finally { setAPLoading(false); }
+};
+
+const importAPFields = async () => {
+const toImport = apFields.filter(a => apSelected.has(a.common));
+if(!toImport.length) { setAPImportModal(false); return; }
+
+let cropPrices = {};
+try {
+const cpData = await dbRead(`${AP_BASE}/cropPrices`, token).catch(()=>null);
+const cpArr = Array.isArray(cpData) ? cpData : obj2arr(cpData||{});
+cpArr.forEach(p=>{ if(p?.crop) cropPrices[p.crop]={priceGuar:p.priceGuar||0,projPrice:p.projPrice||0}; });
+} catch(e) {}
+
+const newFields = toImport.map(ap => {
+const cp = ap.crop ? cropPrices[ap.crop] : null;
+return {
+id: genId(),
+name: buildImportName(ap.common, ap.farm, ap.fieldNum),
+acres: parseFloat(apAcresOv[ap.common]) || 0,
+farmId: farmId || "default",
+loads: [], costs: {},
+grainPrice: cp?.projPrice ? String(cp.projPrice) : "",
+// Pull straight from AgriPlan
+landlord: ap.landlord || "",
+cropShare: ap.sharePercent!=null ? String(ap.sharePercent) : "",
+insType: ap.insuranceType || "",
+insCoverageLevel: ap.coverageLevel!=null ? String(ap.coverageLevel) : "",
+insGuaranteedYield:ap.aphYield!=null ? String(ap.aphYield) : "",
+insPriceElection: cp?.priceGuar ? String(cp.priceGuar) : "",
+insInsuredAcres: ap.insuredAcres!=null ? String(ap.insuredAcres) : "",
+insuranceUnits: ap.insuranceUnits || [],
+};
+});
+
+const nf = [...fields, ...newFields];
+const cropsUsed = toImport.map(a => a.crop).filter(Boolean).map(normalizeCropName);
+const ng = ensureGrainsForCrops(cropsUsed, grains);
+setFields(nf); setGrains(ng); save(nf, bins, ng, trucks);
+setAPImportModal(false);
+};
+
+// ── Export harvest to FieldLog ────────────────────────────────────
+const openFLExport = async () => {
+setFLExporting(false); setFLExportModal(true);
+try {
+const flBase = (!farmId || farmId === "default")
+? `tenants/${tenantId}/fieldlog`
+: `tenants/${tenantId}/farms/${farmId}/fieldlog`;
+const flFieldData = await dbRead(`${flBase}/fields`, token).catch(() => null);
+const flFieldList = obj2arr(flFieldData || {}).filter(Boolean);
+const flByName = {};
+flFieldList.forEach(f => { flByName[f.name.trim().toLowerCase()] = f; });
+
+// AgriPlan match, for the optional "also send actuals to AgriPlan" path.
+// fieldHistory is keyed by AgriPlan's own field.common string, and Firebase
+// paths are case-sensitive — so the write below has to use AgriPlan's exact
+// common value, not AgriScale's own field name, even though the match here
+// is case/whitespace-insensitive. A Set of matched-or-not would silently
+// write to the wrong (never-read) key whenever the two names differ only in
+// case or spacing.
+const yr = new Date().getFullYear();
+const apFieldData = await dbRead(`${AP_BASE}/fields/${yr}`, token).catch(() => null);
+const apFieldList = obj2arr(apFieldData || {}).filter(Boolean);
+const apByName = new Map(apFieldList.map(f => [(f.common||"").trim().toLowerCase(), { common: f.common, acres: parseFloat(f.acres)||0 }]));
+
+// Build export rows — one per AgriScale field with loads.
+// Bushels come from each load's own net weight + grainBushelLbs (the value
+// actually stored on the load at record time — not a separate grain-name
+// lookup, which can drift if that grain's lbs/bu setting changes later).
+const rows = safeFields.map(f => {
+const loads = (f.loads||[]).filter(Boolean);
+if (!loads.length) return null;
+const totalLbs = sumLoadsLbs(loads);
+const totalBu = sumLoadsBushels(loads);
+const apMatch = apByName.get(f.name.trim().toLowerCase()) || null;
+// AgriScale's own acres is often left blank — it mostly cares about
+// weight, not acreage — so fall back to AgriPlan's acres (a required
+// field there) whenever AgriScale doesn't have a usable value. Without
+// this, yield/ac silently comes out blank even though bushels are real.
+const ownAcres = parseFloat(f.acres) || 0;
+const acres = ownAcres > 0 ? ownAcres : (apMatch?.acres || 0);
+const yieldPerAc = acres > 0 ? (totalBu / acres).toFixed(1) : "";
+const lastDate = lastLoadDateISO(loads);
+const flMatch = flByName[f.name.trim().toLowerCase()];
+return {
+asFieldId: f.id,
+name: f.name,
+acres,
+totalLbs: Math.round(totalLbs),
+totalBu: Math.round(totalBu),
+yieldPerAc,
+grainName: loads[0]?.grainName || "Unknown",
+date: lastDate,
+flFieldId: flMatch?.id || null,
+flBase,
+apCommon: apMatch?.common || null,
+};
+}).filter(Boolean);
+
+setFLExportData(rows);
+setFLExportSel(new Set(rows.filter(r => r.flFieldId || r.apCommon).map(r => r.asFieldId)));
+} catch(e) { setFLExportData([]); }
+};
+
+const exportToFieldLog = async () => {
+setFLExporting(true);
+try {
+const selected = flExportData.filter(r => flExportSel.has(r.asFieldId));
+const toFieldLog = selected.filter(r => r.flFieldId);
+const toAgriPlan = sendActualsToAgriPlan ? selected.filter(r => r.apCommon) : [];
+for (const r of toFieldLog) {
+const actId = genId();
+const activity = {
+id: actId,
+fieldId: r.flFieldId,
+type: "harvest",
+date: r.date,
+data: {
+crop: r.grainName,
+yieldPerAc: r.yieldPerAc,
+totalBushels: String(r.totalBu),
+acres: String(r.acres),
+},
+notes: `Exported from AgriScale — ${r.totalLbs.toLocaleString()} lbs`,
+};
+await dbWrite(`${r.flBase}/activities/${actId}`, activity, token);
+}
+// Push actual production into AgriPlan's own field-history record — the
+// same place its History tab and APH/rotation suggestions already read
+// from (crop/yield/acres), just with bushels/lastUpdated/source added on
+// top. That's real production data showing up where AgriPlan already
+// tracks production, not a second parallel node only this badge reads.
+// Separate from the `fields` list AgriPlan owns outright (which it
+// overwrites wholesale on every autosave), so this write can't get
+// clobbered by an open AgriPlan tab.
+const apFailures = [];
+for (const r of toAgriPlan) {
+try {
+const aYr = new Date(r.date).getFullYear();
+const url = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${AP_BASE}/fieldHistory/${encodeURIComponent(r.apCommon)}/${aYr}.json?auth=${token}`;
+const res = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
+body: JSON.stringify({
+crop: r.grainName, yield: r.yieldPerAc, acres: String(r.acres),
+bushels: r.totalBu, lastUpdated: new Date().toISOString(), source: "agriscale",
+}) });
+// fetch() only rejects on a real network failure — a 401/403/400 from
+// Firebase still resolves normally, so this has to be checked explicitly
+// or a permission/auth problem here would silently look like success.
+if (!res.ok) {
+const body = await res.text().catch(() => "");
+apFailures.push(`${r.name}: HTTP ${res.status} ${body}`.trim());
+}
+} catch(e) { apFailures.push(`${r.name}: ${e.message}`); }
+}
+setFLExportModal(false);
+const parts = [];
+const apSent = toAgriPlan.length - apFailures.length;
+if (toFieldLog.length) parts.push(`${toFieldLog.length} harvest ${toFieldLog.length===1?"activity":"activities"} added to FieldLog`);
+if (apSent) parts.push(`${apSent} field${apSent===1?"":"s"} sent to AgriPlan as actual production`);
+if (apFailures.length) parts.push(`⚠ AgriPlan write failed for: ${apFailures.join("; ")}`);
+alert(`${apFailures.length ? "⚠️" : "✅"} ${parts.join(" · ")||"Nothing to export"}`);
+} catch(e) {
+alert("Export failed: " + e.message);
+} finally { setFLExporting(false); }
+};
+
+const TABS = ["SCALE","BINS","FIELDS","MARKET","COMM",...(perms.canReport?["REPORT"]:[])];
+if(loading) return <div style={{textAlign:"center",padding:"60px",fontFamily:"'IBM Plex Mono',monospace",color:"#6a7280"}}>LOADING AGRISCALE...</div>;
+
+return (
+<>
+<style>{CSS}</style>
+<div className="as-wrap" style={{minHeight:"calc(100vh - 50px)",background:AS.pageGradient,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",fontFamily:"'IBM Plex Mono',monospace"}}>
+<div style={{width:"100%",maxWidth:"420px",position:"relative",overflow:"hidden"}}>
+<div aria-hidden="true" style={{position:"absolute",right:"-60px",bottom:"-60px",width:"280px",height:"280px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.1,pointerEvents:"none"}}/>
+
+{/* Header */}
+<div style={{height:"4px",borderRadius:"4px",background:`linear-gradient(90deg, ${AS.logoGreenSoft}, ${AS.logoGold})`,marginBottom:"12px"}}/>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}}>
+<div>
+<div style={{fontSize:"18px",fontWeight:700,color:AS.textOnDark,letterSpacing:"0.01em"}}>AgriScale</div>
+<div style={{fontSize:"12px",color:AS.textOnDarkSoft,marginTop:"1px"}}>{farmName || "Default Farm"}</div>
+</div>
+<div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"180px"}}>
+<span style={{fontSize:"10px",color:AS.textSoft,background:AS.cardAlt,border:`1px solid ${AS.border}`,borderRadius:"20px",padding:"3px 9px"}}>{operatorName}</span>
+<span style={{fontSize:"10px",fontWeight:600,letterSpacing:"0.02em",color:syncStatus==="live"?AS.tealText:syncStatus==="queued"?AS.danger:AS.textSoft,background:syncStatus==="live"?AS.tealBg:syncStatus==="queued"?AS.dangerBg:AS.cardAlt,borderRadius:"20px",padding:"3px 9px"}}>{syncLabel}</span>
+</div>
+</div>
+
+{/* Tabs */}
+<div style={{display:"flex",gap:"4px",marginBottom:"14px",background:AS.cardAlt,borderRadius:"10px",padding:"4px"}}>
+{TABS.map(t=>(
+<button key={t} onClick={()=>setTab(t)} style={{cursor:"pointer",flex:1,padding:"8px 4px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"8px",background:tab===t?AS.card:"transparent",color:tab===t?AS.teal:AS.textSoft,border:"none",boxShadow:tab===t?`0 0 0 1px ${AS.border}`:"none",textTransform:"capitalize"}}>
+{t.charAt(0)+t.slice(1).toLowerCase()}
+</button>
+))}
+</div>
+
+{/* ── SCALE TAB ── */}
+{tab==="SCALE"&&(<>
+{/* Destination bin — compact card with an inline fill bar instead of the full silo
+graphic (still available on the BINS tab); stays on whatever bin was last picked. */}
+{(()=>{
+const g=safeGrains.find(x=>x&&x.name===activeBin?.grainName)||FALLBACK_GRAIN;
+const pct=activeBin&&activeBin.capacityBu>0?Math.min(100,activeBin.storedLbs/(g.bushel_lbs||60)/activeBin.capacityBu*100):0;
+return(
+<div style={{background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"10px 12px",marginBottom:"8px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"7px"}}>
+<span style={{fontSize:"11px",color:AS.textFaint,fontFamily:"'Barlow',sans-serif"}}>Destination bin</span>
+{activeBin&&<span style={{fontSize:"11px",color:AS.teal,fontWeight:600,fontFamily:"'Barlow',sans-serif"}}>{pct.toFixed(0)}% full</span>}
+</div>
+<select
+value={activeBinId!=null?String(activeBinId):""}
+onChange={e=>{ const picked=sortedBins.find(b=>String(b.id)===e.target.value); if(picked) setABId(picked.id); }}
+style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,border:"none",borderRadius:"8px",color:AS.text,outline:"none",marginBottom:"7px"}}
+>
+{sortedBins.map(b=>{
+const bg=safeGrains.find(x=>x&&x.name===b.grainName)||FALLBACK_GRAIN;
+const bpct=b.capacityBu>0?Math.min(100,b.storedLbs/(bg.bushel_lbs||60)/b.capacityBu*100):0;
+return(<option key={b.id} value={String(b.id)}>{b.name}{b.location?` — ${b.location}`:""} ({bpct.toFixed(0)}%)</option>);
+})}
+</select>
+<div style={{height:"6px",borderRadius:"4px",background:AS.tealBg,overflow:"hidden"}}>
+<div style={{width:`${pct}%`,height:"100%",background:pct>=95?AS.danger:pct>=80?AS.amber:AS.teal,transition:"width .2s"}}/>
+</div>
+</div>
+);
+})()}
+
+{/* Display unit + commodity + field + insurance unit + truck */}
+<div style={{display:"flex",flexDirection:"column",gap:"8px",marginBottom:"8px"}}>
+{/* Unit toggle */}
+<div style={{display:"flex",gap:"5px",background:AS.cardAlt,borderRadius:"10px",padding:"4px"}}>
+{UNITS.map(u=>(
+<button key={u} onClick={()=>setUnit(u)} style={{cursor:"pointer",flex:1,padding:"7px 0",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"7px",background:unit===u?AS.card:"transparent",border:"none",color:unit===u?AS.text:AS.textSoft,boxShadow:unit===u?`0 0 0 1px ${AS.border}`:"none"}}>
+{u}
+</button>
+))}
+</div>
+{/* Commodity */}
+<div style={{background:AS.amberBg,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.amberText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Commodity · {grain.bushel_lbs} lbs/bu</div>
+<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+{safeGrains.map((g,i)=>(
+<button key={i} onClick={()=>setGrainIdx(i)} style={{cursor:"pointer",padding:"6px 12px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",border:"none",background:grainIdx===i?(g.color||AS.amber):"rgba(255,255,255,.55)",color:grainIdx===i?"#fff":AS.amberText}}>
+{g.name}
+</button>
+))}
+</div>
+</div>
+{/* Field */}
+<div style={{background:AS.greenBg,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.greenText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Field</div>
+<select
+value={activeFieldId!=null?String(activeFieldId):""}
+onChange={e=>{ const picked=sortedFields.find(f=>String(f.id)===e.target.value); if(picked) setAFId(picked.id); }}
+style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.greenText,outline:"none"}}
+>
+{sortedFields.map(f=>(
+<option key={f.id} value={String(f.id)}>{f.name} ({(f.loads||[]).length})</option>
+))}
+</select>
+{/* Live off-field bushels + avg bu/ac — same math the REPORT tab's per-field
+cards use (sumLoadsBushels), just surfaced right where the loads are being
+logged so whoever's running the scale can see it climb load by load without
+switching tabs. Recomputes automatically since activeField comes straight
+from state, which recordLoad() updates on every "Log load." */}
+{activeField && (activeField.loads||[]).length > 0 && (()=>{
+const fieldTotalBu = sumLoadsBushels(activeField.loads);
+const fieldAcres = parseFloat(activeField.acres) || 0;
+return (
+<div style={{display:"flex",gap:"10px",marginTop:"9px",paddingTop:"9px",borderTop:"1px solid rgba(255,255,255,.6)"}}>
+<div style={{flex:1}}>
+<div style={{fontSize:"9px",letterSpacing:"0.08em",color:AS.greenText,opacity:0.65,fontFamily:"'Barlow',sans-serif"}}>OFF FIELD</div>
+<div style={{fontSize:"16px",fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:AS.greenText}}>{fieldTotalBu.toFixed(0)} bu</div>
+</div>
+<div style={{flex:1}}>
+<div style={{fontSize:"9px",letterSpacing:"0.08em",color:AS.greenText,opacity:0.65,fontFamily:"'Barlow',sans-serif"}}>AVG</div>
+<div style={{fontSize:"16px",fontWeight:700,fontFamily:"'IBM Plex Mono',monospace",color:AS.greenText}}>{fieldAcres>0?(fieldTotalBu/fieldAcres).toFixed(1)+" bu/ac":"—"}</div>
+</div>
+</div>
+);
+})()}
+</div>
+{/* Insurance Unit — pulled from the active field's Insurance Unit(s) set in AgriPlan; defaults to None. */}
+<div style={{background:AS.blueBg,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.blueText,opacity:0.75,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Insurance unit</div>
+<select
+value={activeUnit||""}
+onChange={e=>setActiveUnit(e.target.value)}
+style={{width:"100%",padding:"8px 9px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:"rgba(255,255,255,.55)",border:"none",borderRadius:"8px",color:AS.blueText,outline:"none"}}
+>
+<option value="">None</option>
+{fieldInsUnits.map(u=>(<option key={u} value={u}>{u}</option>))}
+</select>
+</div>
+{/* Truck */}
+<div style={{background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.textFaint,marginBottom:"7px",fontFamily:"'Barlow',sans-serif"}}>Truck</div>
+<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+{safeTrucks.map(t=>(
+<button key={t.id} onClick={()=>setTruckColor(t.id)} style={{cursor:"pointer",padding:"6px 12px",fontSize:"12px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"20px",background:t.hex,color:t.text,border:"none",boxShadow:truckColor===t.id?`0 0 0 2px ${AS.text}`:"none"}}>
+{t.name}
+</button>
+))}
+</div>
+</div>
+</div>
+
+{/* Weight display — dark "instrument" readout, accent stripe matches the active
+commodity's own color so it visually ties back to the Commodity card above. */}
+<div style={{background:AS.readout,borderRadius:"14px",padding:"20px 20px 16px",marginBottom:"10px",position:"relative",overflow:"hidden",border:"1px solid rgba(255,255,255,.08)",borderTop:`3px solid ${grain.color||AS.amber}`}}>
+<div style={{textAlign:"center"}}>
+<div style={{fontSize:"11px",color:AS.readoutMuted,letterSpacing:"0.12em",marginBottom:"6px",fontFamily:"'Barlow',sans-serif"}}>NET WEIGHT</div>
+<div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:"8px"}}>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"52px",fontWeight:700,color:AS.readoutText,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>
+{fmtWt(netLbs,unit,grain.bushel_lbs).value}
+</span>
+<span style={{fontSize:"18px",color:grain.color||AS.amber,fontWeight:600,fontFamily:"'Barlow',sans-serif"}}>{fmtWt(netLbs,unit,grain.bushel_lbs).label}</span>
+</div>
+</div>
+<div style={{display:"flex",gap:"32px",marginTop:"16px",paddingTop:"12px",borderTop:`1px solid rgba(255,255,255,.1)`,justifyContent:"center"}}>
+{[{label:"GROSS",lbs:rawLbs},{label:"TARE",lbs:tare}].map(({label,lbs})=>(
+<div key={label} style={{textAlign:"center"}}>
+<div style={{fontSize:"10px",color:AS.readoutMuted,letterSpacing:"0.1em",fontFamily:"'Barlow',sans-serif"}}>{label}</div>
+<div style={{fontSize:"16px",color:AS.readoutText,fontFamily:"'IBM Plex Mono',monospace",fontWeight:600}}>{fmtWt(lbs,unit,grain.bushel_lbs).value} <span style={{fontSize:"11px",color:AS.readoutMuted}}>{fmtWt(lbs,unit,grain.bushel_lbs).label}</span></div>
+</div>
+))}
+</div>
+</div>
+
+{/* Tare button */}
+<button onClick={()=>setTare(rawLbs)} style={{cursor:"pointer",width:"100%",padding:"11px",fontSize:"13px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"10px",marginBottom:"7px"}}>
+Set tare — {fmtWt(rawLbs,unit,grain.bushel_lbs).value} {fmtWt(rawLbs,unit,grain.bushel_lbs).label}
+</button>
+
+{/* Numpad */}
+<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"7px",marginBottom:"9px"}}>
+{["7","8","9","4","5","6","1","2","3","⌫","0","CLR"].map(k=>(
+<button key={k} className="as-numkey" onClick={()=>onKey(k)} style={{cursor:"pointer",padding:"15px 0",fontSize:"17px",fontWeight:500,fontFamily:"'Barlow',sans-serif",borderRadius:"10px",background:k==="CLR"?AS.dangerBg:k==="⌫"?AS.amberBg:AS.cardAlt,color:k==="CLR"?AS.danger:k==="⌫"?AS.amberText:AS.text,border:"none"}}>
+{k}
+</button>
+))}
+</div>
+
+{/* Record button */}
+<button className="as-record-btn" onClick={recordLoad} disabled={!canRecord} style={{width:"100%",padding:"15px",fontSize:"14px",fontWeight:600,fontFamily:"'Barlow',sans-serif",letterSpacing:"0.02em",background:canRecord?AS.teal:AS.borderStrong,color:canRecord?"#fff":AS.textFaint,border:"none",borderRadius:"12px",cursor:canRecord?"pointer":"not-allowed",transition:"all .15s",animation:canRecord?"as-pulse 2s infinite":"none"}}>
+Log load
+</button>
+
+{/* Recent loads for active field */}
+{(activeField?.loads||[]).length > 0 && (
+<div style={{marginTop:"12px",background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"10px 12px"}}>
+<div style={{fontSize:"11px",color:AS.textFaint,marginBottom:"6px",fontFamily:"'Barlow',sans-serif"}}>Recent loads — {activeField.name}</div>
+<div style={{maxHeight:"320px",overflowY:"auto"}}>
+{[...(activeField?.loads||[])].reverse().slice(0,10).map(l=>{
+const f=fmtWt(l.net,unit,l.grainBushelLbs||60);
+const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
+const tHex=l.truckColor||"#f0f0f0";
+const bn=bins.find(b=>b.id===l.binId);
+return(<div key={l.id} style={{borderBottom:`1px solid ${AS.border}`,padding:"9px 2px",color:AS.text,fontFamily:"'Barlow',sans-serif"}}>
+<div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+<div style={{width:"10px",height:"10px",borderRadius:"50%",background:tHex,flexShrink:0}}/>
+<span style={{flex:1,fontSize:"18px",fontWeight:600,color:AS.text}}>{bu} <span style={{fontSize:"12px",color:AS.textFaint,fontWeight:400}}>bu</span></span>
+<span style={{fontSize:"13px",color:AS.textSoft}}>{f.value} {f.label}</span>
+</div>
+<div style={{display:"flex",gap:"7px",alignItems:"center",marginTop:"5px",fontSize:"11px",flexWrap:"wrap"}}>
+<span style={{background:AS.amberBg,borderRadius:"20px",padding:"2px 9px",color:AS.amberText}}>{l.grainName||"?"}</span>
+{l.insuranceUnit&&l.insuranceUnit!=="none"&&<span style={{background:AS.blueBg,borderRadius:"20px",padding:"2px 9px",color:AS.blueText}}>{l.insuranceUnit}</span>}
+<span style={{color:AS.textSoft}}>{bn?.name||"?"}</span>
+{l.splitLabel&&<span style={{color:AS.textFaint}}>#{l.splitLabel}</span>}
+<span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
+<span style={{width:"8px",height:"8px",borderRadius:"2px",background:tHex,flexShrink:0}}/>
+<span style={{color:AS.textFaint}}>{l.truckName||""}</span>
+</span>
+<span style={{color:AS.textFaint}}>{l.date} {l.timeOnly}</span>
+<span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
+<button onClick={()=>setEL({load:l,fieldId:activeField.id})} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"20px"}}>Edit</button>
+<button onClick={()=>{if(confirm("Delete this load?"))deleteLoad(l);}} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.dangerBg,color:AS.danger,border:"none",borderRadius:"20px"}}>✕</button>
+</span>
+</div>
+</div>);
+})}
+</div>
+<div style={{marginTop:"7px",fontSize:"12px",fontWeight:600,color:AS.teal,fontFamily:"'Barlow',sans-serif"}}>
+Total: {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).value} {fmtWt((activeField?.loads||[]).reduce((s,l)=>s+l.net,0),unit,grain.bushel_lbs).label}
+</div>
+</div>
+)}
+</>)}
+
+{/* ── BINS TAB ── */}
+{tab==="BINS"&&(<>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>BIN STORAGE</div>
+{perms.canEditBins&&<button onClick={()=>{const nb=[...bins,{id:Date.now(),name:`BIN ${bins.length+1}`,farmId:farmId||"default",capacityBu:50000,storedLbs:0,grainName:grains[0]?.name||"WHEAT",location:""}];setBins(nb);save(fields,nb,grains,trucks);}} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD BIN</button>}
+</div>
+{safeBins.map(b=>(
+<div key={b.id} style={{marginBottom:"10px"}}>
+<BinGauge bin={b} grains={grains}/>
+{perms.canEditBins&&<button onClick={()=>setEB(b)} style={{...btnBase,width:"100%",padding:"5px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#6a7280",boxShadow:"0 1px 0 #c8ccc0",marginTop:"4px"}}>EDIT {b.name}</button>} </div>
+))}
+</>)}
+
+{/* ── FIELDS TAB ── */}
+{tab==="FIELDS"&&(<>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px",flexWrap:"wrap"}}>
+<div style={{fontSize:"14px",fontWeight:700,color:AS.textOnDark,fontFamily:"'Barlow',sans-serif"}}>Fields</div>
+<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+{perms.canEditFields&&<button onClick={openFLImport} style={{cursor:"pointer",padding:"6px 11px",fontSize:"11px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.greenBg,color:AS.greenText,border:"none",borderRadius:"20px"}}>↓ From FieldLog</button>}
+{perms.canEditFields&&<button onClick={openAPImport} style={{cursor:"pointer",padding:"6px 11px",fontSize:"11px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.amberBg,color:AS.amberText,border:"none",borderRadius:"20px"}}>↓ From AgriPlan</button>}
+{perms.canEditFields&&<button onClick={()=>{const nf=[...fields,{id:Date.now(),name:`FIELD ${safeFields.length+1}`,farmId:farmId||"default",loads:[],acres:0,costs:{},grainPrice:"",landlord:"",cropShare:"",insCoverageLevel:"",insGuaranteedYield:"",insPriceElection:"",insType:"",insInsuredAcres:""}];setFields(nf);save(nf,bins,grains,trucks);}} style={{cursor:"pointer",padding:"6px 11px",fontSize:"11px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.card,color:AS.text,border:"none",borderRadius:"20px"}}>+ Add field</button>}
+</div>
+</div>
+{sortedFields.map(f=>{
+const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
+return(<div key={f.id} style={{background:AS.card,border:`1px solid ${AS.border}`,borderRadius:"12px",padding:"12px 14px",marginBottom:"9px"}}>
+<div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"8px"}}>
+<div style={{flex:1}}>
+<div style={{fontSize:"14px",fontWeight:600,color:AS.text,fontFamily:"'Barlow',sans-serif",marginBottom:"4px"}}>{f.name}</div>
+<div style={{fontSize:"11px",color:AS.textSoft,lineHeight:1.8,fontFamily:"'Barlow',sans-serif"}}>
+{f.acres?<div>Acres: {f.acres}</div>:null}
+<div>Loads: {(f.loads||[]).length} · Total: {totalBu.toFixed(0)} bu</div>
+{f.grainPrice&&perms.canViewCosts&&<div style={{color:AS.teal,fontWeight:600}}>Revenue: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
+{f.landlord&&perms.canViewCropShare&&<div>Landlord: {f.landlord} {f.cropShare?`· ${f.cropShare}%`:""}</div>}
+{perms.canViewInsurance&&f.insType&&<div style={{color:AS.blue}}>Insurance: {f.insType} {f.insCoverageLevel?`· ${f.insCoverageLevel}%`:""} {f.insGuaranteedYield?`· ${f.insGuaranteedYield} bu/ac guar.`:""}</div>}
+{perms.canViewInsurance&&(f.insuranceUnits||[]).length>0&&<div style={{color:AS.blue}}>Units: {f.insuranceUnits.map(u=>typeof u==="string"?u:`${u?.name||""}${u?.acres?` (${u.acres}ac)`:""}`).join(", ")}</div>}
+</div>
+</div>
+{perms.canEditFields&&(
+<div style={{display:"flex",gap:"4px",flexShrink:0}}>
+<button onClick={()=>setEF(f)} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"20px"}}>Edit</button>
+{safeFields.length>1&&<button onClick={()=>{if(!confirm("Delete?"))return;const nf=fields.filter(ff=>ff.id!==f.id);setFields(nf);save(nf,bins,grains,trucks);}} style={{cursor:"pointer",padding:"4px 9px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.dangerBg,color:AS.danger,border:"none",borderRadius:"20px"}}>✕</button>}
+</div>
+)}
+</div>
+{/* Mini load log */}
+{(f.loads||[]).length>0&&(
+<div style={{marginTop:"9px",borderTop:`1px solid ${AS.border}`,paddingTop:"7px",maxHeight:"120px",overflowY:"auto"}}>
+{[...(f.loads||[])].reverse().map(l=>{
+const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
+const tHex=l.truckColor||"#f0f0f0";
+const bn=bins.find(b=>b.id===l.binId);
+return(<div key={l.id} style={{display:"flex",gap:"7px",alignItems:"center",fontSize:"11px",color:AS.textSoft,padding:"3px 0",borderBottom:`1px solid ${AS.border}`,fontFamily:"'Barlow',sans-serif"}}>
+<div style={{width:"8px",height:"8px",borderRadius:"50%",background:tHex,flexShrink:0}}/>
+<span style={{color:AS.text,fontWeight:600}}>{bu} bu {l.splitLabel?`#${l.splitLabel}`:""}</span>
+<span>{l.grainName}</span>
+<span>{bn?.name||"?"}</span>
+<span style={{marginLeft:"auto",color:AS.textFaint}}>{l.date} {l.timeOnly}</span>
+</div>);
+})}
+</div>
+)}
+</div>);
+})}
+</>)}
+
+{/* ── MARKET TAB ── */}
+{tab==="MARKET"&&(<>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"12px"}}>GRAIN MARKETING</div>
+{marketingSummary.length===0 && (
+<div style={{fontSize:"10px",color:"#b0a870",textAlign:"center",padding:"14px 0",marginBottom:"12px"}}>No harvested bushels or contracts logged yet</div>
+)}
+{marketingSummary.map(m=>{
+const over = m.uncommittedBu < 0;
+return (
+<div key={m.crop} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"12px",color:"#4a5568",letterSpacing:"0.08em",marginBottom:"6px"}}>{m.crop}</div>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"6px",textAlign:"center"}}>
+<div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",color:"#4a7535"}}>{m.harvestedBu.toFixed(0)}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em"}}>HARVESTED</div>
+</div>
+<div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",color:"#1E5078"}}>{m.contractedBu.toFixed(0)}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em"}}>CONTRACTED</div>
+</div>
+<div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"15px",color:over?"#c47d0a":"#4a5568"}}>{Math.abs(m.uncommittedBu).toFixed(0)}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.1em"}}>{over?"FORWARD SOLD":"UNCOMMITTED"}</div>
+</div>
+</div>
+</div>
+);
+})}
+
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"10px",marginTop:"20px"}}>CONTRACTS</div>
+{contracts.length===0 && !addingContract && (
+<div style={{fontSize:"10px",color:"#b0a870",textAlign:"center",padding:"14px 0",marginBottom:"8px"}}>No contracts logged yet</div>
+)}
+{[...contracts].sort((a,b)=>(a.crop||"").localeCompare(b.crop||"")).map(c=>{
+const ds = contractDeliveryStatus(c.delivery);
+const deliveryLabel = /^\d{4}-\d{2}-\d{2}$/.test(c.delivery)
+? new Date(c.delivery+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})
+: c.delivery;
+return editingContractId===c.id ? (
+<ContractForm key={c.id} initial={c} grains={safeGrains} canViewCosts={perms.canViewCosts}
+onSave={ct=>{addOrUpdateContract(ct);setEditingContractId(null);}} onCancel={()=>setEditingContractId(null)}/>
+) : (
+<div key={c.id} style={{background:"#f5f3ef",border:`1px solid ${ds.status==="overdue"?"#e0c0c0":ds.status==="soon"?"#e0cf9a":"#ddd8d0"}`,borderRadius:"4px",padding:"10px 12px",marginBottom:"6px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+<div style={{minWidth:0}}>
+<div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
+<div style={{fontWeight:700,fontSize:"11px",color:"#4a5568"}}>{c.crop} — {parseFloat(c.bushels||0).toLocaleString()} bu</div>
+{ds.status==="overdue"&&<span style={{fontSize:"8px",fontWeight:700,letterSpacing:"0.06em",padding:"2px 6px",borderRadius:"3px",background:"#fdeaea",color:"#c03030",border:"1px solid #e0c0c0"}}>⚠ {Math.abs(ds.daysUntil)}D OVERDUE</span>}
+{ds.status==="soon"&&<span style={{fontSize:"8px",fontWeight:700,letterSpacing:"0.06em",padding:"2px 6px",borderRadius:"3px",background:"#fff6e0",color:"#8a5a00",border:"1px solid #e0cf9a"}}>⏰ {ds.daysUntil===0?"DUE TODAY":`${ds.daysUntil}D LEFT`}</span>}
+</div>
+<div style={{fontSize:"9px",color:"#6a7280",marginTop:"2px"}}>
+{c.buyer||"—"}{deliveryLabel?` · ${deliveryLabel}`:""}{perms.canViewCosts&&c.price?` · $${parseFloat(c.price).toFixed(2)}/bu`:""}
+</div>
+{c.notes&&<div style={{fontSize:"9px",color:"#8a8478",marginTop:"2px",fontStyle:"italic"}}>{c.notes}</div>}
+</div>
+<div style={{display:"flex",gap:"4px",flexShrink:0}}>
+<button onClick={()=>setEditingContractId(c.id)} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+<button onClick={()=>{if(confirm("Delete this contract?"))deleteContract(c.id);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>
+</div>
+</div>
+</div>
+);
+})}
+{addingContract ? (
+<ContractForm grains={safeGrains} canViewCosts={perms.canViewCosts}
+onSave={ct=>{addOrUpdateContract(ct);setAddingContract(false);}} onCancel={()=>setAddingContract(false)}/>
+) : (
+<button onClick={()=>setAddingContract(true)} style={{...btnBase,cursor:"pointer",width:"100%",padding:"8px",fontSize:"10px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD CONTRACT</button>
+)}
+</>)}
+
+{/* ── COMM TAB ── */}
+{tab==="COMM"&&(<>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>COMMODITIES</div>
+{perms.canEditComm&&<button onClick={()=>setAG(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD</button>}
+</div>
+{safeGrains.map((g,i)=>(
+<div key={i} style={{background:"#f5f3ef",border:`1px solid ${g.color||"#ccc4b8"}`,borderLeft:`4px solid ${g.color||"#9a8a72"}`,borderRadius:"4px",padding:"8px 12px",marginBottom:"6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+<div>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em"}}>{g.name}</div>
+<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",marginTop:"2px"}}>{g.bushel_lbs} LBS/BU</div>
+</div>
+{perms.canEditComm&&<div style={{display:"flex",gap:"4px"}}>
+<button onClick={()=>setEG({...g,idx:i})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+{grains.length>1&&<button onClick={()=>{const ng=grains.filter((_,ii)=>ii!==i);setGrains(ng);if(grainIdx>=ng.length)setGrainIdx(0);save(fields,bins,ng,trucks);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+</div>}
+</div>
+))}
+
+{/* Trucks */}
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px",marginTop:"20px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>TRUCKS</div>
+{perms.canEditComm&&<button onClick={()=>setAT(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f5f3ef",color:"#4a5568",boxShadow:"0 2px 0 #c8ccc0"}}>+ ADD</button>}
+</div>
+{safeTrucks.map((t,i)=>(
+<div key={t.id||i} style={{background:"#f5f3ef",borderLeft:`4px solid ${t.hex}`,border:`1px solid ${t.border||"#ccc4b8"}`,borderRadius:"4px",padding:"8px 12px",marginBottom:"6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+<div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+<div style={{width:"24px",height:"24px",borderRadius:"4px",background:t.hex,border:`1px solid ${t.border||"#aaa"}`,flexShrink:0}}/>
+<div>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.08em"}}>{t.name}</div>
+<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.08em",marginTop:"1px"}}>{t.hex}</div>
+</div>
+</div>
+{perms.canEditComm&&<div style={{display:"flex",gap:"4px"}}>
+<button onClick={()=>setET({...t,idx:i})} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#ede9e4",color:"#4a5568",boxShadow:"0 1px 0 #c8ccc0",letterSpacing:"0.08em"}}>EDIT</button>
+{trucks.length>1&&<button onClick={()=>{const nt=trucks.filter((_,ii)=>ii!==i);setTrucks(nt);save(fields,bins,grains,nt);}} style={{...btnBase,padding:"3px 8px",fontSize:"9px",background:"#fff0f0",color:"#c03030",border:"1px solid #e0c0c0"}}>✕</button>}
+</div>}
+</div>
+))}
+</>)}
+
+{/* ── REPORT TAB ── */}
+{tab==="REPORT"&&perms.canReport&&(<>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",gap:"6px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em"}}>HARVEST REPORT</div>
+<button onClick={openFLExport} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0",boxShadow:"0 2px 0 #90a880"}}>↑ EXPORT HARVEST</button>
+<button onClick={()=>setShowReport(true)} style={{...btnBase,padding:"5px 10px",fontSize:"9px",letterSpacing:"0.1em",background:"#f0ede4",color:"#7a5a3a",border:"1px solid #c8b090",boxShadow:"0 2px 0 #a89070"}}>🖨 PRINT REPORT</button>
+</div>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
+{[
+["TOTAL LOADS",totalLoads],
+["TOTAL FIELDS",safeFields.length],
+["TOTAL BUSHELS",safeFields.reduce((s,f)=>s+(f.loads||[]).reduce((ss,l)=>ss+(l.net/(l.grainBushelLbs||60)),0),0).toFixed(0)],
+["TOTAL TONS",(safeFields.reduce((s,f)=>s+(f.loads||[]).reduce((ss,l)=>ss+l.net,0),0)/2000).toFixed(1)],
+].map(([l,v])=>(
+<div key={l} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",textAlign:"center"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"24px",color:"#4a7535"}}>{v}</div>
+<div style={{fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginTop:"2px"}}>{l}</div>
+</div>
+))}
+</div>
+
+{/* Guarantee progress by Insurance Unit — bushels logged vs. guaranteed yield */}
+{perms.canViewInsurance && guaranteeProgress.length>0 && (<>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>GUARANTEE PROGRESS</div>
+<div style={{background:"#fdf3df",border:"1px solid #e0c078",borderRadius:"4px",padding:"9px 11px",marginBottom:"10px",fontSize:"9px",color:"#7a5008",lineHeight:1.6,letterSpacing:"0.02em"}}>
+⚠ Not a claim determination. This compares bushels logged here to the Guaranteed Yield entered on each field — it doesn't know your policy's full terms, unit structure at the insurer, or adjuster-verified yields. Contact your crop insurance agent with coverage questions.
+</div>
+{guaranteeProgress.map(u=>{
+const pct = u.pct;
+const barPct = Math.max(0,Math.min(pct,100));
+const barColor = pct>=100 ? "#4a7535" : pct>=60 ? "#c47d0a" : "#b0623a";
+const statusColor = pct>=100 ? "#4a7535" : "#a06010";
+const statusLabel = pct>=100 ? "Guarantee bushels logged" : "Below guarantee pace so far";
+return (
+<div key={u.unit} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px",flexWrap:"wrap",gap:"4px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"12px",color:"#4a5568",letterSpacing:"0.08em"}}>{u.unit}</div>
+<div style={{fontSize:"9px",fontWeight:700,color:statusColor,letterSpacing:"0.04em"}}>{statusLabel}</div>
+</div>
+<div style={{background:"#e8e4dc",borderRadius:"3px",height:"7px",overflow:"hidden",marginBottom:"5px"}}>
+<div style={{background:barColor,height:"100%",width:`${barPct}%`}}/>
+</div>
+<div style={{fontSize:"9px",color:"#6a7280",fontFamily:"'IBM Plex Mono',monospace"}}>
+{u.harvestedBu.toFixed(0)} of {u.guaranteeBu.toFixed(0)} guarantee bu logged ({pct.toFixed(0)}%)
+</div>
+</div>
+);
+})}
+</>)}
+
+{/* Breakdown by Insurance Unit, then Field */}
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"4px"}}>BREAKDOWN BY INSURANCE UNIT</div>
+{unitBreakdown.length===0 && (
+<div style={{fontSize:"10px",color:"#b0a870",textAlign:"center",padding:"14px 0",marginBottom:"8px"}}>No loads with an insurance unit recorded</div>
+)}
+{unitBreakdown.map(u=>(
+<div key={u.unit} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"10px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:"6px",paddingBottom:"5px",borderBottom:"1px solid #ddd8d0"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"12px",color:"#4a5568",letterSpacing:"0.08em"}}>{u.unit}</div>
+<div style={{fontSize:"9px",color:"#6a7280"}}>
+{u.totAcres!=null?`${u.totAcres} ac · `:""}{u.totBu.toFixed(0)} bu{u.unitYieldPerAc!=null?` · ${u.unitYieldPerAc.toFixed(1)} bu/ac`:""}
+</div>
+</div>
+{u.fields.map((f,i)=>(
+<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:"9px",color:"#4a5568",padding:"4px 0",borderBottom:i<u.fields.length-1?"1px solid #e8e4dc":"none",gap:"8px"}}>
+<div style={{flex:1,minWidth:0}}>
+<span style={{fontWeight:700}}>{f.fieldName}</span> <span style={{color:"#6a7280"}}>· {f.crop} · {f.loads} load{f.loads!==1?"s":""}</span>
+</div>
+<div style={{display:"flex",gap:"10px",flexShrink:0,fontFamily:"'IBM Plex Mono',monospace"}}>
+<span style={{color:"#c47d0a"}}>{f.totBu.toFixed(0)} bu</span>
+<span>{f.unitAcres!=null?`${f.unitAcres} ac`:"—"}</span>
+<span>{(f.unitAcres>0)?(f.totBu/f.unitAcres).toFixed(1)+" bu/ac":"—"}</span>
+{perms.canViewCosts&&<span style={{color:"#4a7535"}}>{f.grainPrice?`$${(f.totBu*parseFloat(f.grainPrice||0)).toFixed(0)}`:"—"}</span>}
+</div>
+</div>
+))}
+<div style={{marginTop:"6px",paddingTop:"5px",borderTop:"1px dashed #ccc4b8"}}>
+{u.crops.map(c=>(
+<div key={c.crop} style={{fontSize:"9px",color:"#4a5568",padding:"1px 0"}}>
+Total <strong>{c.crop}</strong> for {u.unit} = <span style={{fontFamily:"'IBM Plex Mono',monospace",color:"#c47d0a",fontWeight:700}}>{c.totBu.toFixed(0)} bu</span>
+</div>
+))}
+</div>
+</div>
+))}
+
+{sortedFields.map(f=>{
+const totalBu=(f.loads||[]).reduce((s,l)=>s+(l.net/(l.grainBushelLbs||60)),0);
+if(!(f.loads||[]).length) return null;
+return(<div key={f.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a7535",letterSpacing:"0.08em",marginBottom:"6px"}}>{f.name}</div>
+<div style={{fontSize:"9px",color:"#4a5568",letterSpacing:"0.08em",lineHeight:1.8}}>
+<div>LOADS: {(f.loads||[]).length}</div>
+<div>BUSHELS: {totalBu.toFixed(0)} BU</div>
+<div>TONS: {((f.loads||[]).reduce((s,l)=>s+l.net,0)/2000).toFixed(1)}</div>
+{f.acres>0&&<div>YIELD: {(totalBu/f.acres).toFixed(1)} BU/AC</div>}
+{f.grainPrice&&perms.canViewCosts&&<div style={{color:"#4a7535"}}>REVENUE: ${(totalBu*parseFloat(f.grainPrice||0)).toFixed(0)}</div>}
+</div>
+</div>);
+})}
+
+{/* Breakdown by Bin */}
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a5568",letterSpacing:"0.1em",marginBottom:"8px",marginTop:"16px"}}>BIN SUMMARY</div>
+{binSummary.map(b=>(
+<div key={b.id} style={{background:"#f5f3ef",border:"1px solid #ddd8d0",borderRadius:"4px",padding:"10px",marginBottom:"8px"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#4a7535",letterSpacing:"0.08em"}}>{b.name}</div>
+<div style={{fontSize:"11px",fontWeight:700,color:b.pctFull>=95?"#dc2626":b.pctFull>=80?"#c47d0a":"#4a5568"}}>{b.pctFull.toFixed(1)}% FULL</div>
+</div>
+<div style={{fontSize:"9px",color:"#4a5568",letterSpacing:"0.08em",lineHeight:1.8}}>
+<div>CROP: {b.crop}</div>
+<div>LOADS: {b.loads} · TOTAL: {b.totBu.toFixed(0)} BU</div>
+<div>FIELDS: {b.fields.length?b.fields.map(f=>`${f.name} (${f.bu.toFixed(0)} bu)`).join(", "):"—"}</div>
+</div>
+</div>
+))}
+</>)}
+
+</div>
+</div>
+
+{/* ── Modals ── */}
+{editBin&&<BinMo bin={editBin} grains={grains} onSave={f=>{const nb=safeBins.map(b=>b.id===editBin.id?{...editBin,...f,capacityBu:Number(f.capacityBu),storedLbs:Number(f.storedLbs)}:b);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onDelete={()=>{if(bins.length<2)return alert("Need at least one bin.");const nb=bins.filter(b=>b.id!==editBin.id);setBins(nb);save(fields,nb,grains,trucks);setEB(null);}} onClose={()=>setEB(null)} canDelete={bins.length>1}/>}
+{editField&&<FieldMo field={editField} perms={perms} onSave={f=>{const nf=safeFields.map(ff=>ff.id===editField.id?{...editField,...f}:ff);setFields(nf);save(nf,bins,grains,trucks);setEF(null);}} onClose={()=>setEF(null)}/>}
+
+{/* ── FieldLog Export Modal ── */}
+{flExportModal&&(
+<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+<div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"480px",maxHeight:"85vh",display:"flex",flexDirection:"column",gap:"12px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>EXPORT HARVEST</div>
+{flExportData.length===0&&(
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>NO FIELDS WITH LOADS TO EXPORT</div>
+)}
+{flExportData.length>0&&(<>
+<div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em",lineHeight:1.6}}>
+SELECT FIELDS TO WRITE AS HARVEST ACTIVITIES IN FIELDLOG AND/OR ACTUAL YIELD IN AGRIPLAN.
+FIELDS WITHOUT A NAME MATCH IN EITHER MODULE ARE GREYED OUT THERE.
+</div>
+<label style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 10px",borderRadius:"5px",background:"rgba(74,117,53,0.1)",border:"1px solid rgba(74,117,53,0.3)",cursor:"pointer"}}>
+<input type="checkbox" checked={sendActualsToAgriPlan} onChange={()=>setSendActualsToAgriPlan(v=>!v)} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#b0c8a0",letterSpacing:"0.06em"}}>ALSO SEND ACTUAL BUSHELS TO AGRIPLAN</span>
+</label>
+<div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
+{flExportData.map(r=>{
+const sel = flExportSel.has(r.asFieldId);
+const canSel = !!r.flFieldId || r.apCommon;
+return(
+<label key={r.asFieldId} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"10px 12px",borderRadius:"5px",cursor:canSel?"pointer":"not-allowed",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":canSel?"rgba(255,255,255,0.08)":"rgba(255,100,100,0.15)"}`,opacity:canSel?1:0.5,transition:"all .1s"}}>
+<input type="checkbox" checked={sel&&canSel} disabled={!canSel} onChange={()=>{const n=new Set(flExportSel);sel?n.delete(r.asFieldId):n.add(r.asFieldId);setFLExportSel(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0,marginTop:"2px"}}/>
+<div style={{flex:1}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{r.name}</div>
+<div style={{display:"flex",gap:"12px",marginTop:"5px",flexWrap:"wrap"}}>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.grainName}</span>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalBu.toLocaleString()} BU</span>
+{r.yieldPerAc&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.yieldPerAc} BU/AC</span>}
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8ab090"}}>{r.totalLbs.toLocaleString()} LBS</span>
+</div>
+<div style={{display:"flex",gap:"10px",marginTop:"4px",flexWrap:"wrap"}}>
+{!r.flFieldId&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN FIELDLOG</span>}
+{sendActualsToAgriPlan&&!r.apCommon&&<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#c06060"}}>⚠ NO MATCH IN AGRIPLAN</span>}
+</div>
+</div>
+</label>
+);
+})}
+</div>
+<button onClick={exportToFieldLog} disabled={flExportSel.size===0||flExporting}
+style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:flExportSel.size>0?"#4a7535":"#2a3020",color:flExportSel.size>0?"#f0eeea":"#4a5548",boxShadow:flExportSel.size>0?"0 2px 0 #2a5020":"none",cursor:flExportSel.size>0?"pointer":"not-allowed"}}>
+{flExporting?"EXPORTING...":`EXPORT ${flExportSel.size} FIELD${flExportSel.size!==1?"S":""}`}
+</button>
+</>)}
+<button onClick={()=>setFLExportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#6a8060"}}>CANCEL</button>
+</div>
+</div>
+)}
+{flImportModal&&(
+<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+<div style={{background:"#1a2010",border:"1px solid #4a7535",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"420px",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"12px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#b0c8a0",letterSpacing:"0.12em"}}>IMPORT FROM FIELDLOG</div>
+{flLoading&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px"}}>READING FIELDLOG...</div>}
+{!flLoading&&flFields.length===0&&(
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#6a8060",textAlign:"center",padding:"20px",lineHeight:1.8}}>
+{fields.length>0
+? "ALL SEEDED FIELDS ALREADY IN AGRISCALE"
+: "NO SEEDED FIELDS FOUND IN FIELDLOG\nLOG A SEEDING ACTIVITY FIRST"}
+</div>
+)}
+{!flLoading&&flFields.length>0&&(<>
+<div style={{fontSize:"10px",color:"#6a8060",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em"}}>
+SELECT FIELDS TO IMPORT ({flSelected.size} OF {flFields.length} SELECTED)
+</div>
+<div style={{display:"flex",flexDirection:"column",gap:"6px",padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:"6px",border:"1px solid rgba(255,255,255,0.08)"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a9880",letterSpacing:"0.08em"}}>NAME IMPORTED FIELDS AS</div>
+<div style={{display:"flex",gap:"10px"}}>
+<label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+<input type="radio" name="importNameFormat" checked={importNameFormat==="field"} onChange={()=>setImportNameFormat("field")} style={{accentColor:"#4a7535"}}/>
+FIELD ONLY
+</label>
+<label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+<input type="radio" name="importNameFormat" checked={importNameFormat==="farmField"} onChange={()=>setImportNameFormat("farmField")} style={{accentColor:"#4a7535"}}/>
+FARM + FIELD
+</label>
+</div>
+<label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+<input type="checkbox" checked={includeFieldNum} onChange={()=>setIncludeFieldNum(v=>!v)} style={{accentColor:"#4a7535"}}/>
+INCLUDE FIELD #
+</label>
+</div>
+<div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
+{flFields.map(f=>{
+const sel = flSelected.has(f.id);
+return(
+<label key={f.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(74,117,53,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#4a7535":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
+<input type="checkbox" checked={sel} onChange={()=>{const n=new Set(flSelected);sel?n.delete(f.id):n.add(f.id);setFLSelected(n);}} style={{accentColor:"#4a7535",width:"14px",height:"14px",flexShrink:0}}/>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#d0e4c0",letterSpacing:"0.06em"}}>{buildImportName(f.name, flApByName[(f.name||"").trim().toLowerCase()]?.farm || (f.notes||"").match(/^Farm:\s*(.+)$/)?.[1] || "", flApByName[(f.name||"").trim().toLowerCase()]?.fieldNum)}</div>
+</div>
+<div style={{display:"flex",alignItems:"center",gap:"4px",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+<input type="number" min="0" step="0.1" value={flAcresOv[f.id]??""} onChange={e=>setFLAcresOv(o=>({...o,[f.id]:e.target.value}))}
+placeholder="acres" style={{width:"64px",background:"rgba(0,0,0,0.25)",border:`1px solid ${flAcresOv[f.id]?"rgba(255,255,255,0.15)":"#a06030"}`,borderRadius:"4px",padding:"4px 6px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0",textAlign:"right"}}/>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#6a8060"}}>ac</span>
+</div>
+</label>
+);
+})}
+</div>
+<div style={{display:"flex",gap:"8px",paddingTop:"4px"}}>
+<button onClick={()=>setFLSelected(new Set(flFields.map(f=>f.id)))} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#8a9880"}}>SELECT ALL</button>
+<button onClick={()=>setFLSelected(new Set())} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#8a9880"}}>CLEAR</button>
+</div>
+<button onClick={importFLFields} disabled={flSelected.size===0} style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:flSelected.size>0?"#4a7535":"#2a3020",color:flSelected.size>0?"#f0eeea":"#4a5548",boxShadow:flSelected.size>0?"0 2px 0 #2a5020":"none",cursor:flSelected.size>0?"pointer":"not-allowed"}}>
+IMPORT {flSelected.size>0?flSelected.size:""} FIELD{flSelected.size!==1?"S":""}
+</button>
+</>)}
+<button onClick={()=>setFLImportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#6a8060"}}>CANCEL</button>
+</div>
+</div>
+)}
+{apImportModal&&(
+<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+<div style={{background:"#1a2010",border:"1px solid #7a5a3a",borderRadius:"10px",padding:"24px",width:"100%",maxWidth:"420px",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:"12px"}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"14px",color:"#d0b890",letterSpacing:"0.12em"}}>IMPORT FROM AGRIPLAN</div>
+{apLoading&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#8a7860",textAlign:"center",padding:"20px"}}>READING AGRIPLAN...</div>}
+{!apLoading&&apFields.length===0&&(
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"11px",color:"#8a7860",textAlign:"center",padding:"20px",lineHeight:1.8}}>
+{fields.length>0
+? "ALL AGRIPLAN FIELDS ALREADY IN AGRISCALE"
+: "NO FIELDS FOUND IN AGRIPLAN FOR THIS YEAR"}
+</div>
+)}
+{!apLoading&&apFields.length>0&&(<>
+<div style={{fontSize:"10px",color:"#8a7860",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.08em"}}>
+SELECT FIELDS TO IMPORT ({apSelected.size} OF {apFields.length} SELECTED)
+</div>
+<div style={{display:"flex",flexDirection:"column",gap:"6px",padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:"6px",border:"1px solid rgba(255,255,255,0.08)"}}>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a9880",letterSpacing:"0.08em"}}>NAME IMPORTED FIELDS AS</div>
+<div style={{display:"flex",gap:"10px"}}>
+<label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+<input type="radio" name="importNameFormat" checked={importNameFormat==="field"} onChange={()=>setImportNameFormat("field")} style={{accentColor:"#7a5a3a"}}/>
+FIELD ONLY
+</label>
+<label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+<input type="radio" name="importNameFormat" checked={importNameFormat==="farmField"} onChange={()=>setImportNameFormat("farmField")} style={{accentColor:"#7a5a3a"}}/>
+FARM + FIELD
+</label>
+</div>
+<label style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#d0e4c0"}}>
+<input type="checkbox" checked={includeFieldNum} onChange={()=>setIncludeFieldNum(v=>!v)} style={{accentColor:"#7a5a3a"}}/>
+INCLUDE FIELD #
+</label>
+</div>
+<div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:"6px"}}>
+{apFields.map(a=>{
+const sel = apSelected.has(a.common);
+return(
+<label key={a.common} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 12px",borderRadius:"5px",cursor:"pointer",background:sel?"rgba(122,90,58,0.18)":"rgba(255,255,255,0.04)",border:`1px solid ${sel?"#7a5a3a":"rgba(255,255,255,0.08)"}`,transition:"all .1s"}}>
+<input type="checkbox" checked={sel} onChange={()=>{const n=new Set(apSelected);sel?n.delete(a.common):n.add(a.common);setAPSelected(n);}} style={{accentColor:"#7a5a3a",width:"14px",height:"14px",flexShrink:0}}/>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontFamily:"'Orbitron',monospace",fontSize:"11px",color:"#e4d0c0",letterSpacing:"0.06em"}}>{buildImportName(a.common, a.farm, a.fieldNum)}</div>
+{a.crop&&<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860",marginTop:"2px"}}>{a.crop}</div>}
+</div>
+<div style={{display:"flex",alignItems:"center",gap:"4px",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+<input type="number" min="0" step="0.1" value={apAcresOv[a.common]??""} onChange={e=>setAPAcresOv(o=>({...o,[a.common]:e.target.value}))}
+placeholder="acres" style={{width:"64px",background:"rgba(0,0,0,0.25)",border:`1px solid ${apAcresOv[a.common]?"rgba(255,255,255,0.15)":"#a06030"}`,borderRadius:"4px",padding:"4px 6px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",color:"#e4d0c0",textAlign:"right"}}/>
+<span style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",color:"#8a7860"}}>ac</span>
+</div>
+</label>
+);
+})}
+</div>
+<div style={{display:"flex",gap:"8px",paddingTop:"4px"}}>
+<button onClick={()=>setAPSelected(new Set(apFields.map(a=>a.common)))} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#a89880"}}>SELECT ALL</button>
+<button onClick={()=>setAPSelected(new Set())} style={{...btnBase,flex:1,fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.06)",color:"#a89880"}}>CLEAR</button>
+</div>
+<button onClick={importAPFields} disabled={apSelected.size===0} style={{...btnBase,padding:"10px",fontSize:"10px",letterSpacing:"0.12em",background:apSelected.size>0?"#7a5a3a":"#302820",color:apSelected.size>0?"#f0eeea":"#554838",boxShadow:apSelected.size>0?"0 2px 0 #503a20":"none",cursor:apSelected.size>0?"pointer":"not-allowed"}}>
+IMPORT {apSelected.size>0?apSelected.size:""} FIELD{apSelected.size!==1?"S":""}
+</button>
+</>)}
+<button onClick={()=>setAPImportModal(false)} style={{...btnBase,padding:"8px",fontSize:"9px",letterSpacing:"0.1em",background:"rgba(255,255,255,0.04)",color:"#8a7860"}}>CANCEL</button>
+</div>
+</div>
+)}
+{(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
+{(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
+{editLoad&&<LoadMo load={editLoad.load} bins={safeBins} grains={safeGrains}
+insuranceUnits={(safeFields.find(f=>f.id===editLoad.fieldId)?.insuranceUnits||[]).map(u=>typeof u==="string"?u:(u?.name||"")).filter(Boolean)}
+onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL(null)}/>}
+{showReport&&<PrintReport fields={safeFields} bins={safeBins} grains={safeGrains} onClose={()=>setShowReport(false)}/>}
+</>
+);
 }
 
-function CropSelect({value,onChange,eligibleCrops,fieldRestrictions,fieldCommon,hist,targetYear}){
-  const[open,setOpen]=useState(false);const ref=useRef();
-  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
-  const _ec=Array.isArray(eligibleCrops)?eligibleCrops:eligibleCrops&&typeof eligibleCrops==="object"?Object.values(eligibleCrops):[]; const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!(_ec.length>0?_ec:(_tenantCrops||ALL_CROPS)).includes(c);
-  // Chemical plantback + rotation/insurance-rule warnings per candidate crop —
-  // same two rule sets checked everywhere else (see getPlantbackWarnings /
-  // getRotationRules), surfaced here so you see them while picking rather than
-  // only after the fact. Doesn't block selection — you may know something the
-  // rules don't (e.g. a waiver) — it's a warning, not a hard stop.
-  const warningsFor = c => {
-    const pb = getPlantbackWarnings(fieldRestrictions, fieldCommon, c);
-    const checker = hist && targetYear ? getRotationRules()[c] : null;
-    const rot = checker ? checker(hist, targetYear) : [];
-    return { pb, rot };
-  };
-  const valueWarnings = warningsFor(value);
-  const hasValueWarning = valueWarnings.pb.length>0 || valueWarnings.rot.length>0;
-  return(<div ref={ref} style={{position:"relative",display:"inline-block"}}>
-    <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:`1px solid ${hasValueWarning?"#c07010":"#2a4030"}`,borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
-      <span style={{width:8,height:8,borderRadius:"50%",background:isInelig(value)?"#c02020":"#3a9020",flexShrink:0}}/>
-      <span style={{flex:1,textAlign:"left"}}>{value}</span>
-      {hasValueWarning&&<span title="This crop has chemical plantback or rotation/insurance restrictions — see below" style={{fontSize:13}}>⚠️</span>}
-      <span style={{fontSize:10,opacity:0.5}}>▾</span>
-    </button>
-    {open&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#f8fbf5",border:"1px solid #2a4030",borderRadius:5,width:280,maxHeight:320,overflowY:"auto",boxShadow:"0 8px 32px rgba(0,0,0,.7)",marginTop:2}}>
-      <div style={{padding:"6px 10px 2px",fontSize:9,color:"#4a8a30",textTransform:"uppercase",letterSpacing:1}}>✓ Eligible for this field</div>
-      {(_tenantCrops||ALL_CROPS).filter(c=>!isInelig(c)).map(c=>{
-        const w=warningsFor(c); const warn=w.pb.length>0||w.rot.length>0;
-        const title=warn?[...w.pb.map(x=>`⚗️ ${x.chemName} — ${x.daysRemaining}d plantback remaining`),...w.rot.map(x=>`🛡 ${x}`)].join("\n"):"";
-        return(<div key={c} onClick={()=>{onChange(c);setOpen(false);}} title={title} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#1a6010":"#1a4010",background:c===value?"#d4ecc0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#d4ecc0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#d4ecc0":"transparent"}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:warn?"#c07010":"#3a9020",flexShrink:0}}/>
-          {c}
-          {warn&&<span style={{fontSize:11}}>⚠️</span>}
-          {c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#3a8020"}}>✓</span>}
-        </div>);
-      })}
-      <div style={{padding:"8px 10px 2px",fontSize:9,color:"#904040",textTransform:"uppercase",letterSpacing:1,borderTop:"1px solid #2a2010",marginTop:4}}>✗ Not eligible</div>
-      {(_tenantCrops||ALL_CROPS).filter(c=>isInelig(c)).map(c=>(<div key={c} style={{padding:"7px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8,color:"#7a3030",cursor:"not-allowed",opacity:0.7}} title={(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region ineligible":"No APH on this field"}><span style={{width:6,height:6,borderRadius:"50%",background:"#c02020",flexShrink:0}}/>{c}<span style={{marginLeft:"auto",fontSize:9,color:"#904040"}}>{(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region":"No APH"}</span></div>))}
-    </div>)}
-  </div>);
+// ── Modal helpers ─────────────────────────────────────────────────
+const moStyle = {position:"fixed",inset:0,background:"rgba(20,30,10,.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"};
+const cardStyle = {background:"#fff",border:"2px solid #b0a08a",borderRadius:"8px",padding:"24px",width:"100%",maxWidth:"340px",fontFamily:"'IBM Plex Mono',monospace"};
+const lblStyle = {fontSize:"8px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px",textAlign:"left"};
+const inStyle = {width:"100%",padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"13px",border:"1px solid #b0a08a",borderRadius:"4px",color:"#4a5568",background:"#f5f3ef",outline:"none",marginBottom:"10px"};
+const seStyle = {...inStyle,cursor:"pointer"};
+const MoBtn = ({children,onClick,variant="ghost",disabled})=><button onClick={onClick} disabled={disabled} style={{flex:1,padding:"10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"10px",letterSpacing:"0.1em",border:variant==="primary"?"1px solid #4a5568":"1px solid #e0c0c0",borderRadius:"4px",background:disabled?"#f0f0f0":variant==="primary"?"#e8e2d8":variant==="danger"?"#fff0f0":"#f5f3ef",color:disabled?"#b0a870":variant==="primary"?"#4a5568":variant==="danger"?"#c03030":"#9a8a72",cursor:disabled?"not-allowed":"pointer"}}>{children}</button>;
+const hdrStyle = {fontFamily:"'Orbitron',monospace",fontSize:"13px",color:"#4a5568",letterSpacing:"0.12em",marginBottom:"16px",textAlign:"center"};
+
+function BinMo({bin,grains,onSave,onDelete,onClose,canDelete}){
+const[f,setF]=useState({name:bin.name,capacityBu:bin.capacityBu,storedLbs:bin.storedLbs,grainName:bin.grainName,location:bin.location||"",shared:bin.farmId==="shared"||!bin.farmId});
+const safeGrains=(Array.isArray(grains)?grains:[]).filter(Boolean);
+return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+<div style={hdrStyle}>EDIT {bin.name}</div>
+<div style={lblStyle}>BIN NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))}/>
+<div style={lblStyle}>LOCATION</div><input style={inStyle} value={f.location} onChange={e=>setF(p=>({...p,location:e.target.value}))} placeholder="e.g. Home Yard, North Farm"/>
+<div style={lblStyle}>CAPACITY (BU)</div><input style={inStyle} type="number" value={f.capacityBu} onChange={e=>setF(p=>({...p,capacityBu:e.target.value}))}/>
+<div style={lblStyle}>STORED (LBS)</div><input style={inStyle} type="number" value={f.storedLbs} onChange={e=>setF(p=>({...p,storedLbs:e.target.value}))}/>
+<div style={lblStyle}>GRAIN TYPE</div><select style={seStyle} value={f.grainName} onChange={e=>setF(p=>({...p,grainName:e.target.value}))}>{safeGrains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</select>
+<label style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",margin:"8px 0",fontSize:"11px",color:"#b0c8a0",letterSpacing:"0.08em",textTransform:"uppercase"}}>
+<input type="checkbox" checked={f.shared} onChange={e=>setF(p=>({...p,shared:e.target.checked}))} style={{accentColor:"#4a7535",width:"14px",height:"14px"}}/>
+Shared across all farms
+</label>
+<div style={{display:"flex",gap:"8px"}}>
+{canDelete&&<MoBtn variant="danger" onClick={onDelete}>DELETE</MoBtn>}
+<MoBtn onClick={onClose}>CANCEL</MoBtn>
+<MoBtn variant="primary" onClick={()=>onSave({...f,farmId:f.shared?"shared":bin.farmId})}>SAVE</MoBtn>
+</div>
+</div></div>);
 }
 
-
-// ── Field History + Crop Suggestions ─────────────────────────────────────────
-// (Legacy per-field lookup superseded by resolveFieldHistoryEntry below, which
-// adds tenant gating around HISTORY_DATA — see that function's comment.)
-
-// ── Chemical plantback restrictions ──────────────────────────────────────────
-// Single source of truth for "is `crop` still chemically restricted on this
-// field" — shared by the FieldDetail warning banner, the CropSelect dropdown,
-// and the History tab's crop-suggestion scoring, so all three read the exact
-// same FieldLog-sourced spray/plantback data the same way instead of each
-// re-deriving it (which is how the dropdown and suggestions ended up with no
-// plantback awareness at all before this).
-function getPlantbackWarnings(fieldRestrictions, fieldCommon, crop) {
-  if (!crop || !fieldRestrictions || !fieldCommon) return [];
-  const safeKey = fieldCommon.replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
-  const fieldData = fieldRestrictions[safeKey];
-  if (!fieldData?.chemicals) return [];
-  const today = Date.now();
-  const warnings = [];
-  for (const [chemName, { date, plantback }] of Object.entries(fieldData.chemicals)) {
-    // Normalize crop names for lookup (e.g. "Spring Wheat" vs "Wheat")
-    const days = plantback[crop]
-      ?? plantback[crop.replace("Spring ", "").replace("Winter ", "").replace("CC ", "")]
-      ?? null;
-    if (!days) continue;
-    const daysAgo = Math.floor((today - new Date(date).getTime()) / 86400000);
-    const daysRemaining = days - daysAgo;
-    if (daysRemaining > 0) {
-      const appliedDate = new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      warnings.push({ chemName, daysAgo, daysRemaining, appliedDate, totalDays: days });
-    }
-  }
-  return warnings.sort((a, b) => b.daysRemaining - a.daysRemaining);
+function FieldMo({field,perms,onSave,onClose}){
+const[f,setF]=useState({name:field.name,acres:field.acres||"",grainPrice:field.grainPrice||"",landlord:field.landlord||"",cropShare:field.cropShare||"",insCoverageLevel:field.insCoverageLevel||"",insGuaranteedYield:field.insGuaranteedYield||"",insPriceElection:field.insPriceElection||"",insType:field.insType||"",insInsuredAcres:field.insInsuredAcres||"",insuranceUnits:field.insuranceUnits||[]});
+const[newUnitText,setNewUnitText]=useState("");
+const[newUnitAcres,setNewUnitAcres]=useState("");
+const s=(k,v)=>setF(p=>({...p,[k]:v}));
+const addUnit=()=>{const v=newUnitText.trim();if(v){s("insuranceUnits",[...(f.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}};
+return(<div style={moStyle} onClick={onClose}><div style={{...cardStyle,maxWidth:"380px",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+<div style={hdrStyle}>EDIT FIELD</div>
+<div style={lblStyle}>FIELD NAME</div><input style={inStyle} value={f.name} onChange={e=>s("name",e.target.value)}/>
+<div style={lblStyle}>ACRES</div><input style={inStyle} type="number" value={f.acres} onChange={e=>s("acres",e.target.value)}/>
+{perms.canViewCosts&&<><div style={lblStyle}>GRAIN PRICE ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.grainPrice} onChange={e=>s("grainPrice",e.target.value)} placeholder="e.g. 7.25"/></>}
+{perms.canViewCropShare&&<><div style={lblStyle}>LANDLORD</div><input style={inStyle} value={f.landlord} onChange={e=>s("landlord",e.target.value)}/><div style={lblStyle}>CROP SHARE %</div><input style={inStyle} type="number" value={f.cropShare} onChange={e=>s("cropShare",e.target.value)}/></>}
+{perms.canViewInsurance&&<><div style={lblStyle}>INSURANCE TYPE</div><input style={inStyle} value={f.insType} onChange={e=>s("insType",e.target.value)} placeholder="RP, YP, APH..."/><div style={lblStyle}>COVERAGE LEVEL %</div><input style={inStyle} type="number" value={f.insCoverageLevel} onChange={e=>s("insCoverageLevel",e.target.value)}/><div style={lblStyle}>GUARANTEED YIELD (BU/AC)</div><input style={inStyle} type="number" value={f.insGuaranteedYield} onChange={e=>s("insGuaranteedYield",e.target.value)}/><div style={lblStyle}>PRICE ELECTION ($/BU)</div><input style={inStyle} type="number" step="0.01" value={f.insPriceElection} onChange={e=>s("insPriceElection",e.target.value)}/><div style={lblStyle}>INSURED ACRES</div><input style={inStyle} type="number" value={f.insInsuredAcres} onChange={e=>s("insInsuredAcres",e.target.value)}/></>}
+{perms.canViewInsurance&&<>
+<div style={lblStyle}>INSURANCE UNIT(S)</div>
+<div style={{marginBottom:"8px"}}>
+{(f.insuranceUnits||[]).length===0 && <div style={{fontSize:"12px",color:"#8a9880",fontStyle:"italic",marginBottom:"6px"}}>None</div>}
+{(f.insuranceUnits||[]).map((u,i)=>{
+const uName=typeof u==="string"?u:(u?.name||"");
+const uAcres=typeof u==="string"?"":(u?.acres??"");
+const updUnit=(k,v)=>s("insuranceUnits",(f.insuranceUnits||[]).map((uu,ix)=>ix!==i?uu:{name:k==="name"?v:uName,acres:k==="acres"?v:uAcres}));
+return(
+<div key={i} style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px",background:"#eaf4dc",border:"1px solid #4a7535",borderRadius:"6px",padding:"6px 8px"}}>
+<input value={uName} onChange={e=>updUnit("name",e.target.value)}
+style={{flex:2,background:"#fff",border:"1px solid #4a8030",borderRadius:"4px",padding:"6px 8px",fontSize:"13px",fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+<input type="text" inputMode="decimal" value={uAcres} onChange={e=>updUnit("acres",decOnly(e.target.value))} placeholder="Acres"
+style={{flex:1,background:"#fff",border:"1px solid #4a8030",borderRadius:"4px",padding:"6px 8px",fontSize:"13px",fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
+<button onClick={()=>s("insuranceUnits",(f.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
+style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:"18px",lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
+</div>
+);
+})}
+</div>
+<div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+<input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
+onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
+placeholder="e.g. Unit 0102" style={{...inStyle,marginBottom:0,flex:2}}/>
+<input type="text" inputMode="decimal" value={newUnitAcres} onChange={e=>setNewUnitAcres(decOnly(e.target.value))}
+onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addUnit();}}}
+placeholder="Acres" style={{...inStyle,marginBottom:0,flex:1}}/>
+<button onClick={addUnit} style={{...btnBase_static,padding:"7px 14px",fontSize:"10px",letterSpacing:"0.1em",background:"#e8f0e4",color:"#4a7535",border:"1px solid #b0c8a0"}}>+ ADD</button>
+</div>
+</>}
+<div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>onSave(f)}>SAVE</MoBtn></div>
+</div></div>);
 }
 
-// ── Field history lookup (manual entries take priority over the legacy seed
-// table) — extracted from FieldHistoryTab so FieldDetail's header CropSelect
-// can run the same rotation-rule check the History tab already runs, instead
-// of the crop picker having zero awareness of rotation/insurance conflicts.
-//
-// HISTORY_DATA is real historical crop data for exactly one tenant (Chris's
-// own Flat Acre Farms / Via Terra operation, imported from their workbook —
-// field/farm names like "Ray", "Englund", "Nuxoll Land", etc. are THEIR real
-// land, not sample data). It must never be used as a fallback for any other
-// tenant — a different customer with a field also named e.g. "Home Place"
-// would otherwise silently inherit Flat Acre's actual rotation history for
-// it. Gated the same way the one-time workbook importer already is, via
-// isFlatAcreTenant(tenantId). Every other tenant gets real answers only:
-// their own manually-entered / APH-imported history, or nothing yet.
-function resolveFieldHistoryEntry(field, manualHistory, tenantId) {
-  const ownYears = Object.keys(manualHistory || {});
-  if (ownYears.length > 0) {
-    const history = {};
-    ownYears.forEach(y => { if (manualHistory[y]?.crop) history[y] = manualHistory[y].crop; });
-    if (Object.keys(history).length > 0) {
-      return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
-    }
-  }
-  // Legacy fallback only if this field has no manually-entered history at all
-  // yet, AND only for the one tenant this seed data actually belongs to.
-  if (!isFlatAcreTenant(tenantId)) return null;
-  const keyFn = field.common + '|' + field.fieldNum;
-  if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
-  const keyLegal = field.common + '|' + field.legal;
-  if (HISTORY_DATA[keyLegal]) return HISTORY_DATA[keyLegal];
-  const byCommon = Object.values(HISTORY_DATA).filter(d =>
-    d.common.toLowerCase() === field.common.toLowerCase()
-  );
-  if (byCommon.length === 1) return byCommon[0];
-  if (byCommon.length > 1) {
-    const fnMatch = byCommon.find(d => d.fieldNum === field.fieldNum);
-    if (fnMatch) return fnMatch;
-    return byCommon.reduce((best, d) =>
-      Math.abs(d.acres - field.acres) < Math.abs(best.acres - field.acres) ? d : best
-    );
-  }
-  return null;
+function GrainMo({grain,onSave,onClose}){
+const[f,setF]=useState({name:grain?.name||"",bushel_lbs:grain?.bushel_lbs||60});
+return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+<div style={hdrStyle}>{grain?"EDIT":"ADD"} COMMODITY</div>
+<div style={lblStyle}>NAME</div><input style={inStyle} value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} placeholder="e.g. WHEAT"/>
+<div style={lblStyle}>LBS / BUSHEL</div><input style={inStyle} type="number" value={f.bushel_lbs} onChange={e=>setF(p=>({...p,bushel_lbs:e.target.value}))}/>
+<div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>{if(!f.name.trim())return alert("Name required");onSave(f);}}>SAVE</MoBtn></div>
+</div></div>);
 }
 
-function getCropSuggestions(historyEntry, activeYear, fieldRestrictions, fieldCommon) {
-  if (!historyEntry) return [];
-  const hist = historyEntry.history;
-  const nextYr = String(+activeYear + 1);
-
-  // Build list of eligible crops with reasoning
-  const suggestions = [];
-  const eligibleBase = ["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Durum",
-    "Lentils","Chickpeas","Green Peas","Yellow Peas","Austrians","Mustard","Canola","Flax"];
-
-  for (const crop of eligibleBase) {
-    if ((_globallyIneligible||GLOBALLY_INELIGIBLE).has(crop)) continue;
-    const checker = getRotationRules()[crop];
-    const violations = checker ? checker(hist, nextYr) : [];
-    const rotationEligible = violations.length === 0;
-    const plantback = getPlantbackWarnings(fieldRestrictions, fieldCommon, crop);
-    const plantbackViolations = plantback.map(w =>
-      `${w.chemName} applied ${w.appliedDate} — ${w.daysRemaining} day${w.daysRemaining !== 1 ? "s" : ""} of plantback remaining`
-    );
-
-    // Score: prefer crops not used recently, penalize violations
-    const lastUsed = Object.keys(hist).filter(y => hist[y] === crop).sort().pop();
-    const yearsAgo = lastUsed ? +nextYr - +lastUsed : 99;
-
-    suggestions.push({
-      crop,
-      rotationEligible,
-      eligible: rotationEligible && plantbackViolations.length === 0,
-      violations,
-      plantbackViolations,
-      lastUsed: lastUsed || null,
-      yearsAgo,
-    });
-  }
-
-  // Sort: eligible first, then by years-ago desc (longest rotation first)
-  return suggestions.sort((a, b) => {
-    if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
-    return b.yearsAgo - a.yearsAgo;
-  });
+function TruckMo({truck,onSave,onClose}){
+const[f,setF]=useState({name:truck?.name||"",hex:truck?.hex||"#cccccc",text:truck?.text||"#333"});
+const s=(k,v)=>setF(p=>({...p,[k]:v}));
+const isLight=(hex)=>{ try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return(r*299+g*587+b*114)/1000>128;}catch{return true;} };
+return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+<div style={hdrStyle}>{truck?"EDIT":"ADD"} TRUCK</div>
+<div style={lblStyle}>TRUCK NAME</div><input style={inStyle} value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. KENWORTH, RED TRUCK"/>
+<div style={lblStyle}>COLOR</div>
+<div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px"}}>
+<input type="color" value={f.hex} onChange={e=>{const hex=e.target.value;s("hex",hex);s("text",isLight(hex)?"#333":"#fff");}} style={{width:"48px",height:"36px",border:"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer",padding:"2px"}}/>
+<div style={{flex:1,padding:"8px 12px",background:f.hex,borderRadius:"4px",border:"1px solid #b0a08a",fontFamily:"'IBM Plex Mono',monospace",fontSize:"12px",color:f.text,letterSpacing:"0.08em",textAlign:"center"}}>{f.name||"PREVIEW"}</div>
+</div>
+<div style={lblStyle}>TEXT COLOR</div>
+<div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+{["#333333","#ffffff"].map(c=>(
+<button key={c} onClick={()=>s("text",c)} style={{flex:1,padding:"7px",fontFamily:"'IBM Plex Mono',monospace",fontSize:"9px",letterSpacing:"0.1em",background:f.hex,color:c,border:f.text===c?"2px solid #4a5568":"1px solid #b0a08a",borderRadius:"4px",cursor:"pointer"}}>
+{c==="#333333"?"DARK TEXT":"LIGHT TEXT"}
+</button>
+))}
+</div>
+<div style={{display:"flex",gap:"8px"}}><MoBtn onClick={onClose}>CANCEL</MoBtn><MoBtn variant="primary" onClick={()=>{if(!f.name.trim())return alert("Name required");onSave(f);}}>SAVE</MoBtn></div>
+</div></div>);
 }
 
+// LoadMo — edit / delete a load, or switch into split mode to divide it
+// between two bins. Mirrors the split flow from the old standalone
+// grain-cart app (component_final.jsx), adapted to this module's data
+// shape (load.net in lbs, load.grainBushelLbs, load.binId).
+function LoadMo({load,bins,grains,insuranceUnits=[],onSave,onDelete,onSplit,onClose}){
+const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||"",insuranceUnit:load.insuranceUnit&&load.insuranceUnit!=="none"?load.insuranceUnit:""});
+const[splitMode,setSplitMode]=useState(false);
+const[splitAmt,setSplitAmt]=useState("");
+const[splitBinId,setSplitBinId]=useState((bins.find(b=>b.id!==load.binId)||bins[0])?.id);
+const s=(k,v)=>setF(p=>({...p,[k]:v}));
+const safeGrains=(Array.isArray(grains)?grains:[]).filter(Boolean);
 
-// ── Historical Revenue Storage ────────────────────────────────────────────────
-function loadHistRevenue() { return loadHistRevCache(); }
-function saveHistRevenue(data) {
-  saveHistRevCache(data);
-  fbSaveHistRevenue(data).catch(()=>{});
-}
-function getRevKey(field, year) {
-  return field.common + '|' + field.legal + '|' + year;
-}
+const parsedNet = Math.max(0, parseInt(f.net)||0);
+const bushelLbs = parseInt(f.grainBushelLbs)||60;
 
-// ── Revenue Input Modal ────────────────────────────────────────────────────────
-function RevenueInputModal({ field, year, crop, existingData, onSave, onClose }) {
-  const [revenue, setRevenue] = useState(existingData?.revenue ?? '');
-  const [totalExpenses, setTotalExpenses] = useState(existingData?.totalExpenses ?? '');
-  const [bushelYield, setBushelYield] = useState(existingData?.bushelYield ?? '');
-  const [soldPrice, setSoldPrice] = useState(existingData?.soldPrice ?? '');
+if(splitMode){
+const totalBu = parsedNet / bushelLbs;
+const splitABu = Math.max(0, Math.min(totalBu, parseFloat(splitAmt)||0));
+const splitBBu = totalBu - splitABu;
+const splitALbs = Math.round(splitABu*bushelLbs);
+const splitBLbs = parsedNet - splitALbs;
+const label = load.splitLabel || "";
+const canApply = splitABu>0 && splitBBu>1e-3 && f.binId!==splitBinId;
+const binName = id => (bins.find(b=>b.id===id)||{}).name || "?";
 
-  const acres = field.acres;
-  const buYield = parseFloat(bushelYield) || 0;
-  const price = parseFloat(soldPrice) || 0;
-  // Auto-calculate revenue from bu/ac x acres x price; override with manual entry
-  const calcedRevenue = buYield > 0 && price > 0 ? buYield * acres * price : 0;
-  const revManual = parseFloat(revenue) || 0;
-  const rev = revenue !== '' ? revManual : calcedRevenue;
-  const autoCalc = calcedRevenue > 0 && revenue === '';
-  const exp = parseFloat(totalExpenses) || 0;
-  const net = rev - exp;
-  const expPerAc = acres > 0 ? exp / acres : 0;
+return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+<div style={hdrStyle}>SPLIT LOAD{label?` #${label}`:""}</div>
+<div style={{background:"#ede9e4",border:"1px solid #c0b8ac",borderRadius:"6px",padding:"12px",marginBottom:"14px"}}>
+<div style={{fontSize:"9px",color:"#6a7280",letterSpacing:"0.15em",marginBottom:"4px"}}>TOTAL LOAD</div>
+<div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:"22px",color:"#4a5568"}}>{totalBu.toFixed(1)} <span style={{fontSize:"12px",color:"#5a6878"}}>BU</span></div>
+<div style={{fontSize:"9px",color:"#6a7280",marginTop:"2px"}}>{parsedNet.toLocaleString()} lbs · {bushelLbs} lbs/bu</div>
+</div>
 
-  const inp = (label, val, setter, prefix, readOnly, hint) => (
-    <label style={{display:"flex",flexDirection:"column",gap:4}}>
-      <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8,display:"flex",justifyContent:"space-between"}}>
-        <span>{label}</span>
-        {hint&&<span style={{color:"#8a9a70",fontSize:9,fontStyle:"italic",textTransform:"none"}}>{hint}</span>}
-      </span>
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
-        {prefix&&<span style={{color:"#527a38",fontSize:13}}>{prefix}</span>}
-        <input type="number" value={readOnly ? f2(rev) : val} onChange={e=>!readOnly&&setter(e.target.value)} step="0.01"
-          readOnly={readOnly}
-          style={{background:readOnly?"#eef8e8":"#f4f8ee",border:"1px solid "+(readOnly?"#88c878":"#b8d09a"),borderRadius:5,padding:"8px 10px",fontSize:14,fontFamily:"'IBM Plex Mono',monospace",color:readOnly?"#2a6010":"#1a3010",width:"100%",outline:"none"}}/>
-      </div>
-    </label>
-  );
+<div style={lblStyle}>FIRST BIN — BUSHELS</div>
+<input style={inStyle} type="number" value={splitAmt} onChange={e=>setSplitAmt(e.target.value)} placeholder={`Max ${totalBu.toFixed(1)} bu`}/>
+{splitABu>0&&(
+<div style={{marginBottom:"10px",marginTop:"-4px"}}>
+<div style={{display:"flex",height:"6px",borderRadius:"3px",overflow:"hidden"}}>
+<div style={{width:`${(splitABu/totalBu)*100}%`,background:"#4a5568"}}/>
+<div style={{flex:1,background:"#c47d0a"}}/>
+</div>
+<div style={{display:"flex",justifyContent:"space-between",marginTop:"5px",fontSize:"9px"}}>
+<span style={{color:"#4a5568",fontWeight:700}}>A: {splitABu.toFixed(1)} bu ({splitALbs.toLocaleString()} lbs)</span>
+<span style={{color:"#c47d0a",fontWeight:700}}>B: {splitBBu.toFixed(1)} bu ({splitBLbs.toLocaleString()} lbs)</span>
+</div>
+</div>
+)}
 
-  const handleSave = () => {
-    onSave({ revenue: rev, totalExpenses: exp, bushelYield: buYield, soldPrice: price, crop: crop||'', acres });
-  };
+<div style={lblStyle}>BIN A (KEEPS THIS LOAD'S BIN)</div>
+<div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"10px"}}>
+{bins.map(b=>(
+<button key={b.id} onClick={()=>s("binId",b.id)} style={{...btnBase_static,padding:"5px 10px",fontSize:"10px",background:f.binId===b.id?"#e8e2d8":"transparent",border:f.binId===b.id?"1px solid #4a5568":"1px solid #ccc4b8",color:f.binId===b.id?"#4a5568":"#6a7280"}}>{b.name}</button>
+))}
+</div>
+<div style={lblStyle}>BIN B — REMAINDER</div>
+<div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"12px"}}>
+{bins.map(b=>(
+<button key={b.id} onClick={()=>setSplitBinId(b.id)} style={{...btnBase_static,padding:"5px 10px",fontSize:"10px",background:splitBinId===b.id?"#e8e2d8":"transparent",border:splitBinId===b.id?"1px solid #c47d0a":"1px solid #ccc4b8",color:splitBinId===b.id?"#c47d0a":"#6a7280"}}>{b.name}</button>
+))}
+</div>
+{f.binId===splitBinId&&<div style={{fontSize:"9px",color:"#b04030",textAlign:"center",marginBottom:"10px"}}>BIN A AND BIN B MUST BE DIFFERENT</div>}
 
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000}}>
-      <div style={{background:"#fff",borderRadius:12,padding:28,width:480,boxShadow:"0 20px 60px rgba(0,0,0,0.2)",border:"1px solid #ccdda0"}}>
-        {/* Header */}
-        <div style={{marginBottom:20}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010",marginBottom:4}}>
-            Input Revenue Data
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#7a9260"}}>
-            <span style={{fontFamily:"'IBM Plex Mono',monospace",fontWeight:700,color:"#1a5010"}}>{year}</span>
-            <span>·</span>
-            <span style={{background:cropColor(crop||''),color:"#fff",padding:"1px 8px",borderRadius:3,fontSize:11,fontWeight:600}}>{crop||"Unknown crop"}</span>
-            <span>·</span>
-            <span>{field.common}</span>
-            <span>·</span>
-            <span>{acres.toFixed(0)} ac</span>
-          </div>
-        </div>
-
-        {/* Step 1: yield + price → auto revenue */}
-        <div style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Step 1 — Yield & Price</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
-          {inp("Bushels / Acre",bushelYield,setBushelYield,"")}
-          {inp("Sold Price $/bu",soldPrice,setSoldPrice,"$")}
-        </div>
-        {/* Step 2: auto or manual revenue */}
-        <div style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span>Step 2 — Revenue</span>
-          {autoCalc&&<span style={{fontSize:9,color:"#2a7010",background:"#e8f8e0",padding:"1px 7px",borderRadius:3}}>✓ Auto-calculated from yield × price × {acres.toFixed(0)} ac</span>}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-          <div>
-            {autoCalc
-              ? (<label style={{display:"flex",flexDirection:"column",gap:4}}>
-                  <span style={{fontSize:10,color:"#2a7010",textTransform:"uppercase",letterSpacing:0.8}}>Total Revenue $ (auto)</span>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{color:"#2a7010",fontSize:13}}>$</span>
-                    <div style={{background:"#eef8e8",border:"1px solid #88c878",borderRadius:5,padding:"8px 10px",fontSize:14,fontFamily:"'IBM Plex Mono',monospace",color:"#2a6010",flex:1,fontWeight:600}}>
-                      {rev.toLocaleString("en-US",{maximumFractionDigits:0})}
-                    </div>
-                  </div>
-                  <span style={{fontSize:10,color:"#7a9a70"}}>Override: <input type="number" value={revenue} onChange={e=>setRevenue(e.target.value)} placeholder="type to override" step="1" style={{background:"#f4f8ee",border:"1px solid #b8d09a",borderRadius:3,padding:"3px 7px",fontSize:11,fontFamily:"'IBM Plex Mono',monospace",color:"#1a3010",width:130,outline:"none"}}/></span>
-                </label>)
-              : inp("Total Revenue $",revenue,setRevenue,"$","","or enter manually")
-            }
-          </div>
-          {inp("Total Expenses $",totalExpenses,setTotalExpenses,"$")}
-        </div>
-
-        {/* Live calc */}
-        {(rev > 0 || exp > 0) && (
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:20,padding:"12px",background:"#f4f8ee",borderRadius:6,border:"1px solid #ccdda0"}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:3}}>Revenue/Ac</div>
-              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:14,color:"#1a6010",fontWeight:600}}>${f2(acres>0?rev/acres:0)}</div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:3}}>Exp/Ac</div>
-              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:14,color:"#c05010",fontWeight:600}}>${f2(expPerAc)}</div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,marginBottom:3}}>Net Income</div>
-              <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:14,fontWeight:600,color:net>=0?"#1a6010":"#c02020"}}>{f$(net,true)}</div>
-            </div>
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center"}}>
-          {existingData && (
-            <button onClick={()=>onSave(null)} style={{background:"#fff0f0",border:"1px solid #cc9090",borderRadius:5,padding:"8px 14px",fontSize:11,cursor:"pointer",color:"#c02020",fontFamily:"'Barlow',sans-serif"}}>
-              Remove Data
-            </button>
-          )}
-          <div style={{display:"flex",gap:10,marginLeft:"auto"}}>
-            <button onClick={onClose} style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:5,padding:"8px 18px",fontSize:12,cursor:"pointer",color:"#7a9260",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
-            <button onClick={handleSave} style={{background:"#2a7a18",border:"none",borderRadius:5,padding:"8px 22px",fontSize:12,cursor:"pointer",color:"#fff",fontFamily:"'Barlow',sans-serif",fontWeight:600}}>
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+<div style={{display:"flex",gap:"8px"}}>
+<MoBtn onClick={()=>setSplitMode(false)}>← BACK</MoBtn>
+<MoBtn variant="primary" disabled={!canApply} onClick={()=>onSplit({load,splitA:splitALbs,splitB:splitBLbs,binAId:f.binId,binBId:splitBinId,labelBase:load.splitLabel||undefined})}>APPLY SPLIT</MoBtn>
+</div>
+</div></div>);
 }
 
-function FieldHistoryTab({ field, activeYear, allFields, years, createYear, switchYear, onUpdate, tenantId, manualHistory={}, onSaveHistory, fieldRestrictions={} }) {
-  // Prefer this field's OWN history — whatever the grower actually entered for it
-  // via this History tab (manualHistory, keyed by year -> {crop,yield,acres}) —
-  // over the legacy HISTORY_DATA seed table. That table is old demo/import data
-  // for a completely different set of farms and matching against it by common
-  // name alone was silently handing back someone else's crop history whenever a
-  // name happened to collide. See resolveFieldHistoryEntry (shared with the
-  // CropSelect header picker, so both read the exact same history).
-  const histEntry = useMemo(() => resolveFieldHistoryEntry(field, manualHistory, tenantId), [field.common, field.fieldNum, field.legal, manualHistory, tenantId]);
-
-  const suggestions = useMemo(() => getCropSuggestions(histEntry, activeYear, fieldRestrictions, field.common), [histEntry, activeYear, fieldRestrictions, field.common]);
-  const HIST_YEARS_ALL = ["2015","2016","2017","2018","2019","2020","2021","2022","2023","2024","2025","2026"];
-
-  // ── Manual history state ──────────────────────────────────────────────────
-  const [manHist, setManHist] = useState({...manualHistory});
-  const [addingYear, setAddingYear] = useState(false);
-  const [newRow, setNewRow] = useState({year:"", crop:"", yield:"", acres:""});
-  const [editingYear, setEditingYear] = useState(null);
-  const [editRow, setEditRow] = useState({});
-  useEffect(()=>{ setManHist({...manualHistory}); },[manualHistory]);
-
-  const allEnteredYears = Object.keys(manHist).sort((a,b)=>b.localeCompare(a));
-
-  const saveRow = (year, data) => {
-    const updated = {...manHist, [year]: data};
-    setManHist(updated);
-    onSaveHistory && onSaveHistory(updated);
-  };
-
-  const deleteRow = year => {
-    const updated = {...manHist};
-    delete updated[year];
-    setManHist(updated);
-    onSaveHistory && onSaveHistory(updated);
-  };
-
-  const commitNew = () => {
-    if(!newRow.year || !newRow.crop) return;
-    saveRow(newRow.year, {crop:newRow.crop, yield:newRow.yield||"", acres:newRow.acres||""});
-    setNewRow({year:"", crop:"", acres:""}); setAddingYear(false);
-  };
-
-  const commitEdit = () => {
-    if(!editingYear) return;
-    saveRow(editingYear, {crop:editRow.crop, yield:editRow.yield||"", acres:editRow.acres||""});
-    setEditingYear(null);
-  };
-
-  const cropOpts = (_tenantCrops||ALL_CROPS);
-  const inpS = {border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none",background:"#fff"};
-
-  // Revenue modal state
-  const [editYear, setEditYear] = useState(null);
-  const [histRev, setHistRev] = useState(() => loadHistRevenue());
-
-  const saveRev = (year, entry) => {
-    const updated = { ...histRev };
-    const key = getRevKey(field, year);
-    if (entry === null) { delete updated[key]; }
-    else { updated[key] = entry; }
-    setHistRev(updated);
-    saveHistRevenue(updated);
-    setEditYear(null);
-  };
-
-  // Build financial data for each year
-  const yearNetMap = useMemo(() => {
-    const map = {};
-    const fieldKey = field.common + '|' + field.fieldNum;
-
-    // 1. Active year from live fields (highest priority)
-    if (allFields) {
-      const match = allFields.find(f => f.common === field.common && f.legal === field.legal && f.fieldNum === field.fieldNum)
-      || allFields.find(f => f.common === field.common && f.legal === field.legal);
-      if (match) {
-        const c = calc(match);
-        map[activeYear] = { net: c.net, revenue: c.revenue, expenses: c.expenses, expRate: c.expRate, crop: match.crop, source: 'plan' };
-      }
-    }
-    // 2. Other AgriPlan years from localStorage
-    for (const yr of HIST_YEARS_ALL) {
-      if (yr === activeYear) continue;
-      try {
-        const raw = localStorage.getItem('agriplan_fields_' + yr);
-        if (!raw) continue;
-        const saved = JSON.parse(raw);
-        const match = saved.find(f => f.common === field.common && f.legal === field.legal && f.fieldNum === field.fieldNum)
-          || saved.find(f => f.common === field.common && f.legal === field.legal);
-        if (match) {
-          const c = calc(match);
-          map[yr] = { net: c.net, revenue: c.revenue, expenses: c.expenses, expRate: c.expRate, crop: match.crop, source: 'plan' };
-        }
-      } catch {}
-    }
-    // 3. Workbook production data (col S × T) - fills in gaps.
-    // WORKBOOK_PRODUCTION, like HISTORY_DATA, is Flat Acre Farms' own real
-    // imported revenue/yield numbers — gated the same way so another tenant
-    // with a same-named field never has Flat Acre's actual $ figures folded
-    // into their history table.
-  const wbFieldKey2 = field.common + '|' + field.fieldNum;
-  const wbField = isFlatAcreTenant(tenantId) ? (WORKBOOK_PRODUCTION[fieldKey] || WORKBOOK_PRODUCTION[wbFieldKey2]) : null;
-    if (wbField) {
-      for (const yr of HIST_YEARS_ALL) {
-        if (map[yr]) continue;
-        const wd = wbField[yr];
-        if (!wd) continue;
-        const expRate = EXP.reduce((s,[k]) => {
-          const cd = CROP_EXP_DEFAULTS[wd.crop];
-          const _rates=_expRates||DEFAULT_RATES; const _crd=_cropRates||CROP_EXP_DEFAULTS; const _cd=_crd[field.crop]; return s + (_cd && _cd[k] !== undefined ? _cd[k] : _rates[k]??0);
-        }, 0);
-        const expenses = expRate * field.acres;
-        const revenue = wd.revenue || 0;
-        map[yr] = {
-          revenue,
-          expenses: revenue > 0 ? expenses : null,
-          expRate: revenue > 0 ? expRate : null,
-          net: revenue > 0 ? revenue - expenses : null,
-          crop: wd.crop,
-          bu_per_ac: wd.bu_per_ac,
-          sold_price: wd.sold_price,
-          total_bu: wd.total_bu,
-          source: wd.revenue ? 'workbook' : 'workbook_yield',
-        };
-      }
-    }
-    // 4. Manually entered data - fills remaining gaps
-    for (const yr of HIST_YEARS_ALL) {
-      if (map[yr]) continue;
-      const key = getRevKey(field, yr);
-      if (histRev[key]) {
-        const d = histRev[key];
-        map[yr] = {
-          net: d.revenue - d.totalExpenses,
-          revenue: d.revenue,
-          expenses: d.totalExpenses,
-          expRate: field.acres > 0 ? d.totalExpenses / field.acres : 0,
-          crop: d.crop,
-          source: 'manual',
-        };
-      }
-    }
-    return map;
-  }, [field.common, field.legal, activeYear, allFields, histRev]);
-
-  const nextYear = String(+activeYear + 1);
-  const hasCropData = histEntry && Object.keys(histEntry.history).length > 0;
-
-  const handlePlant = (crop) => {
-    const ny = nextYear;
-    const yearExists = years && years.includes(ny);
-
-    const applyToYear = () => {
-      // Read the saved fields for nextYear from localStorage
-      try {
-        const raw = localStorage.getItem('agriplan_fields_' + ny);
-        if (raw) {
-          const savedFields = JSON.parse(raw);
-          const match = savedFields.find(f => f.common === field.common && f.fieldNum === field.fieldNum)
-                     || savedFields.find(f => f.common === field.common && Math.abs(f.acres - field.acres) < 1);
-          if (match) {
-            const updated = savedFields.map(f => f.id === match.id ? {...f, crop} : f);
-            localStorage.setItem('agriplan_fields_' + ny, JSON.stringify(updated));
-            fbSaveFields(ny, updated).catch(() => {});
-          }
-        }
-      } catch(e) { console.warn('handlePlant error:', e); }
-      switchYear && switchYear(ny);
-    };
-
-    if (!yearExists) {
-      // Create the year as a copy of active year first, then apply
-      createYear && createYear(ny, 'copy', activeYear);
-      // createYear switches to the new year, so we wait a tick then update
-      setTimeout(applyToYear, 600);
-    } else {
-      applyToYear();
-    }
-  };
-
-  return (
-    <div>
-      {/* ── Manual crop history entry ───────────────────────────────────── */}
-      {(tenantId || Object.keys(manHist).length > 0) && (
-        <div style={{background:"#f6f9f0",border:"1px solid #c8e0a8",borderRadius:8,padding:16,marginBottom:20}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontWeight:700,fontSize:13,color:"#1a4010"}}>📋 Crop History — {field.common}</div>
-            {!addingYear&&<button onClick={()=>{setAddingYear(true);setNewRow({year:"",crop:"",yield:"",acres:String(field.acres||"")});}} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:4,padding:"4px 14px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Year</button>}
-          </div>
-          {allEnteredYears.length===0&&!addingYear&&<div style={{fontSize:12,color:"#9aaa80",textAlign:"center",padding:"12px 0"}}>No history entered yet — click + Add Year to start</div>}
-          {(allEnteredYears.length>0||addingYear)&&(
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead><tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
-                {["Year","Crop","Yield (bu/ac)","Acres",""].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:10,letterSpacing:0.5}}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {allEnteredYears.map((yr,i)=>(
-                  editingYear===yr?(
-                    <tr key={yr} style={{background:"#eaf5e0"}}>
-                      <td style={{padding:"4px 6px",fontWeight:700,color:"#1a4010"}}>{yr}</td>
-                      <td style={{padding:"4px 6px"}}><select value={editRow.crop||""} onChange={e=>setEditRow(p=>({...p,crop:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:"100%"}}><option value="">—</option>{cropOpts.map(c=><option key={c}>{c}</option>)}</select></td>
-                      <td style={{padding:"4px 6px"}}><input type="number" value={editRow.yield||""} onChange={e=>setEditRow(p=>({...p,yield:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
-                      <td style={{padding:"4px 6px"}}><input type="number" value={editRow.acres||""} onChange={e=>setEditRow(p=>({...p,acres:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
-                      <td style={{padding:"4px 6px"}}><button onClick={commitEdit} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:3,padding:"3px 10px",fontSize:11,cursor:"pointer",marginRight:4}}>✓</button><button onClick={()=>setEditingYear(null)} style={{background:"#f0f0f0",border:"1px solid #ccc",borderRadius:3,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>✕</button></td>
-                    </tr>
-                  ):(
-                    <tr key={yr} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
-                      <td style={{padding:"5px 8px",fontWeight:700,color:"#1a4010"}}>{yr}</td>
-                      <td style={{padding:"5px 8px"}}><span style={{background:"#d4ecc0",padding:"1px 8px",borderRadius:3,fontSize:11,fontWeight:600,color:"#2a6010"}}>{manHist[yr].crop||"—"}</span></td>
-                      <td style={{padding:"5px 8px",fontFamily:"'IBM Plex Mono',monospace"}}>{manHist[yr].yield||"—"}</td>
-                      <td style={{padding:"5px 8px",fontFamily:"'IBM Plex Mono',monospace"}}>{manHist[yr].acres||"—"}</td>
-                      <td style={{padding:"5px 8px"}}><button onClick={()=>{setEditingYear(yr);setEditRow({...manHist[yr]});}} style={{background:"none",border:"1px solid #5a9040",borderRadius:3,padding:"2px 8px",fontSize:10,cursor:"pointer",color:"#3a7020",marginRight:4}}>✏️</button><button onClick={()=>deleteRow(yr)} style={{background:"none",border:"1px solid #c04040",borderRadius:3,padding:"2px 8px",fontSize:10,cursor:"pointer",color:"#c04040"}}>✕</button></td>
-                    </tr>
-                  )
-                ))}
-                {addingYear&&(
-                  <tr style={{background:"#eaf5e0"}}>
-                    <td style={{padding:"4px 6px"}}><select value={newRow.year} onChange={e=>setNewRow(p=>({...p,year:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:"100%"}}><option value="">Year</option>{HIST_YEARS_ALL.filter(y=>!manHist[y]).map(y=><option key={y}>{y}</option>)}</select></td>
-                    <td style={{padding:"4px 6px"}}><select value={newRow.crop} onChange={e=>setNewRow(p=>({...p,crop:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:"100%"}}><option value="">Crop</option>{cropOpts.map(c=><option key={c}>{c}</option>)}</select></td>
-                    <td style={{padding:"4px 6px"}}><input type="number" placeholder="bu/ac" value={newRow.yield} onChange={e=>setNewRow(p=>({...p,yield:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
-                    <td style={{padding:"4px 6px"}}><input type="number" placeholder="ac" value={newRow.acres} onChange={e=>setNewRow(p=>({...p,acres:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
-                    <td style={{padding:"4px 6px"}}><button onClick={commitNew} disabled={!newRow.year||!newRow.crop} style={{background:(!newRow.year||!newRow.crop)?"#aac890":"#2a7a18",color:"#fff",border:"none",borderRadius:3,padding:"3px 10px",fontSize:11,cursor:"pointer",marginRight:4}}>✓ Add</button><button onClick={()=>setAddingYear(false)} style={{background:"#f0f0f0",border:"1px solid #ccc",borderRadius:3,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>✕</button></td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-          {allEnteredYears.length>0&&<div style={{fontSize:10,color:"#9aaa80",marginTop:8}}>History is used for rotation planning and crop suggestions. Yield and acres are optional.</div>}
-        </div>
-      )}
-
-      {/* Revenue Input Modal */}
-      {editYear && (
-        <RevenueInputModal
-          field={field}
-          year={editYear}
-          crop={yearNetMap[editYear]?.crop || histEntry?.history[editYear] || ''}
-          existingData={histRev[getRevKey(field, editYear)] || null}
-          onSave={entry => saveRev(editYear, entry)}
-          onClose={() => setEditYear(null)}
-        />
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:20,alignItems:"start"}}>
-        {/* History table */}
-        <div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <div style={{fontSize:11,fontWeight:600,color:"#3a6020",textTransform:"uppercase",letterSpacing:0.8}}>
-              Crop & Revenue History — {field.common}
-            </div>
-            <div style={{fontSize:10,color:"#7a9260",fontStyle:"italic"}}>Click ✏ to enter revenue for any year</div>
-          </div>
-
-          {!hasCropData && (
-            <div style={{padding:"16px",background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,color:"#7a9260",fontSize:12}}>
-              No crop history found for this field in the workbook data.
-            </div>
-          )}
-
-          {hasCropData && (
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr>
-                  <th style={{padding:"5px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"left",width:55}}>Year</th>
-                  <th style={{padding:"5px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"left"}}>Crop</th>
-                  <th style={{padding:"5px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"right"}}>Revenue</th>
-                  <th style={{padding:"5px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"right"}}>Exp $/ac</th>
-                  <th style={{padding:"5px 10px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textTransform:"uppercase",letterSpacing:0.6,textAlign:"right"}}>Net Income</th>
-                  <th style={{padding:"5px 4px",background:"#1e3a18",color:"#c8e8a0",fontSize:9,textAlign:"center",width:32}}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {HIST_YEARS_ALL.map((yr,i) => {
-                  const histCrop = histEntry?.history[yr];
-                  const fin = yearNetMap[yr];
-                  const isActive = yr === activeYear;
-                  const cropToShow = fin?.crop || histCrop;
-                  const isManual = fin?.source === 'manual';
-
-                  if (!cropToShow && !fin) return (
-                    <tr key={yr} style={{background:i%2===0?"#f6f9f0":"#fff"}}>
-                      <td style={{padding:"4px 10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:10,color:"#b0c0a0",borderBottom:"1px solid #eef4e8"}}>{yr}</td>
-                      <td colSpan={4} style={{padding:"4px 10px",color:"#c0cdb0",fontSize:10,borderBottom:"1px solid #eef4e8"}}>No data</td>
-                      <td style={{padding:"4px 4px",borderBottom:"1px solid #eef4e8",textAlign:"center"}}>
-                        <button onClick={()=>setEditYear(yr)} title="Enter revenue data"
-                          style={{background:"none",border:"1px solid #c8dda0",borderRadius:3,padding:"2px 5px",fontSize:10,cursor:"pointer",color:"#7a9260"}}>✏</button>
-                      </td>
-                    </tr>
-                  );
-
-                  return (
-                    <tr key={yr} style={{background:isActive?"#e8f8d8":i%2===0?"#f6f9f0":"#fff",borderLeft:isActive?"3px solid #3a9020":"3px solid transparent"}}>
-                      <td style={{padding:"5px 10px",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,fontWeight:isActive?700:400,color:isActive?"#1a5010":"#527a38",borderBottom:"1px solid #e0eccc"}}>
-                        {yr}{isActive&&<span style={{fontSize:8,marginLeft:3,color:"#3a9020"}}>▶</span>}
-                      </td>
-                      <td style={{padding:"5px 10px",borderBottom:"1px solid #e0eccc"}}>
-                        {cropToShow
-                          ? <span style={{background:cropColor(cropToShow),color:"#fff",padding:"1px 7px",borderRadius:3,fontSize:10,fontWeight:600}}>{cropToShow}</span>
-                          : <span style={{color:"#ccc",fontSize:10}}>—</span>}
-                      </td>
-                      <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #e0eccc",color:fin?"#1a5010":"#b0c0a0"}}>
-                        {fin && fin.revenue > 0 ? (
-                          <div>
-                            <div>{f$(fin.revenue)}
-                              {isManual&&<span style={{fontSize:8,color:"#7a9260",marginLeft:3}}>M</span>}
-                              {fin.source==="workbook"&&<span style={{fontSize:8,color:"#3a7a50",marginLeft:3}}>W</span>}
-                            </div>
-                            {fin.bu_per_ac&&<div style={{fontSize:8,color:"#7a9a70"}}>{fin.bu_per_ac.toFixed(1)}bu/ac{fin.sold_price?` × $${fin.sold_price}`:""}</div>}
-                          </div>
-                        ) : fin && fin.bu_per_ac ? (
-                          <div>
-                            <div style={{color:"#b0c0a0"}}>no price</div>
-                            <div style={{fontSize:8,color:"#7a9a70"}}>{fin.bu_per_ac.toFixed(1)} bu/ac</div>
-                          </div>
-                        ) : "—"}
-                      </td>
-                      <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:fin?"#8a5030":"#b0c0a0",borderBottom:"1px solid #e0eccc"}}>
-                        {fin ? "$"+f2(fin.expRate) : "—"}
-                      </td>
-                      <td style={{padding:"5px 10px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,fontWeight:fin?600:400,borderBottom:"1px solid #e0eccc",color:!fin?"#b0c0a0":fin.net>=0?"#1a6010":"#c02020"}}>
-                        {fin ? f$(fin.net,true) : "—"}
-                      </td>
-                      <td style={{padding:"5px 4px",borderBottom:"1px solid #e0eccc",textAlign:"center"}}>
-                        {!isActive && (
-                          <button onClick={()=>setEditYear(yr)} title={isManual?"Edit revenue data":"Enter revenue data"}
-                            style={{background:isManual?"#e8f8e0":"none",border:`1px solid ${isManual?"#88c870":"#c8dda0"}`,borderRadius:3,padding:"2px 5px",fontSize:10,cursor:"pointer",color:isManual?"#2a7010":"#7a9260"}}>
-                            {isManual?"✓":"✏"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-          <div style={{fontSize:10,color:"#8a9a70",marginTop:6,display:"flex",gap:12}}>
-            <span>📋 Crop history from workbook</span>
-            <span>💰 Plan data · <span style={{color:"#3a7a50"}}>W = Workbook (col S×T)</span></span>
-            <span style={{color:"#2a7010"}}>M = Manually entered</span>
-            <span>✏ = Click to add revenue</span>
-          </div>
-        </div>
-
-        {/* Crop Suggestions */}
-        <div style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:8,padding:"18px"}}>
-          <div style={{fontSize:15,fontWeight:700,color:"#2a5a18",marginBottom:4}}>
-            {nextYear} Crop Suggestions
-          </div>
-          <div style={{fontSize:12,color:"#7a9260",marginBottom:12}}>
-            Profitability based on your actual APH where available, typical values otherwise
-          </div>
-
-
-          {/* Eligible crops with profitability */}
-          <div style={{fontSize:12,color:"#3a7020",textTransform:"uppercase",letterSpacing:0.7,marginBottom:8,fontWeight:700}}>✓ Rotation Eligible</div>
-          {suggestions.filter(s=>s.eligible).map(s=>{
-            const p = getCropProfitability(s.crop, field.acres, field.common);
-            return(
-            <div key={s.crop} style={{marginBottom:10,padding:"11px 13px",background:"#f4fcee",borderRadius:6,border:"1px solid #cce8b0"}}>
-              {/* Crop name + last grown + plant button */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,gap:8}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
-                  <span style={{background:cropColor(s.crop),color:"#fff",padding:"4px 12px",borderRadius:4,fontSize:13,fontWeight:700,flexShrink:0}}>{s.crop}</span>
-                  <span style={{fontSize:11,color:"#8a9a70",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.lastUsed?`Last: ${s.lastUsed}`:"No prior history"}</span>
-                </div>
-                <button onClick={()=>handlePlant(s.crop)}
-                  style={{background:"#2a7a18",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,fontWeight:700,color:"#fff",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
-                  ✓ Plant {nextYear}
-                </button>
-              </div>
-              {p && (<>
-                {/* Guarantee row */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:4}}>
-                  <div style={{background:"#e8f4d8",borderRadius:3,padding:"4px 7px"}}>
-                    <div style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>🛡 Ins. Guarantee Net</div>
-                    <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:16,fontWeight:700,color:p.guarNet>=0?"#1a6010":"#c02020"}}>
-                      {f$(p.guarNet,true)}
-                    </div>
-                    <div style={{fontSize:10,color:p.fieldAph?"#2a7010":"#8a9a70",fontWeight:p.fieldAph?600:400}}>${f2(p.guarNetPerAc)}/ac · {p.aphNote}</div>
-                  </div>
-                  <div style={{background:"#f0f8e8",borderRadius:3,padding:"4px 7px"}}>
-                    <div style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>📈 Projected Net</div>
-                    <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:16,fontWeight:700,color:p.projNet>=0?"#1a6010":"#c02020"}}>
-                      {f$(p.projNet,true)}
-                    </div>
-                    <div style={{fontSize:10,color:p.fieldAph?"#2a7010":"#8a9a70",fontWeight:p.fieldAph?600:400}}>${f2(p.projNetPerAc)}/ac · {p.fieldAph?"Your APH":"Typical"} @ ${f2(p.soldPrice)}/bu sold</div>
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:8,marginTop:8}}>
-                  <div style={{background:"#fff0e8",borderRadius:5,padding:"8px 12px",flex:1,textAlign:"center"}}>
-                    <div style={{fontSize:10,color:"#8a5030",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Est. Expenses</div>
-                    <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:16,fontWeight:700,color:"#c05010"}}>${f2(p.expRate)}/ac</div>
-                  </div>
-                  <div style={{background:"#e8f4e0",borderRadius:5,padding:"8px 12px",flex:1,textAlign:"center"}}>
-                    <div style={{fontSize:10,color:"#3a6020",textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Guar Revenue</div>
-                    <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:16,fontWeight:700,color:"#2a7010"}}>${f2(p.guarRevPerAc)}/ac</div>
-                  </div>
-                </div>
-              </>)}
-            </div>
-          );})}
-
-          {/* Rotation-eligible but chemically restricted */}
-          {suggestions.some(s=>s.rotationEligible && s.plantbackViolations.length>0) && (<>
-            <div style={{fontSize:12,color:"#8a6010",textTransform:"uppercase",letterSpacing:0.7,marginBottom:8,fontWeight:700,marginTop:16}}>⚗️ Plantback Restricted</div>
-            {suggestions.filter(s=>s.rotationEligible && s.plantbackViolations.length>0).map(s=>(
-              <div key={s.crop} style={{marginBottom:6,padding:"9px 11px",background:"#fff8e0",borderRadius:5,border:"1px solid #e0c060"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
-                  <span style={{background:cropColor(s.crop),color:"#fff",padding:"3px 10px",borderRadius:3,fontSize:12,fontWeight:600,opacity:0.6}}>{s.crop}</span>
-                </div>
-                {s.plantbackViolations.map((v,i)=><div key={i} style={{fontSize:11,color:"#8a6010",marginTop:3}}>• {v}</div>)}
-              </div>
-            ))}
-          </>)}
-
-          {/* Ineligible by rotation/insurance rule */}
-          <div style={{fontSize:12,color:"#904040",textTransform:"uppercase",letterSpacing:0.7,marginBottom:8,fontWeight:700,marginTop:16}}>✗ Rotation Conflict</div>
-          {suggestions.filter(s=>!s.rotationEligible).map(s=>(
-            <div key={s.crop} style={{marginBottom:6,padding:"9px 11px",background:"#fff8f0",borderRadius:5,border:"1px solid #f0c090"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
-                <span style={{background:cropColor(s.crop),color:"#fff",padding:"3px 10px",borderRadius:3,fontSize:12,fontWeight:600,opacity:0.6}}>{s.crop}</span>
-              </div>
-              {s.violations.map((v,i)=><div key={i} style={{fontSize:11,color:"#c05010",marginTop:3}}>• {v}</div>)}
-              {s.plantbackViolations.map((v,i)=><div key={"pb"+i} style={{fontSize:11,color:"#8a6010",marginTop:3}}>• ⚗️ {v}</div>)}
-            </div>
-          ))}
-          <div style={{fontSize:10,color:"#b0b8a8",marginTop:12,fontStyle:"italic",lineHeight:1.5}}>
-            Profitability uses imported APH or entered history. Actual guarantees depend on your policy and field APH. Expenses from configured rates.
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
+<div style={hdrStyle}>EDIT LOAD{load.splitLabel?` #${load.splitLabel}`:""}</div>
+<div style={lblStyle}>GRAIN</div>
+{safeGrains.length
+? <select style={seStyle} value={f.grainName} onChange={e=>{const g=safeGrains.find(x=>x.name===e.target.value);s("grainName",e.target.value);if(g)s("grainBushelLbs",g.bushel_lbs);}}>{safeGrains.map(g=><option key={g.name} value={g.name}>{g.name}</option>)}</select>
+: <input style={inStyle} value={f.grainName} onChange={e=>s("grainName",e.target.value)}/>
 }
-
-
-// ── Field Detail ─────────────────────────────────────────────────────────────
-function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onSaveActualBushels,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
-  // Operators/managers without the right flag never see raw dollar figures —
-  // same PERMS model AgriScale already enforces, see core/permissions.js.
-  const p=perms||PERMS.owner;
-  // ── Chemical plantback warnings — shared helper, see getPlantbackWarnings ──
-  const chemWarnings = useMemo(() => getPlantbackWarnings(fieldRestrictions, field.common, field.crop), [field.crop, field.common, fieldRestrictions]);
-
-  // ── Rotation / insurance-rule warnings for the crop currently selected on
-  // this field — same rules engine the History tab's suggestions and the
-  // Rotation Rules editor use (getRotationRules), just evaluated for THIS
-  // year instead of next year, since this is checking the crop you already
-  // picked rather than suggesting one.
-  const cropHistEntry = useMemo(() => resolveFieldHistoryEntry(field, fieldHistory[field.common] || {}, tenantId), [field.common, field.fieldNum, field.legal, fieldHistory, tenantId]);
-  const rotationWarnings = useMemo(() => {
-    if (!field.crop || !cropHistEntry) return [];
-    const checker = getRotationRules()[field.crop];
-    return checker ? checker(cropHistEntry.history, activeYear || "2026") : [];
-  }, [field.crop, cropHistEntry, activeYear]);
-  const[tab,setTab]=useState("income");
-  const[priorYear,setPriorYear]=useState("2023 Actuals");
-  const[editing,setEditing]=useState(false);
-  // Manual actual-bushels entry — closes the loop for tenants not on
-  // AgriScale, who'd otherwise have no way to record what a field actually
-  // yielded. Writes into the same fieldHistory[common][year] record AgriScale
-  // pushes into, so every downstream consumer (reports, Home, calcFieldActuals)
-  // just works without knowing where the number came from.
-  const[bushelsEdit,setBushelsEdit]=useState(null);
-  useEffect(()=>{ setBushelsEdit(null); },[field.id, activeYear]);
-  const[editDraft,setEditDraft]=useState({});
-  const[newUnitText,setNewUnitText]=useState("");
-  const[newUnitAcres,setNewUnitAcres]=useState("");
-  const c=calc(field);
-  // YEAR_LABELS (ACTUALS_2023/BUDGET_2024/etc) is Flat Acre Farms' own real
-  // historical budget/actual $/ac data, same category as HISTORY_DATA and
-  // WORKBOOK_PRODUCTION — gated the same way so no other tenant sees it as if
-  // it were a generic benchmark. Everyone else just doesn't get a prior-year
-  // comparison here (no fabricated substitute) until they've entered their
-  // own actuals over a few seasons.
-  const showPriorYearCompare=isFlatAcreTenant(tenantId);
-  const priorRates=showPriorYearCompare?YEAR_LABELS[priorYear]:null;
-  const actual=calcActual(field);
-  const TB=(t,l)=>(<button onClick={()=>setTab(t)} style={{padding:"8px 18px",fontSize:11,cursor:"pointer",border:"none",background:"none",color:tab===t?"#1a7010":"#6a8a50",borderBottom:tab===t?"2px solid #5cb850":"2px solid transparent",fontFamily:"'Barlow',sans-serif",textTransform:"uppercase",letterSpacing:0.8}}>{l}</button>);
-
-  return(<div>
-    {/* Header */}
-    {editing ? (
-      <div style={{background:"#f6fbf0",border:"2px solid #5cb850",borderRadius:10,padding:20,marginBottom:18}}>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,color:"#1a4010",marginBottom:14}}>✏️ Edit Field Info</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
-          {[["Entity","entity"],["Farm / Landlord","farm"],["Farm Number","farmNumber"]].map(([lbl,key])=>(
-            <label key={key} style={{display:"flex",flexDirection:"column",gap:3}}>
-              <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{lbl}</span>
-              <input value={editDraft[key]??""} onChange={e=>setEditDraft(p=>({...p,[key]:e.target.value}))}
-                style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:13,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            </label>
-          ))}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
-          {[["Legal Description","legal"],["Common Name *","common"],["Field Number(s)","fieldNum"]].map(([lbl,key])=>(
-            <label key={key} style={{display:"flex",flexDirection:"column",gap:3}}>
-              <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{lbl}</span>
-              <input value={editDraft[key]??""} onChange={e=>setEditDraft(p=>({...p,[key]:e.target.value}))}
-                style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:13,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            </label>
-          ))}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:10,marginBottom:16,alignItems:"end"}}>
-          <label style={{display:"flex",flexDirection:"column",gap:3}}>
-            <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Acres *</span>
-            <input type="number" value={editDraft.acres??""} onChange={e=>setEditDraft(p=>({...p,acres:e.target.value}))}
-              style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:13,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-          </label>
-          <div/>
-        </div>
-        <div style={{marginBottom:16}}>
-          <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Insurance Unit(s)</span>
-          <div style={{marginTop:6,marginBottom:8}}>
-            {(editDraft.insuranceUnits||[]).length===0 && <div style={{fontSize:12,color:"#8a9a7a",fontStyle:"italic",marginBottom:6}}>None</div>}
-            {(editDraft.insuranceUnits||[]).map((u,i)=>{
-              const uName=typeof u==="string"?u:(u?.name||"");
-              const uAcres=typeof u==="string"?"":(u?.acres??"");
-              const updUnit=(k,v)=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).map((uu,ix)=>ix!==i?uu:{name:k==="name"?v:uName,acres:k==="acres"?v:uAcres})}));
-              return(
-              <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:6,padding:"6px 8px"}}>
-                <input value={uName} onChange={e=>updUnit("name",e.target.value)}
-                  style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-                <input type="text" inputMode="decimal" value={uAcres} onChange={e=>updUnit("acres",decOnly(e.target.value))} placeholder="Acres"
-                  style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-                <button onClick={()=>setEditDraft(p=>({...p,insuranceUnits:(p.insuranceUnits||[]).filter((_,ix)=>ix!==i)}))}
-                  style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
-              </div>
-              );
-            })}
-          </div>
-          <div style={{display:"flex",gap:6}}>
-            <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
-              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}}
-              placeholder="e.g. Unit 0102" style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            <input type="text" inputMode="decimal" value={newUnitAcres} onChange={e=>setNewUnitAcres(decOnly(e.target.value))}
-              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}}
-              placeholder="Acres" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-            <button onClick={()=>{const v=newUnitText.trim();if(v){setEditDraft(p=>({...p,insuranceUnits:[...(p.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]}));setNewUnitText("");setNewUnitAcres("");}}}
-              style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 12px",color:"#2a6010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add</button>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>setEditing(false)}
-            style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 16px",color:"#c02020",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
-          <button onClick={()=>{
-            if(!editDraft.common?.trim()||!editDraft.acres) return alert("Name and acres are required.");
-            onUpdate(field.id,{...editDraft,acres:+editDraft.acres,insuranceUnits:editDraft.insuranceUnits||[]});
-            setEditing(false);
-          }} style={{background:"#2a7a18",border:"none",borderRadius:4,padding:"6px 18px",color:"#fff",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif",fontWeight:700}}>Save Changes</button>
-        </div>
-      </div>
-    ) : (
-    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18}}>
-      <div>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700,color:"#1a3010"}}>{field.common}{field.fieldNum&&<span style={{fontSize:14,color:"#6a8a50"}}> — Field #{field.fieldNum}</span>}</div>
-        <div style={{fontSize:12,color:"#6a8a50",marginTop:2}}>
-          <span style={{background:"#d4ecc0",padding:"1px 7px",borderRadius:3,fontSize:10,color:"#2a7010",marginRight:6}}>{field.entity}</span>
-          {field.farm} · {field.legal||"—"} · {field.acres.toLocaleString()} ac
-        </div>
-        {(field.insuranceUnits||[]).length>0 && (
-          <div style={{marginTop:5,display:"flex",flexWrap:"wrap",gap:5}}>
-            {field.insuranceUnits.map((u,i)=>{
-              const uName=typeof u==="string"?u:(u?.name||"");
-              const uAcres=typeof u==="string"?"":(u?.acres||"");
-              return(<span key={i} style={{background:"#eaf4dc",border:"1px solid #9ac07a",borderRadius:10,padding:"1px 8px",fontSize:10,color:"#2a5010"}}>🛡 {uName}{uAcres?` — ${uAcres} ac`:""}</span>);
-            })}
-          </div>
-        )}
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={field.eligibleCrops} fieldRestrictions={fieldRestrictions} fieldCommon={field.common} hist={cropHistEntry?.history} targetYear={activeYear||"2026"}/>
-        <button onClick={()=>{setEditDraft({entity:field.entity||"",farm:field.farm||"",farmNumber:field.farmNumber||"",legal:field.legal||"",common:field.common||"",fieldNum:field.fieldNum||"",acres:field.acres||"",insuranceUnits:field.insuranceUnits||[]});setEditing(true);}}
-          style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 10px",color:"#2a6010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✏️ Edit</button>
-        <button onClick={()=>{if(window.confirm("Delete this field?"))onDelete(field.id);}} style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 10px",color:"#c02020",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Delete</button>
-      </div>
-    </div>
-    )}
-    {/* Summary */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
-      {p.canViewInsurance
-        ? <SCard label="Ins. Guarantee" val={f$(c.guarantee)} color="#7a6010" sub={`$${f2(c.valAcre)}/ac`}/>
-        : <SCard label="Ins. Guarantee" val={REDACTED} color="#7a6010" sub="restricted"/>}
-      {p.canViewCosts
-        ? <SCard label="Projected Revenue" val={f$(c.revenue)} color="#1a7010" sub={`${f2(field.income.bushelProjection)} bu × $${f2(field.income.currentPrice)}`}/>
-        : <SCard label="Projected Revenue" val={REDACTED} color="#1a7010" sub="restricted"/>}
-      {p.canViewCosts
-        ? <SCard label="Upside / Risk" val={f$(c.risk,true)} color={c.risk>=0?"#1a7010":"#c02020"} sub="vs. guarantee"/>
-        : <SCard label="Upside / Risk" val={REDACTED} color="#6a8a50" sub="restricted"/>}
-      {p.canViewCosts
-        ? <SCard label="Total Expenses" val={f$(c.expenses)} color="#c05010" sub={`$${f2(c.expRate)}/ac`}/>
-        : <SCard label="Total Expenses" val={REDACTED} color="#c05010" sub="restricted"/>}
-      {p.canViewCosts
-        ? <SCard label="Net Income" val={f$(c.net,true)} color={c.net>=0?"#1a7010":"#c02020"} sub="rev − expenses"/>
-        : <SCard label="Net Income" val={REDACTED} color="#6a8a50" sub="restricted"/>}
-    </div>
-    {/* Actual vs Projected — only shows once real $ has been entered on the Expenses tab */}
-    {p.canViewCosts && actual && (()=>{
-      const over = actual.total > c.expenses;
-      const diff = actual.total - c.expenses;
-      return (
-        <div style={{display:"flex",gap:18,alignItems:"center",flexWrap:"wrap",padding:"10px 16px",marginBottom:16,
-          background:over?"#fff4f0":"#f0f8ec",border:`1px solid ${over?"#e0a090":"#a8d888"}`,borderRadius:8}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#3a5a28"}}>💰 Actual vs Projected — {activeYear}</div>
-          <div style={{fontSize:12,color:"#5a7a48"}}>Actual spent: <strong style={{color:"#c05010"}}>{f$(actual.total)}</strong> <span style={{color:"#8a9a7a"}}>(${f2(actual.rate)}/ac · {actual.categoriesEntered} of {EXP.length} categories)</span></div>
-          <div style={{fontSize:12,color:"#5a7a48"}}>Projected: <strong>{f$(c.expenses)}</strong></div>
-          <div style={{fontSize:12,fontWeight:700,color:over?"#c02020":"#1a7010"}}>{over?"+":""}{f$(diff,true)} vs plan</div>
-        </div>
-      );
-    })()}
-    {/* Chemical plantback warnings */}
-    {chemWarnings.length > 0 && (
-      <div style={{background:"#fff8e0",border:"2px solid #c07010",borderRadius:8,padding:"12px 16px",marginBottom:16}}>
-        <div style={{fontSize:12,fontWeight:700,color:"#7a4a00",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-          ⚗️ Chemical Plantback Restrictions — <span style={{fontWeight:400}}>{field.crop} cannot be planted yet on this field</span>
-        </div>
-        {chemWarnings.map(w=>(
-          <div key={w.chemName} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:11,color:"#5a3800",padding:"4px 0",borderTop:"1px solid #e0c060"}}>
-            <span style={{fontSize:14}}>🚫</span>
-            <div style={{flex:1}}>
-              <strong>{w.chemName}</strong> — applied {w.appliedDate} ({w.daysAgo} days ago)
-              <span style={{marginLeft:8,background:"#c07010",color:"#fff",borderRadius:3,padding:"1px 7px",fontSize:10,fontWeight:700}}>
-                {w.daysRemaining} days remaining
-              </span>
-              <span style={{marginLeft:6,color:"#9a7020",fontSize:10}}>({w.totalDays}-day plantback for {field.crop})</span>
-            </div>
-          </div>
-        ))}
-        <div style={{fontSize:10,color:"#9a7020",marginTop:8,paddingTop:6,borderTop:"1px solid #e0c060"}}>
-          ⚠️ Spraying data from FieldLog. Verify with your agronomist before planting.
-        </div>
-      </div>
-    )}
-    {/* Rotation / insurance-rule warnings */}
-    {rotationWarnings.length > 0 && (
-      <div style={{background:"#f0f4fc",border:"2px solid #3a5a9a",borderRadius:8,padding:"12px 16px",marginBottom:16}}>
-        <div style={{fontSize:12,fontWeight:700,color:"#1a3a7a",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-          🛡 Rotation / Insurance Rule — <span style={{fontWeight:400}}>{field.crop} may not be insurable on this field this year</span>
-        </div>
-        {rotationWarnings.map((msg,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:11,color:"#2a3a6a",padding:"4px 0",borderTop:"1px solid #c0cce8"}}>
-            <span style={{fontSize:14}}>⚠️</span>
-            <div style={{flex:1}}>{msg}</div>
-          </div>
-        ))}
-        <div style={{fontSize:10,color:"#5a6a9a",marginTop:8,paddingTop:6,borderTop:"1px solid #c0cce8"}}>
-          Based on crop history and your Rotation Rules config. Confirm with your insurance agent before planting.
-        </div>
-      </div>
-    )}
-    {/* ── Seeding Log from AgriField ───────────────────────────────── */}
-    <SeedLogSection fieldName={field.common} plannedCrop={field.crop} logs={(flSeedLogs||{})[field.common]||[]} tenantId={tenantId}/>
-
-    {/* Tabs */}
-    <div style={{borderBottom:"1px solid #1e3020",marginBottom:20}}>{TB("income","Income")}{TB("expenses","Expenses")}{TB("eligibility","Crop Eligibility")}{TB("history","📋 History & Plan")}</div>
-
-    {/* Income Tab */}
-    {tab==="income"&&(<div>
-      {(()=>{
-        const act=fieldHistory?.[field.common]?.[activeYear];
-        const hasAct=act&&act.bushels>0;
-        const projBu=(field.income?.bushelProjection||0)*field.acres;
-        const diff=hasAct&&projBu>0?Math.round((act.bushels-projBu)/projBu*100):null;
-        const estRevenue=hasAct?act.bushels*(field.income?.currentPrice||0):0;
-        const isManual=act?.source==="manual";
-        const editing=bushelsEdit!=null;
-        return (
-          <div style={{background:hasAct?"#f0f8ec":"#fbfbf5",border:`1px solid ${hasAct?"#a8d888":"#d8ceb8"}`,borderRadius:8,padding:"12px 16px",marginBottom:16,
-            display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-            <div style={{fontSize:20}}>{hasAct?"✓":"🌾"}</div>
-            <div style={{flex:1,minWidth:220}}>
-              {hasAct?(<>
-                <div style={{fontSize:12,fontWeight:700,color:"#2a5a18"}}>
-                  {Math.round(act.bushels).toLocaleString()} bu actual ({act.yieldPerAc||Math.round(act.bushels/(field.acres||1))} bu/ac)
-                  {diff!=null&&<span style={{color:diff>=0?"#2a8010":"#c05010",marginLeft:8}}>{diff>=0?"+":""}{diff}% vs. projected</span>}
-                </div>
-                <div style={{fontSize:11,color:"#5a7a48",marginTop:2}}>
-                  {isManual?"Manually entered":"From AgriScale weigh tickets"}{act.lastUpdated?` · updated ${new Date(act.lastUpdated).toLocaleDateString()}`:""}{p.canViewCosts?` · est. ${f$(estRevenue)} at $${f2(field.income?.currentPrice||0)}/bu`:""}
-                </div>
-              </>):(
-                <div style={{fontSize:12,color:"#8a9a70",fontStyle:"italic"}}>No actual harvest recorded yet for {activeYear}.</div>
-              )}
-            </div>
-            {onSaveActualBushels&&(editing?(
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <input type="number" autoFocus value={bushelsEdit} placeholder="bushels" onChange={e=>setBushelsEdit(e.target.value)}
-                  style={{width:100,border:"1px solid #4a8030",borderRadius:4,padding:"5px 8px",fontSize:12,fontFamily:"'IBM Plex Mono',monospace",color:"#1a3010",outline:"none"}}/>
-                <button onClick={()=>{onSaveActualBushels(field.common,activeYear,bushelsEdit);setBushelsEdit(null);}}
-                  style={{background:"#2a7a18",border:"none",borderRadius:4,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Save</button>
-                <button onClick={()=>setBushelsEdit(null)} style={{background:"none",border:"1px solid #ccc",borderRadius:4,padding:"5px 10px",fontSize:11,cursor:"pointer",color:"#888",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
-              </div>
-            ):(
-              <button onClick={()=>setBushelsEdit(hasAct?String(act.bushels):"")}
-                style={{background:"#fff",border:"1px solid #4a8030",borderRadius:4,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#2a6010",fontWeight:600,fontFamily:"'Barlow',sans-serif"}}>
-                {hasAct?"✏️ Edit":"+ Enter Actual"}
-              </button>
-            ))}
-          </div>
-        );
-      })()}
-      <div style={{display:"grid",gridTemplateColumns:"200px 140px 1fr 140px",gap:12,padding:"6px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
-        {["","Per Acre","Calculation","Total"].map((h,i)=>(<div key={i} style={{fontSize:10,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,textAlign:i>1?"right":"left"}}>{h}</div>))}
-      </div>
-      {[["Bushel Guarantee","bushelGuarantee","bu",field.income.bushelGuarantee,v=>`${v} bu × $${f2(field.income.priceGuarantee)} = $${f2(v*field.income.priceGuarantee)}/ac`,f$(c.guarantee),p.canViewInsurance],
-        ["Price Guarantee","priceGuarantee","$",field.income.priceGuarantee,v=>`Guarantee: $${f2(field.income.bushelGuarantee*v)}/ac`,"",p.canViewInsurance],
-        ["Bushel Projection","bushelProjection","bu",field.income.bushelProjection,v=>`${v} bu × $${f2(field.income.currentPrice)} = $${f2(v*field.income.currentPrice)}/ac`,f$(c.revenue),p.canViewCosts],
-        ["Projected Price","currentPrice","$",field.income.currentPrice,v=>`Revenue: $${f2(field.income.bushelProjection*v)}/ac`,"",p.canViewCosts],
-      ].map(([label,key,unit,val,desc,total,visible])=>(<div key={key} style={{display:"grid",gridTemplateColumns:"200px 140px 1fr 140px",gap:12,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #121e12"}}>
-        <div style={{fontSize:12,color:"#5a7a48"}}>{label}</div>
-        {visible?(<>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            {unit==="$"&&<span style={{color:"#4a8a30",fontSize:12}}>$</span>}
-            <input type="number" value={val} step="0.01" onChange={e=>onUpdateIncome(field.id,key,e.target.value)}
-              style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"5px 8px",color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",fontSize:13,width:unit==="$"?90:80,outline:"none"}}/>
-            {unit==="bu"&&<span style={{color:"#4a8a30",fontSize:12}}>bu</span>}
-          </div>
-          <div style={{fontSize:11,color:"#7a9260",fontFamily:"'IBM Plex Mono',monospace"}}>{desc(val)}</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#1a7010",textAlign:"right"}}>{total}</div>
-        </>):(<>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a9a7a"}}>{REDACTED}</div>
-          <div style={{fontSize:11,color:"#8a9a7a",fontStyle:"italic"}}>restricted</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a9a7a",textAlign:"right"}}>{REDACTED}</div>
-        </>)}
-      </div>))}
-    </div>)}
-
-    {/* Expenses Tab */}
-    {tab==="expenses"&&!p.canViewCosts&&(
-      <div style={{padding:"24px 16px",textAlign:"center",color:"#8a9a7a",fontSize:12,fontStyle:"italic"}}>
-        🔒 Expense figures are restricted for your role. Ask an owner or manager if you need this data.
-      </div>
-    )}
-    {tab==="expenses"&&p.canViewCosts&&(<div>
-      {/* Prior year toggle — Flat Acre's own tenant only, see showPriorYearCompare above */}
-      {showPriorYearCompare && (
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"8px 12px",background:"#ffffff",borderRadius:6,border:"1px solid #1e3020"}}>
-          <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Compare to:</span>
-          {Object.keys(YEAR_LABELS).map(yr=>(<button key={yr} onClick={()=>setPriorYear(yr)} style={{background:priorYear===yr?"#2a7a18":"transparent",border:"1px solid #2a4030",borderRadius:3,padding:"4px 10px",color:priorYear===yr?"#ffffff":"#6a8a50",fontSize:10,fontWeight:priorYear===yr?700:400,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>{yr}</button>))}
-          <span style={{marginLeft:"auto",fontSize:10}}>
-            <span style={{background:"#e8f4e0",padding:"2px 8px",borderRadius:3,color:"#1a5010",fontWeight:600,marginRight:6}}>● Crop Default</span>
-            <span style={{background:"#f4ecd8",padding:"2px 8px",borderRadius:3,color:"#7a4a10",fontWeight:600}}>★ Field Override</span>
-          </span>
-        </div>
-      )}
-      {/* Actual $ is entered farm-wide from the 💰 Expenses screen (top nav) —
-          same total-÷-acres mechanism as the projected budget there. It shows
-          up here already split out per category; nudge any single category
-          below if this field ran different from the entity average. */}
-      {actual && (
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14,padding:"8px 12px",background:"#fff8f0",border:"1px solid #e0c090",borderRadius:6}}>
-          <span style={{fontSize:11,color:"#9a7a50"}}>💰 Actual $ entered from the farm-wide Expenses screen — edit any category below to fine-tune this field.</span>
-          <span style={{marginLeft:"auto",fontSize:11,color:"#8a5030",fontWeight:600}}>Currently: {f$(actual.total)}</span>
-        </div>
-      )}
-      {/* Column headers */}
-      <div style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,padding:"5px 0",borderBottom:"1px solid #1a2a1a",marginBottom:4}}>
-        {["Category","Proj $/Ac","Crop Default","Prior Year","vs Prior Yr","Actual $ Spent","Variance"].map((h,i)=>(<div key={i} style={{fontSize:9,color:"#7a9260",textTransform:"uppercase",letterSpacing:0.8,textAlign:i>0?"right":"left"}}>{h}</div>))}
-      </div>
-      {EXP.map(([key,label])=>{
-        const rate=getRate(field,key);const cropDef=getCropDefault(field.crop,key);
-        const isOv=field.expenseOverrides&&field.expenseOverrides[key]!==undefined;
-        const prior=priorRates?priorRates[key]:null;const chg=prior!=null?rate-prior:null;const tot=rate*field.acres;
-        const actualVal=field.actualExpenses&&field.actualExpenses[key]!==undefined?field.actualExpenses[key]:"";
-        const hasActual=actualVal!==""&&actualVal!==undefined&&!isNaN(actualVal);
-        const catVariance=hasActual?(+actualVal-tot):null;
-        return(<div key={key} style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,alignItems:"center",padding:"5px 0",borderBottom:"1px solid #0f1a0f",background:isOv?"#fffcf0":"transparent"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:isOv?"#9a6010":"#5a7a48"}}>
-            <span style={{fontSize:9}}>{isOv?"★":"●"}</span>{label}
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
-            <span style={{color:"#4a8a30",fontSize:11}}>$</span>
-            <input type="number" value={rate} step="0.01" onChange={e=>onUpdateExpense(field.id,key,e.target.value)}
-              style={{background:"#ffffff",border:`1px solid ${isOv?"#cc9400":"#b8d09a"}`,borderRadius:4,padding:"4px 6px",color:isOv?"#9a6010":"#c05010",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,width:62,outline:"none",textAlign:"right"}}/>
-          </div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#6a8a50",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
-            ${f2(cropDef)}
-            {isOv&&(<button onClick={()=>onResetExpense(field.id,key)} title="Reset to crop default" style={{background:"#fff3d4",border:"1px solid #4a3010",borderRadius:3,padding:"1px 5px",color:"#8a6010",fontSize:9,cursor:"pointer"}}>↺</button>)}
-          </div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>{prior!=null?`$${f2(prior)}`:"—"}</div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,textAlign:"right",color:chg==null?"#c0c8b8":chg>0?"#c02020":chg<0?"#1a7010":"#6a8a50"}}>{chg==null?"—":`${chg>0?"+":""}${f2(chg)} (${chg>0?"+":""}${prior>0?(chg/prior*100).toFixed(1):0}%)`}</div>
-          <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
-            <span style={{color:"#8a5030",fontSize:11}}>$</span>
-            <input type="number" value={actualVal} step="1" placeholder="0" onChange={e=>onUpdateActualExpense(field.id,key,e.target.value)}
-              style={{background:hasActual?"#fff8f0":"#ffffff",border:`1px solid ${hasActual?"#e0a878":"#d8ceb8"}`,borderRadius:4,padding:"4px 6px",color:"#8a5030",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,width:78,outline:"none",textAlign:"right"}}/>
-          </div>
-          <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,textAlign:"right",color:!hasActual?"#c0c8b8":catVariance>0?"#c02020":"#1a7010"}}>{hasActual?`${catVariance>0?"+":""}${f2(catVariance)}`:"—"}</div>
-        </div>);
-      })}
-      <div style={{display:"grid",gridTemplateColumns:"190px 85px 85px 85px 100px 110px 110px",gap:8,alignItems:"center",padding:"9px 0",borderTop:"2px solid #2a4030",marginTop:4}}>
-        <div style={{fontSize:12,color:"#3a5a28",fontWeight:600}}>TOTAL EXPENSES</div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:12,color:"#c05010",textAlign:"right"}}>${f2(c.expRate)}/ac</div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#6a8a50",textAlign:"right"}}>${f2(EXP.reduce((s,[k])=>s+getCropDefault(field.crop,k),0))}/ac</div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:11,color:"#7a9260",textAlign:"right"}}>{priorRates?`$${f2(Object.values(priorRates).reduce((s,v)=>s+v,0))}/ac`:"—"}</div>
-        <div></div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,color:"#8a5030",textAlign:"right",fontWeight:600}}>{actual?f$(actual.total):"—"}</div>
-        <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:13,textAlign:"right",fontWeight:600,color:!actual?"#c0c8b8":actual.total>c.expenses?"#c02020":"#1a7010"}}>{actual?`${actual.total>c.expenses?"+":""}${f$(actual.total-c.expenses,true)}`:"—"}</div>
-      </div>
-    </div>)}
-
-    {/* Eligibility Tab */}
-    {tab==="eligibility"&&(<div>
-      <p style={{fontSize:12,color:"#5a7a40",marginBottom:16}}>Toggle crops with APH history on this field. Unchecked crops show <span style={{color:"#c02020"}}>red</span> and cannot be planted.</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-        {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{
-          // Normalize eligibleCrops — Firebase may return array or plain object
-          const _raw=field.eligibleCrops;
-          const _ec=Array.isArray(_raw)?_raw:_raw&&typeof _raw==="object"?Object.values(_raw):(_tenantCrops||ALL_CROPS);
-          const on=_ec.includes(c);
-          return(<label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:5,cursor:"pointer",fontSize:12,color:on?"#1a7010":"#904040"}}>
-          <input type="checkbox" checked={on} onChange={()=>{ onUpdate(field.id,{eligibleCrops:on?_ec.filter(x=>x!==c):[..._ec,c]}); }} style={{accentColor:"#3a9020"}}/>
-          <span style={{width:8,height:8,borderRadius:"50%",background:on?"#3a9020":"#7a3030",flexShrink:0}}/>{c}
-        </label>);})}
-      </div>
-      <div style={{padding:"12px 14px",background:"#fdf4f4",borderRadius:6,border:"1px solid #2a1a1a"}}>
-        <div style={{fontSize:10,color:"#904040",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Always Ineligible (Region/Policy)</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[...(_globallyIneligible||GLOBALLY_INELIGIBLE)].map(c=>(<span key={c} style={{padding:"3px 10px",background:"#fff0f0",border:"1px solid #4a2020",borderRadius:3,fontSize:11,color:"#904040"}}>{c}</span>))}</div>
-      </div>
-
-    </div>)}
-    {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate} tenantId={tenantId} manualHistory={fieldHistory[field.common]||{}} fieldRestrictions={fieldRestrictions} onSaveHistory={hist=>onSaveFieldHistory&&onSaveFieldHistory(field.common,hist)}/>)}
-  </div>);
+<div style={lblStyle}>LBS/BU</div><input style={inStyle} type="number" value={f.grainBushelLbs} onChange={e=>s("grainBushelLbs",e.target.value)}/>
+<div style={lblStyle}>NET WEIGHT (LBS)</div><input style={inStyle} type="number" value={f.net} onChange={e=>s("net",e.target.value)}/>
+{parsedNet>0&&bushelLbs>0&&<div style={{marginTop:"-6px",marginBottom:"10px",fontSize:"14px",fontWeight:600,color:"#c47d0a"}}>{(parsedNet/bushelLbs).toFixed(1)} <span style={{fontSize:"10px",color:"#6a7280"}}>bu</span></div>}
+<div style={lblStyle}>BIN</div><select style={seStyle} value={f.binId} onChange={e=>s("binId",Number(e.target.value))}>{bins.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>
+<div style={lblStyle}>OPERATOR</div><input style={inStyle} value={f.operator} onChange={e=>s("operator",e.target.value)}/>
+<div style={lblStyle}>INSURANCE UNIT</div>
+<select style={seStyle} value={f.insuranceUnit} onChange={e=>s("insuranceUnit",e.target.value)}>
+<option value="">None</option>
+{insuranceUnits.map(u=><option key={u} value={u}>{u}</option>)}
+</select>
+<div style={{display:"flex",gap:"8px",marginBottom:"8px"}}>
+<MoBtn onClick={onClose}>CANCEL</MoBtn>
+<MoBtn variant="primary" onClick={()=>onSave({...load,...f,net:Number(f.net),grainBushelLbs:Number(f.grainBushelLbs),insuranceUnit:f.insuranceUnit||"none"})}>SAVE</MoBtn>
+</div>
+<div style={{display:"flex",gap:"8px"}}>
+<MoBtn onClick={()=>setSplitMode(true)}>⇄ SPLIT LOAD</MoBtn>
+<MoBtn variant="danger" onClick={()=>{if(confirm("Delete this load?"))onDelete(load);}}>✕ DELETE</MoBtn>
+</div>
+</div></div>);
 }
-
-// ── Add Field Form ────────────────────────────────────────────────────────────
-function AddFieldForm({onSave,onCancel}){
-  const[d,setD]=useState({farmNumber:"",entity:"",farm:"",legal:"",common:"",fieldNum:"",acres:"",crop:"Spring Wheat",bushelGuarantee:25,priceGuarantee:6.25,bushelProjection:25,currentPrice:6.25,insuranceUnits:[]});
-  const[eligibleCrops,setEligibleCrops]=useState(_isAgriLogixTenant?[...(_tenantCrops||ALL_CROPS)]:[...FA_ELIG]);
-  const[newUnitText,setNewUnitText]=useState("");
-  const[newUnitAcres,setNewUnitAcres]=useState("");
-  const upd=(k,v)=>setD(p=>({...p,[k]:v}));
-  const inp=(label,key,type="text")=>(<label style={{display:"flex",flexDirection:"column",gap:4}}>
-    <span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>{label}</span>
-    <input type={type} value={d[key]} onChange={e=>upd(key,e.target.value)} style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:type==="number"?"'IBM Plex Mono',monospace":"'Barlow',sans-serif",fontSize:13,outline:"none"}}/>
-  </label>);
-  return(<div style={{background:"#ffffff",border:"1px solid #ccdda0",borderRadius:10,padding:24,maxWidth:900}}>
-    <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a4010",marginBottom:20}}>Add New Field</div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
-      <label style={{display:"flex",flexDirection:"column",gap:4}}><span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Entity</span>
-        <input value={d.entity} onChange={e=>upd("entity",e.target.value)} placeholder="e.g. Agri Logix" style={{background:"#ffffff",border:"1px solid #2a4030",borderRadius:4,padding:"7px 10px",color:"#1a3010",fontFamily:"'Barlow',sans-serif",fontSize:13,outline:"none",width:"100%"}}/>
-      </label>
-      {inp("Farm / Landlord","farm")}{inp("Farm Number","farmNumber")}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>{inp("Legal Description","legal")}{inp("Common Name *","common")}{inp("Field Number(s)","fieldNum")}</div>
-    <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:12,marginBottom:12,alignItems:"end"}}>
-      {inp("Acres *","acres","number")}
-      <label style={{display:"flex",flexDirection:"column",gap:4}}><span style={{fontSize:10,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8}}>Crop *</span><CropSelect value={d.crop} onChange={v=>upd("crop",v)} eligibleCrops={eligibleCrops}/></label>
-    </div>
-    <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Insurance Unit(s) ──────────────────────────────</div>
-    <div style={{marginBottom:16}}>
-      <div style={{marginBottom:8}}>
-        {(d.insuranceUnits||[]).length===0 && <div style={{fontSize:12,color:"#8a9a7a",fontStyle:"italic",marginBottom:6}}>None</div>}
-        {(d.insuranceUnits||[]).map((u,i)=>{
-          const uName=typeof u==="string"?u:(u?.name||"");
-          const uAcres=typeof u==="string"?"":(u?.acres??"");
-          const updUnit=(k,v)=>upd("insuranceUnits",(d.insuranceUnits||[]).map((uu,ix)=>ix!==i?uu:{name:k==="name"?v:uName,acres:k==="acres"?v:uAcres}));
-          return(
-          <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,background:"#eaf4dc",border:"1px solid #4a8030",borderRadius:6,padding:"6px 8px",maxWidth:420}}>
-            <input value={uName} onChange={e=>updUnit("name",e.target.value)}
-              style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-            <input type="text" inputMode="decimal" value={uAcres} onChange={e=>updUnit("acres",decOnly(e.target.value))} placeholder="Acres"
-              style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 8px",fontSize:13,fontWeight:600,color:"#1a4010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-            <button onClick={()=>upd("insuranceUnits",(d.insuranceUnits||[]).filter((_,ix)=>ix!==i))}
-              style={{background:"none",border:"none",color:"#c02020",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px",fontWeight:700}}>×</button>
-          </div>
-          );
-        })}
-      </div>
-      <div style={{display:"flex",gap:6,maxWidth:420}}>
-        <input value={newUnitText} onChange={e=>setNewUnitText(e.target.value)}
-          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}}
-          placeholder="e.g. Unit 0102" style={{flex:2,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'Barlow',sans-serif",outline:"none"}}/>
-        <input type="text" inputMode="decimal" value={newUnitAcres} onChange={e=>setNewUnitAcres(decOnly(e.target.value))}
-          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}}
-          placeholder="Acres" style={{flex:1,background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"6px 9px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-        <button onClick={()=>{const v=newUnitText.trim();if(v){upd("insuranceUnits",[...(d.insuranceUnits||[]),{name:v,acres:newUnitAcres?+newUnitAcres:""}]);setNewUnitText("");setNewUnitAcres("");}}}
-          style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 12px",color:"#2a6010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add</button>
-      </div>
-    </div>
-    <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Income Projections ──────────────────────────────</div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>{inp("Bu Guarantee/Ac","bushelGuarantee","number")}{inp("Guarantee Price","priceGuarantee","number")}{inp("Bu Projection/Ac","bushelProjection","number")}{inp("Projected Price","currentPrice","number")}</div>
-    <div style={{fontSize:11,color:"#527a38",marginBottom:8,textTransform:"uppercase",letterSpacing:0.8}}>— Crop Insurance Eligibility ────────────────────</div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:16}}>
-      {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{const on=(eligibleCrops||[]).includes(c);return(<label key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",background:on?"#e8f8e0":"#fdf4f4",border:`1px solid ${on?"#2a7a18":"#ddb0b0"}`,borderRadius:4,cursor:"pointer",fontSize:11,color:on?"#1a7010":"#904040"}}>
-        <input type="checkbox" checked={on} onChange={()=>setEligibleCrops(p=>on?p.filter(x=>x!==c):[...p,c])} style={{accentColor:"#3a9020"}}/>{c}
-      </label>);})}
-    </div>
-    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-      <button onClick={onCancel} style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"7px 16px",color:"#c02020",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
-      <button onClick={()=>{if(!d.common||!d.acres||!d.crop)return alert("Name, acres, and crop required.");onSave({...d,acres:+d.acres,income:{bushelGuarantee:+d.bushelGuarantee,priceGuarantee:+d.priceGuarantee,bushelProjection:+d.bushelProjection,currentPrice:+d.currentPrice},eligibleCrops,expenseOverrides:{}});}} style={{background:"#2a7a18",border:"none",borderRadius:4,padding:"7px 18px",color:"#1a7010",fontSize:12,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Save Field</button>
-    </div>
-  </div>);
-}
-
-// ── Fields Table ──────────────────────────────────────────────────────────────
-function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHistory={},activeYear,perms}){
-  const p=perms||PERMS.owner;
-  const[sortKey,setSortKey]=useState("farm");const[sortDir,setSortDir]=useState(1);
-  const sorted=useMemo(()=>[...fields].sort((a,b)=>{
-    let av,bv;
-    if(sortKey==="revenue"){av=calc(a).revenue;bv=calc(b).revenue;}
-    else if(sortKey==="net"){av=calc(a).net;bv=calc(b).net;}
-    else if(sortKey==="acres"){av=a.acres;bv=b.acres;}
-    else{av=(a.farm||"")+(a.common||"");bv=(b.farm||"")+(b.common||"");return sortDir*av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});}
-    return sortDir*(av>bv?1:av<bv?-1:0);
-  }),[fields,sortKey,sortDir]);
-  const ts=k=>{if(sortKey===k)setSortDir(d=>-d);else{setSortKey(k);setSortDir(1);}};
-  const Th=({label,k,right})=>(<th onClick={()=>ts(k)} style={{padding:"8px 10px",fontSize:10,color:sortKey===k?"#1a7010":"#6a8a50",textTransform:"uppercase",letterSpacing:0.8,cursor:"pointer",textAlign:right?"right":"left",background:"#ffffff",borderBottom:"2px solid #2a4030",fontWeight:500,whiteSpace:"nowrap"}}>{label}{sortKey===k?(sortDir>0?" ↑":" ↓"):""}</th>);
-  const totRev=fields.reduce((s,f)=>s+calc(f).revenue,0);const totExp=fields.reduce((s,f)=>s+calc(f).expenses,0);const totNet=totRev-totExp;const totAc=fields.reduce((s,f)=>s+f.acres,0);
-  // Budget-overrun alert — computed here (not on the Home dashboard) because
-  // this is the one place the full expense-rate engine (getRate/EXP/crop
-  // defaults/overrides) already lives; duplicating it elsewhere would drift.
-  const overBudget=useMemo(()=>{
-    if(!p.canViewCosts) return [];
-    return fields.map(f=>{const c=calc(f);const a=calcActual(f);return a&&a.total>c.expenses?{f,variance:a.total-c.expenses}:null;})
-      .filter(Boolean).sort((x,y)=>y.variance-x.variance);
-  },[fields,p.canViewCosts]);
-  return(<div>
-    {overBudget.length>0&&(
-      <div style={{background:"#fff4f0",border:"1px solid #e0a090",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:16}}>⚠️</span>
-        <span style={{fontSize:12,fontWeight:700,color:"#8a3020"}}>{overBudget.length} field{overBudget.length!==1?"s":""} over budget</span>
-        <span style={{fontSize:11,color:"#8a5030"}}>{overBudget.slice(0,4).map(o=>`${o.f.common} (+${f$(o.variance)})`).join(", ")}{overBudget.length>4?` + ${overBudget.length-4} more`:""}</span>
-      </div>
-    )}
-    <div style={{display:"flex",alignItems:"center",marginBottom:16,gap:10}}>
-      <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"#1a4010"}}>All Fields</div>
-      <div style={{fontSize:12,color:"#7a9260"}}>— {fields.length} units · {totAc.toFixed(0)} ac</div>
-      {p.canReport&&<div style={{marginLeft:"auto",display:"flex",gap:8}}>
-        <button onClick={onExportCSV} style={{background:"#1a3a20",border:"1px solid #2a5030",borderRadius:4,padding:"6px 14px",color:"#2a7010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ Export CSV</button>
-        <button onClick={onPrint} style={{background:"#d4e4f4",border:"1px solid #2a3a5a",borderRadius:4,padding:"6px 14px",color:"#70a0c0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Print / PDF</button>
-      </div>}
-    </div>
-    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-      <thead><tr>
-        <Th label="Ent" k="entity"/><Th label="Farm" k="farm"/><Th label="Field" k="common"/>
-        <th style={{padding:"8px 10px",fontSize:10,color:"#6a8a50",textTransform:"uppercase",letterSpacing:0.8,background:"#ffffff",borderBottom:"2px solid #2a4030"}}>Crop</th>
-        <Th label="Acres" k="acres" right/><Th label="Revenue" k="revenue" right/><Th label="Expenses" k="expenses" right/><Th label="Net" k="net" right/>
-      </tr></thead>
-      <tbody>
-        {sorted.map((f,i)=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
-          return(<tr key={f.id} onClick={()=>onSelect(f)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
-            <td style={{padding:"7px 10px",borderBottom:"1px solid #d8e2c8"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
-            <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #d8e2c8"}}>{f.farm}</td>
-            <td style={{padding:"7px 10px",color:"#1a4010",borderBottom:"1px solid #d8e2c8",minWidth:160}}>{f.common}{f.fieldNum&&<span style={{fontSize:10,color:"#6a8a50"}}> #{f.fieldNum}</span>}{hasOv&&<span title="Has field overrides" style={{marginLeft:5,fontSize:9,color:"#8a6010"}}>★</span>}</td>
-            <td style={{padding:"7px 10px",borderBottom:"1px solid #d8e2c8"}}>
-              <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",background:inelig?"#fff0f0":"#dce8c6",borderRadius:3,fontSize:11,color:inelig?"#c02020":"#2a7010"}}><span style={{width:5,height:5,borderRadius:"50%",background:inelig?"#c02020":"#3a9020"}}/>{f.crop}</span>
-              {(seedLogs[f.common]||[]).length>0&&<span style={{marginLeft:4,fontSize:9,background:"#c8f0a8",color:"#1a5010",padding:"1px 5px",borderRadius:2,fontWeight:700,verticalAlign:"middle"}}>🌱</span>}
-            </td>
-            <td style={{padding:"7px 10px",color:"#3a6028",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{f.acres.toFixed(1)}</td>
-            <td style={{padding:"7px 10px",color:p.canViewCosts?"#1a7010":"#8a9a7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>
-              {p.canViewCosts?f$(c.revenue):REDACTED}
-              {p.canViewCosts&&(()=>{
-                const act=fieldHistory?.[f.common]?.[activeYear];
-                if(!act||!act.bushels) return null;
-                const projBu=(f.income?.bushelProjection||0)*f.acres;
-                const diff=projBu>0?Math.round((act.bushels-projBu)/projBu*100):null;
-                return (
-                  <div title={`${Math.round(act.bushels).toLocaleString()} bu actual from AgriScale`}
-                    style={{fontSize:9,fontWeight:600,marginTop:2,color:diff==null?"#6a8a50":diff>=0?"#2a8010":"#c05010"}}>
-                    ✓ {act.yieldPerAc||Math.round(act.bushels/(f.acres||1))} bu/ac actual{diff!=null&&<> ({diff>=0?"+":""}{diff}%)</>}
-                  </div>
-                );
-              })()}
-            </td>
-            <td style={{padding:"7px 10px",color:p.canViewCosts?"#c05010":"#8a9a7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{p.canViewCosts?f$(c.expenses):REDACTED}</td>
-            <td style={{padding:"7px 10px",color:p.canViewCosts?(c.net>=0?"#1a7010":"#c02020"):"#8a9a7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,borderBottom:"1px solid #d8e2c8"}}>{p.canViewCosts?f$(c.net,true):REDACTED}</td>
-          </tr>);
-        })}
-      </tbody>
-      <tfoot><tr style={{background:"#e4f0d0"}}>
-        <td colSpan={4} style={{padding:"9px 10px",fontSize:12,color:"#7aaa60",fontWeight:600}}>TOTALS — {fields.length} field units</td>
-        <td style={{padding:"9px 10px",color:"#9aaa7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{totAc.toFixed(0)} ac</td>
-        <td style={{padding:"9px 10px",color:p.canViewCosts?"#1a7010":"#9aaa7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{p.canViewCosts?f$(totRev):REDACTED}</td>
-        <td style={{padding:"9px 10px",color:p.canViewCosts?"#c05010":"#9aaa7a",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600}}>{p.canViewCosts?f$(totExp):REDACTED}</td>
-        <td style={{padding:"9px 10px",textAlign:"right",fontFamily:"'IBM Plex Mono',monospace",fontSize:12,fontWeight:600,color:p.canViewCosts?(totNet>=0?"#1a7010":"#c02020"):"#9aaa7a"}}>{p.canViewCosts?f$(totNet,true):REDACTED}</td>
-      </tr></tfoot>
-    </table>
-  </div>);
-}
-
-
-// ── localStorage helpers ──────────────────────────────────────────────────────
-const DATA_VERSION = "2026-v6";
-
-// ── Sync helpers — write to Firebase, mirror to localStorage as offline cache ──
-// Set to true when running inside Agri Logix (tenantId present) — skips localStorage
-let _isAgriLogixTenant = false;
-let _expRates         = null; // set per render from state; falls back to DEFAULT_RATES
-let _cropRates        = null; // set per render from state; falls back to CROP_EXP_DEFAULTS
-let _tenantCrops        = null; // per-tenant crop list; null = use ALL_CROPS
-let _globallyIneligible = null; // per-tenant ineligible set; null = use GLOBALLY_INELIGIBLE
-let _aphData            = null; // imported APH data from crop insurance PDF
-let _fieldHistory       = null; // manually entered crop history per field
-let _cropPrices         = null; // per-tenant price elections + projected sell prices
-let _tenantIdCache      = null; // set from AgriPlanModule — tenantId for cache keys below
-
-// ── Tenant-mode offline cache (mirrors AgriScale's queue/retry pattern) ──────
-function tenantCacheKey(tid, year){ return `agriplan_tenant_${tid}_${year}`; }
-function tenantQueueKey(tid, year){ return `agriplan_tenant_queue_${tid}_${year}`; }
-function loadTenantFieldsCache(tid, year){
-  try{ const r=localStorage.getItem(tenantCacheKey(tid,year)); return r?JSON.parse(r):null; }
-  catch{ return null; }
-}
-function saveTenantFieldsCache(tid, year, fields){
-  try{ localStorage.setItem(tenantCacheKey(tid,year), JSON.stringify(fields)); }catch{}
-}
-function loadTenantQueue(tid, year){
-  try{ const r=localStorage.getItem(tenantQueueKey(tid,year)); return r?JSON.parse(r):null; }
-  catch{ return null; }
-}
-function saveTenantQueue(tid, year, fields){
-  try{ localStorage.setItem(tenantQueueKey(tid,year), JSON.stringify({fields,savedAt:Date.now()})); }catch{}
-}
-function clearTenantQueue(tid, year){
-  try{ localStorage.removeItem(tenantQueueKey(tid,year)); }catch{}
-}
-function lsKey(year){ return `agriplan_fields_${year}`; }
-
-function loadYears(){
-  try{ const y=localStorage.getItem("agriplan_years"); return y?JSON.parse(y):["2026"]; }
-  catch{ return ["2026"]; }
-}
-function saveYears(years){
-  try{ localStorage.setItem("agriplan_years",JSON.stringify(years)); }catch{}
-  fbSaveYears(years).catch(()=>{});
-}
-function loadFields(year){
-  if(_isAgriLogixTenant) return _tenantIdCache ? (loadTenantFieldsCache(_tenantIdCache, year) || []) : [];
-  // Try localStorage cache first (fast/offline)
-  try{
-    const raw=localStorage.getItem(lsKey(year));
-    if(raw){
-      const parsed=JSON.parse(raw);
-      const savedVersion=localStorage.getItem('agriplan_data_version');
-      if(parsed&&parsed.length>0&&savedVersion===DATA_VERSION) return parsed;
-    }
-  }catch{}
-  // Fall back to INITIAL_FIELDS for 2026
-  if(year==="2026"){
-    const fresh=INITIAL_FIELDS.map(f=>({...f,expenseOverrides:{...f.expenseOverrides}}));
-    try{
-      localStorage.setItem(lsKey(year),JSON.stringify(fresh));
-      localStorage.setItem('agriplan_data_version',DATA_VERSION);
-    }catch{}
-    return fresh;
-  }
-  return [];
-}
-function saveFields(year, fields, onStatus){
-  if(!_isAgriLogixTenant){
-    try{ localStorage.setItem(lsKey(year),JSON.stringify(fields)); }catch{}
-  } else if(_tenantIdCache){
-    // Local-first, same as AgriScale: cache + queue BEFORE attempting the network write,
-    // so a dropped connection never loses data — only delays the sync.
-    saveTenantFieldsCache(_tenantIdCache, year, fields);
-    saveTenantQueue(_tenantIdCache, year, fields);
-  }
-  if(onStatus) onStatus('saving');
-  fbSaveFields(year, fields)
-    .then(()=>{
-      if(_isAgriLogixTenant && _tenantIdCache) clearTenantQueue(_tenantIdCache, year);
-      if(onStatus) onStatus('saved');
-    })
-    .catch((e)=>{
-      console.error("🔴 AgriPlan Firebase save FAILED:",e.message);
-      // Distinguish "genuinely offline, safely queued" from "server rejected it" —
-      // the former shouldn't read as alarming since nothing was lost.
-      if(onStatus) onStatus(navigator.onLine ? 'error' : 'queued');
-    });
-}
-function loadHistRevCache(){
-  try{ const r=localStorage.getItem('agriplan_hist_revenue'); return r?JSON.parse(r):{} }
-  catch{ return {}; }
-}
-function saveHistRevCache(data){
-  try{ localStorage.setItem('agriplan_hist_revenue',JSON.stringify(data)); }catch{}
-}
-
-
-
-
-// ── Manage Crops Modal ────────────────────────────────────────────────────────
-function ManageCropsModal({ tenantId, token, farmId, tenantCrops, onSave, onClose }) {
-  const [crops, setCrops] = useState(tenantCrops.length > 0 ? [...tenantCrops] : [...ALL_CROPS]);
-  const [newCrop, setNewCrop] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
-  const add = () => {
-    const name = newCrop.trim();
-    if (!name) return;
-    if (crops.find(c => c.toLowerCase() === name.toLowerCase())) { setErr("Crop already exists"); return; }
-    setCrops(p => [...p, name]);
-    setNewCrop(""); setErr("");
-  };
-
-  const remove = (c) => setCrops(p => p.filter(x => x !== c));
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch(
-        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/crops.json?auth=${token}`,
-        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(crops) }
-      );
-      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-      onSave(crops);
-      onClose();
-    } catch(e) { setErr(e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4000}}>
-      <div style={{background:"#fff",borderRadius:12,padding:28,width:520,maxHeight:"82vh",overflowY:"auto",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.3)",border:"1px solid #ccdda0",fontFamily:"'Barlow',sans-serif"}}>
-
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
-          <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>🌾 Manage Crops</div>
-            <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>Add or remove crops available for planning on this account. All new fields will have all crops eligible by default.</div>
-          </div>
-          <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
-        </div>
-
-        {err && <div style={{background:"#fff0f0",border:"1px solid #e08080",borderRadius:5,padding:"6px 10px",fontSize:12,color:"#c02020",marginBottom:12}}>{err}</div>}
-
-        {/* Add new crop */}
-        <div style={{display:"flex",gap:8,marginBottom:16}}>
-          <input value={newCrop} onChange={e=>{setNewCrop(e.target.value);setErr("");}}
-            onKeyDown={e=>e.key==="Enter"&&add()}
-            placeholder="Enter crop name…"
-            style={{flex:1,border:"1px solid #2a4030",borderRadius:5,padding:"7px 10px",fontSize:13,
-              color:"#1a3010",fontFamily:"inherit",outline:"none",background:"#f8fbf5"}}/>
-          <button onClick={add} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:5,
-            padding:"7px 18px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-            + Add Crop
-          </button>
-        </div>
-
-        {/* Crop list */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:20}}>
-          {crops.map(c => (
-            <div key={c} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-              background:"#f0f8e8",border:"1px solid #b8d8a0",borderRadius:5,padding:"6px 10px"}}>
-              <span style={{fontSize:13,color:"#1a4010",fontWeight:600}}>{c}</span>
-              <button onClick={()=>remove(c)} style={{background:"none",border:"none",color:"#c04040",
-                cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 4px",fontFamily:"inherit"}}>×</button>
-            </div>
-          ))}
-          {crops.length === 0 && <div style={{gridColumn:"1/-1",textAlign:"center",color:"#9aaa80",fontSize:13,padding:20}}>No crops added yet.</div>}
-        </div>
-
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end",borderTop:"1px solid #e0eccc",paddingTop:16}}>
-          <button onClick={onClose} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,padding:"7px 18px",fontSize:13,cursor:"pointer",color:"#7a9260",fontFamily:"inherit"}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{background:saving?"#8ab870":"#2a7a18",border:"none",borderRadius:6,padding:"7px 22px",fontSize:13,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-            {saving?"Saving…":"Save Crops"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ── Seed Log Section (shown in FieldDetail) ───────────────────────────────────
-function SeedLogSection({ fieldName, plannedCrop, logs, tenantId }) {
-  const [expanded, setExpanded] = useState(null); // index of expanded log
-
-  if (!logs.length) {
-    return tenantId ? (
-      <div style={{background:"#f8f4ee",border:"1px dashed #c8b870",borderRadius:6,
-        padding:"8px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8,
-        fontSize:12,color:"#8a7040"}}>
-        <span>🌱</span>
-        <span>No seeding logged in AgriField yet for {new Date().getFullYear()}.</span>
-      </div>
-    ) : null;
-  }
-
-  const row = (label, value) => value ? (
-    <div style={{display:"flex",gap:8,padding:"3px 0",borderBottom:"1px solid #e8f0d8"}}>
-      <span style={{fontSize:11,color:"#7a9260",minWidth:130,flexShrink:0}}>{label}</span>
-      <span style={{fontSize:11,color:"#1a3010",fontWeight:500}}>{value}</span>
-    </div>
-  ) : null;
-
-  return (
-    <div style={{marginBottom:14}}>
-      {logs.map((log, i) => {
-        const cropNames = log.crops.map(c=>c.crop).filter(Boolean).join(", ");
-        const matches = !plannedCrop || cropNames.toLowerCase().includes((plannedCrop||"").toLowerCase());
-        const isOpen = expanded === i;
-        const bg = matches ? "#eaf8e0" : "#fff8e0";
-        const border = matches ? "#5cb850" : "#c8a030";
-
-        return (
-          <div key={i} style={{border:`1px solid ${border}`,borderRadius:7,marginBottom:8,overflow:"hidden"}}>
-            {/* Summary row — always visible */}
-            <div style={{background:bg,padding:"8px 14px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:15}}>🌱</span>
-              <strong style={{fontSize:12,color:matches?"#1a6010":"#7a5000"}}>
-                Seeded {new Date(log.date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
-              </strong>
-              {log.crops.map((c,j) => (
-                <span key={j} style={{background:matches?"#c8f0b0":"#f0dea0",padding:"1px 8px",
-                  borderRadius:3,fontSize:11,fontWeight:700,color:matches?"#1a5010":"#6a4000"}}>
-                  {c.crop}{c.variety?` — ${c.variety}`:""}{c.seedRate?` @ ${c.seedRate} lbs/ac`:""}
-                </span>
-              ))}
-              {!matches && plannedCrop && (
-                <span style={{fontSize:11,color:"#8a6000",fontStyle:"italic"}}>⚠ Plan shows {plannedCrop}</span>
-              )}
-              {/* Expand/collapse link */}
-              <button onClick={()=>setExpanded(isOpen?null:i)} style={{
-                marginLeft:"auto",background:"none",border:"none",cursor:"pointer",
-                fontSize:11,color:matches?"#2a7a18":"#8a5000",fontFamily:"'Barlow',sans-serif",
-                fontWeight:600,textDecoration:"underline",padding:0,flexShrink:0
-              }}>
-                {isOpen ? "▲ Hide details" : "▼ Full log"}
-              </button>
-            </div>
-
-            {/* Full detail — expanded */}
-            {isOpen && (
-              <div style={{padding:"12px 16px",background:"#fff",fontSize:12}}>
-                {/* Seed */}
-                {log.crops.length > 0 && (
-                  <div style={{marginBottom:10}}>
-                    <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
-                      color:"#5a8a40",marginBottom:4}}>🌾 Seed</div>
-                    {log.crops.map((c,j) => (
-                      <div key={j} style={{marginBottom:4}}>
-                        {row("Crop", c.crop)}
-                        {row("Variety", c.variety)}
-                        {row("Seed Rate", c.seedRate ? `${c.seedRate} lbs/ac` : null)}
-                        {row("Total Seed", c.totalSeed ? `${c.totalSeed} lbs` : null)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Fertilizer */}
-                {log.ferts?.length > 0 && (
-                  <div style={{marginBottom:10}}>
-                    <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
-                      color:"#5a8a40",marginBottom:4}}>🧪 Fertilizer</div>
-                    {log.ferts.map((f,j) => (
-                      <div key={j} style={{marginBottom:4}}>
-                        {row("Blend", f.blend||f.custom)}
-                        {row("Rate", f.rate ? `${f.rate} lbs/ac` : null)}
-                        {row("Total", f.total ? `${f.total} lbs` : null)}
-                        {row("Placement", f.placement)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Inoculants */}
-                {log.inoculants?.length > 0 && (
-                  <div style={{marginBottom:10}}>
-                    <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
-                      color:"#5a8a40",marginBottom:4}}>💉 Inoculant</div>
-                    {log.inoculants.map((n,j) => (
-                      <div key={j} style={{marginBottom:4}}>
-                        {row("Product", n.product)}
-                        {row("Rate", n.rate)}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Equipment & conditions */}
-                <div>
-                  <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,
-                    color:"#5a8a40",marginBottom:4}}>⚙️ Equipment & Conditions</div>
-                  {row("Equipment", log.equipment)}
-                  {row("Seeding Depth", log.depth ? `${log.depth}"` : null)}
-                  {row("Notes", log.notes)}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Expense Defaults Editor ──────────────────────────────────────────────────
-const CROPS_LIST = ["Spring Wheat","Winter Wheat","CC WW","CC HAD","Barley","Durum",
-  "Lentils","Chickpeas","Austrians","Green Peas","Yellow Peas","Mustard","Canola","Flax"];
-
-function ExpenseDefaultsModal({ tenantId, token, farmId, expenseDefaults, cropExpDefaults, onSave, onClose }) {
-  const [baseRates, setBaseRates] = useState({...expenseDefaults});
-  const [cropRates, setCropRates] = useState(
-    CROPS_LIST.reduce((acc,c)=>({...acc,[c]:{seed:0,fertilizerChemical:0,cropInsurance:0,...(cropExpDefaults[c]||{})}}),{})
-  );
-  const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState("base");
-
-  const upBase = (k,v) => setBaseRates(p=>({...p,[k]:+v||0}));
-  const upCrop = (crop,k,v) => setCropRates(p=>({...p,[crop]:{...p[crop],[k]:+v||0}}));
-
-  const copyFAVT = () => {
-    setBaseRates({...DEFAULT_RATES});
-    setCropRates(CROPS_LIST.reduce((acc,c)=>({...acc,[c]:{seed:0,fertilizerChemical:0,cropInsurance:0,...(CROP_EXP_DEFAULTS[c]||{})}}),{}));
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-    try {
-      await Promise.all([
-        fetch(`${DB}/${apBase(tenantId,farmId)}/expenseDefaults.json?auth=${token}`,
-          {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(baseRates)}),
-        fetch(`${DB}/${apBase(tenantId,farmId)}/cropExpDefaults.json?auth=${token}`,
-          {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(cropRates)}),
-      ]);
-      onSave(baseRates, cropRates);
-      onClose();
-    } catch(e) { alert("Save failed: " + e.message); }
-    finally { setSaving(false); }
-  };
-
-  const inp = (val, onChange) => (
-    <input type="number" step="0.01" value={val||""} onChange={e=>onChange(e.target.value)}
-      style={{width:"100%",background:"#fff",border:"1px solid #2a4030",borderRadius:4,
-        padding:"4px 7px",fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none"}}/>
-  );
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4000}}>
-      <div style={{background:"#fff",borderRadius:12,padding:28,width:820,maxHeight:"88vh",overflowY:"auto",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.3)",border:"1px solid #ccdda0",fontFamily:"'Barlow',sans-serif"}}>
-
-        {/* Header */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
-          <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>⚙️ Default Expense Rates</div>
-            <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>Per-acre rates used as defaults for all fields on this account. Override per-field in the field detail.</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={copyFAVT} style={{background:"#f0f4e8",border:"1px solid #8ab870",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"inherit"}}>
-              Copy AgriLogix Defaults
-            </button>
-            <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div style={{display:"flex",gap:0,borderBottom:"1px solid #ccdda0",marginBottom:18}}>
-          {[["base","📊 Base Rates ($/ac)"],["crops","🌾 Crop Overrides"]].map(([id,lbl])=>(
-            <button key={id} onClick={()=>setTab(id)} style={{padding:"7px 18px",background:"none",border:"none",
-              borderBottom:`2px solid ${tab===id?"#5cb850":"transparent"}`,color:tab===id?"#1a7010":"#7a9260",
-              fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:tab===id?700:400}}>
-              {lbl}
-            </button>
-          ))}
-        </div>
-
-        {tab==="base" && (
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 20px"}}>
-            {EXP.map(([k,lbl])=>(
-              <label key={k} style={{display:"grid",gridTemplateColumns:"1fr 100px",gap:8,alignItems:"center"}}>
-                <span style={{fontSize:12,color:"#3a6020"}}>{lbl}</span>
-                {inp(baseRates[k]??0, v=>upBase(k,v))}
-              </label>
-            ))}
-          </div>
-        )}
-
-        {tab==="crops" && (
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
-                  <th style={{padding:"8px 12px",textAlign:"left",fontSize:11}}>Crop</th>
-                  <th style={{padding:"8px 12px",textAlign:"right",fontSize:11}}>Seed ($/ac)</th>
-                  <th style={{padding:"8px 12px",textAlign:"right",fontSize:11}}>Fert/Chem ($/ac)</th>
-                  <th style={{padding:"8px 12px",textAlign:"right",fontSize:11}}>Crop Ins. ($/ac)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {CROPS_LIST.map((crop,i)=>(
-                  <tr key={crop} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
-                    <td style={{padding:"5px 12px",fontWeight:600,color:"#1a4010"}}>{crop}</td>
-                    {["seed","fertilizerChemical","cropInsurance"].map(k=>(
-                      <td key={k} style={{padding:"4px 8px",textAlign:"right"}}>
-                        {inp(cropRates[crop]?.[k]??0, v=>upCrop(crop,k,v))}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{fontSize:11,color:"#9aaa80",marginTop:10}}>
-              Crop overrides replace the base rate for that line item when that crop is planned. Leave at 0 to use the base rate.
-            </div>
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20,paddingTop:16,borderTop:"1px solid #e0eccc"}}>
-          <button onClick={onClose} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,padding:"7px 18px",fontSize:13,cursor:"pointer",color:"#7a9260",fontFamily:"inherit"}}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} style={{background:saving?"#8ab870":"#2a7a18",border:"none",borderRadius:6,padding:"7px 22px",fontSize:13,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-            {saving?"Saving…":"Save Rates"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ── Crop Prices Editor ────────────────────────────────────────────────────────
-function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onSave, onClose }) {
-  const crops = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS.filter(c => CROP_TYPICAL[c]);
-  const [prices, setPrices] = useState(() => {
-    const init = {};
-    crops.forEach(c => {
-      const t = CROP_TYPICAL[c] || {};
-      const saved = cropPrices[c] || {};
-      init[c] = {
-        priceGuar: saved.priceGuar ?? t.priceGuar ?? 0,
-        projPrice: saved.projPrice ?? t.projPrice ?? 0,
-      };
-    });
-    return init;
-  });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
-  const upd = (crop, key, val) => { const n=parseFloat(val); setPrices(p => ({...p, [crop]: {...p[crop], [key]: isFinite(n)?n:0}})); };
-
-  const copyDefaults = () => {
-    const init = {};
-    crops.forEach(c => {
-      const t = CROP_TYPICAL[c] || {};
-      init[c] = { priceGuar: t.priceGuar || 0, projPrice: t.projPrice || 0 };
-    });
-    setPrices(init);
-  };
-
-  const save = async () => {
-    setSaving(true); setErr("");
-    try {
-      // Sanitize values and store as array (crop names as values, not keys — avoids Firebase key restrictions)
-      const asArray = Object.entries(prices).map(([crop, vals]) => {
-        const pg = parseFloat(vals.priceGuar);
-        const pp = parseFloat(vals.projPrice);
-        return { crop, priceGuar: isFinite(pg)?pg:0, projPrice: isFinite(pp)?pp:0 };
-      });
-      const res = await fetch(
-        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`,
-        { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(asArray) }
-      );
-      if (!res.ok) {
-        const errBody = await res.text().catch(()=>"");
-        throw new Error(`Save failed: ${res.status} — ${errBody.slice(0,120)}`);
-      }
-      // Convert back to {crop: {priceGuar, projPrice}} for local state
-      const clean = {};
-      asArray.forEach(({crop,priceGuar,projPrice}) => { clean[crop]={priceGuar,projPrice}; });
-      onSave(clean);
-      onClose();
-    } catch(e) { setErr(e.message); }
-    finally { setSaving(false); }
-  };
-
-  const inp = (val, onChange) => (
-    <input type="number" step="0.01" value={val||""} onChange={e=>onChange(e.target.value)}
-      style={{width:"100%",border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",
-        fontSize:12,color:"#1a3010",fontFamily:"'IBM Plex Mono',monospace",outline:"none",
-        background:"#fff",textAlign:"right"}}/>
-  );
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:4000}}>
-      <div style={{background:"#fff",borderRadius:12,padding:28,width:680,maxHeight:"88vh",overflowY:"auto",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.3)",border:"1px solid #ccdda0",fontFamily:"'Barlow',sans-serif"}}>
-
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
-          <div>
-            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>💲 Crop Prices</div>
-            <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>
-              Set your crop insurance price elections and projected sell prices for budget calculations.
-              These override the built-in defaults for your account.
-            </div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={copyDefaults} style={{background:"#f0f4e8",border:"1px solid #8ab870",borderRadius:5,
-              padding:"5px 12px",fontSize:11,cursor:"pointer",color:"#3a6020",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              Copy AgriLogix Defaults
-            </button>
-            <button onClick={onClose} style={{background:"none",border:"1px solid #ccdda0",borderRadius:6,
-              padding:"4px 12px",cursor:"pointer",color:"#7a9260",fontSize:13}}>✕</button>
-          </div>
-        </div>
-
-        {err && <div style={{background:"#fff0f0",border:"1px solid #e08080",borderRadius:5,
-          padding:"6px 10px",fontSize:12,color:"#c02020",marginBottom:12}}>{err}</div>}
-
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:16}}>
-          <thead>
-            <tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
-              <th style={{padding:"7px 10px",textAlign:"left",fontSize:10,letterSpacing:0.5}}>Crop</th>
-              <th style={{padding:"7px 10px",textAlign:"center",fontSize:10,letterSpacing:0.5,width:160}}>
-                Insurance Price Election<br/>
-                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>($/bu — RMA sets each spring)</span>
-              </th>
-              <th style={{padding:"7px 10px",textAlign:"center",fontSize:10,letterSpacing:0.5,width:160}}>
-                Projected Sell Price<br/>
-                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>($/bu — your market estimate)</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {crops.filter(c => CROP_TYPICAL[c]).map((crop,i) => (
-              <tr key={crop} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
-                <td style={{padding:"5px 10px",fontWeight:600,color:"#1a4010"}}>{crop}</td>
-                <td style={{padding:"4px 8px"}}>
-                  {inp(prices[crop]?.priceGuar, v=>upd(crop,"priceGuar",v))}
-                </td>
-                <td style={{padding:"4px 8px"}}>
-                  {inp(prices[crop]?.projPrice, v=>upd(crop,"projPrice",v))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div style={{fontSize:11,color:"#9aaa80",marginBottom:16}}>
-          💡 Insurance Price Election is published by RMA each spring — check with your agent for current values.
-          Projected Sell Price is your own estimate for planning purposes.
-        </div>
-
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end",borderTop:"1px solid #e0eccc",paddingTop:16}}>
-          <button onClick={onClose} style={{background:"#f8fbf5",border:"1px solid #ccdda0",borderRadius:6,
-            padding:"7px 18px",fontSize:13,cursor:"pointer",color:"#7a9260",fontFamily:"inherit"}}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{background:saving?"#8ab870":"#2a7a18",border:"none",
-            borderRadius:6,padding:"7px 22px",fontSize:13,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-            {saving?"Saving…":"Save Prices"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── CSV helpers for the APH field-mapping export/re-import ────────────────────────────────
-// Crop-insurance units frequently don't line up 1:1 with how a farm actually names/splits its
-// fields (insurance groups by legal description, farmers think in terms of "the home quarter").
-// Instead of forcing every mismatch through the in-browser dropdown, ImportAPHModal can export
-// the parsed units to a CSV, let the user fix the mapping in a spreadsheet, and read it back.
-// CSV encode/decode moved to core/csv.js (shared, unit-tested) — imported at
-// the top of this file.
-
-// ── APH Import Modal ──────────────────────────────────────────────────────────
-export function ImportAPHModal({ tenantId, token, farmId, fields, onClose, onImported, onCreateField, onUpdateField }) {
-  const [stage, setStage] = useState("upload"); // upload | converting | parsing | review | saving | done
-  const [error, setError] = useState("");
-  const [parsed, setParsed] = useState(null);   // merged Claude output across all batches
-  const [matches, setMatches] = useState({});   // unitIndex → fieldId, or "NEW:<groupKey>" for a pending new field
-  const [pageProgress, setPageProgress] = useState({ done: 0, total: 0 });
-  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
-  // Per-unit-index override of the crop insurance unit number, filled in from a mapping CSV's
-  // "Insurance Unit" column (editable there). Falls back to whatever Claude read off the PDF
-  // itself (unit.unitNumber) when there's no override — see unitNumberFor() below.
-  const [unitOverrides, setUnitOverrides] = useState({});
-  // Drafts for fields the user chose to create fresh from this PDF instead of matching to an
-  // existing one — keyed by groupKeyOf(unit.fieldName). Nothing is written to Firebase until
-  // Import is clicked (matches the rest of this modal — Cancel never leaves a stray field behind).
-  const [newFieldDrafts, setNewFieldDrafts] = useState({}); // groupKey → {common, acres, legal}
-
-  const MAX_PAGES = 60;           // generous hard cap — batching means page count itself isn't the constraint
-  const MAX_BATCH_BYTES = 1.6e6;  // small enough that each batch also finishes well inside the function timeout, not just the payload size limit
-
-  // Load PDF.js from CDN once, reused across uploads
-  const loadPdfJs = () => new Promise((resolve, reject) => {
-    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
-    const existing = document.getElementById("pdfjs-lib");
-    if (existing) { existing.addEventListener("load", () => resolve(window.pdfjsLib)); return; }
-    const s = document.createElement("script");
-    s.id = "pdfjs-lib";
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    s.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      resolve(window.pdfjsLib);
-    };
-    s.onerror = () => reject(new Error("Could not load PDF reader — check your connection and try again"));
-    document.head.appendChild(s);
-  });
-
-  // Render every PDF page (up to MAX_PAGES) to a compressed JPEG (base64, no data: prefix).
-  const pdfToImages = async (file) => {
-    const pdfjsLib = await loadPdfJs();
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    const pageCap = Math.min(pdf.numPages, MAX_PAGES);
-    setPageProgress({ done: 0, total: pageCap });
-    const images = [];
-    for (let i = 1; i <= pageCap; i++) {
-      const page = await pdf.getPage(i);
-      // Start at a sharp scale, but back off if a page comes out unexpectedly large
-      let base64 = null;
-      for (const scale of [2.0, 1.5, 1.0]) {
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement("canvas");
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-        base64 = await new Promise((res) => {
-          canvas.toBlob((blob) => {
-            const r = new FileReader();
-            r.onload = () => res(r.result.split(",")[1]);
-            r.readAsDataURL(blob);
-          }, "image/jpeg", 0.75);
-        });
-        if (base64.length < 700000 || scale === 1.0) break; // ~700KB base64 per page budget
-      }
-      images.push(base64);
-      setPageProgress({ done: i, total: pageCap });
-    }
-    return { images, truncated: pdf.numPages > MAX_PAGES, totalPages: pdf.numPages };
-  };
-
-  // Group page images into batches that each stay under the per-request byte budget.
-  const chunkIntoBatches = (images) => {
-    const batches = [];
-    let current = [], currentBytes = 0;
-    for (const img of images) {
-      if (current.length && currentBytes + img.length > MAX_BATCH_BYTES) {
-        batches.push(current);
-        current = []; currentBytes = 0;
-      }
-      current.push(img); currentBytes += img.length;
-    }
-    if (current.length) batches.push(current);
-    return batches;
-  };
-
-  // A farm/field commonly has several insurance units (one per crop it's grown), each
-  // extracted with its own fieldName. Group them by the part of fieldName before any "|"
-  // so a single match on the review screen can apply to every crop-unit on that same ground.
-  const groupKeyOf = (fieldName) => (fieldName || "").toLowerCase().trim().split("|")[0].trim();
-
-  // Merge units across batches — a field's history can span a page boundary between
-  // two batches, so combine by field+crop instead of just concatenating.
-  const mergeUnits = (acc, newUnits) => {
-    const keyOf = (u) => `${(u.fieldName||"").toLowerCase().trim()}|${(u.crop||"").toLowerCase().trim()}`;
-    (newUnits||[]).forEach(nu => {
-      const existing = acc.find(u => keyOf(u) === keyOf(nu));
-      if (existing) {
-        const byYear = {};
-        [...(existing.years||[]), ...(nu.years||[])].forEach(y => { byYear[y.year] = y; });
-        existing.years = Object.values(byYear).sort((a,b)=>a.year-b.year);
-        existing.aphYield = existing.aphYield ?? nu.aphYield;
-        existing.aphYears = existing.aphYears ?? nu.aphYears;
-        existing.priceElection = existing.priceElection ?? nu.priceElection;
-      } else {
-        acc.push({ ...nu });
-      }
-    });
-    return acc;
-  };
-
-  const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-
-  // aph-parse now runs as a Netlify Background Function (15-min budget instead of ~26s),
-  // which means it can't return a response directly — each batch call just gets accepted
-  // (202) and the real work happens async, writing its result to Firebase. We poll there
-  // until every batch for this job has reported done/error.
-  const pollJob = async (jobId, totalBatches) => {
-    const POLL_MS = 3000;
-    const MAX_WAIT_MS = 12 * 60 * 1000; // background functions get ~15 min; leave headroom
-    const start = Date.now();
-    while (true) {
-      if (Date.now() - start > MAX_WAIT_MS) {
-        throw new Error("Import timed out — the document may be too large or complex. Try a smaller PDF.");
-      }
-      const res = await fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}/batches.json?auth=${token}`);
-      const batches = (await res.json()) || {};
-      const doneCount = Object.keys(batches).filter(k => batches[k]?.result?.status === "done" || batches[k]?.result?.status === "error").length;
-      setBatchProgress({ done: doneCount, total: totalBatches });
-      if (doneCount >= totalBatches) return batches;
-      await new Promise(r => setTimeout(r, POLL_MS));
-    }
-  };
-
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(""); setStage("converting");
-    try {
-      const { images, truncated, totalPages } = await pdfToImages(file);
-      if (images.length === 0) throw new Error("Could not process any pages from this PDF");
-      if (truncated) setError(`Note: PDF has ${totalPages} pages — only the first ${MAX_PAGES} were processed.`);
-
-      const batches = chunkIntoBatches(images);
-      setBatchProgress({ done: 0, total: batches.length });
-      setStage("parsing");
-
-      const jobId = `aph_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-
-      // Background-function invocations are capped around 256KB — far too small for a
-      // batch of page images — so we PUT each batch's images to Firebase first (a plain
-      // HTTPS write, no such limit) and then trigger the background function with just a
-      // small pointer. The function reads the images back out of Firebase itself.
-      for (let b = 0; b < batches.length; b++) {
-        await fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}/batches/${b}/input.json?auth=${token}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(batches[b])
-        });
-        fetch("/.netlify/functions/aph-parse-background", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ tenantId, jobId, batchIndex: b })
-        }).catch(err => console.error(`[APH import] failed to enqueue batch ${b+1}:`, err.message));
-        // Small stagger so we don't fire a burst of concurrent Claude calls at once.
-        if (b < batches.length - 1) await new Promise(r => setTimeout(r, 400));
-      }
-
-      const results = await pollJob(jobId, batches.length);
-
-      let mergedUnits = [];
-      let insured = "", county = "";
-      const failedBatches = [];
-      for (let b = 0; b < batches.length; b++) {
-        const result = results[b]?.result;
-        if (!result || result.status === "error") {
-          const errMsg = result?.error || "No result returned — the batch may not have completed";
-          console.error(`[APH import] batch ${b+1}/${batches.length} failed:`, errMsg);
-          if (result?.raw) console.error(`[APH import] raw Claude response for batch ${b+1}:`, result.raw);
-          // Don't let one bad/empty batch (often just a boilerplate or blank page) abort the
-          // whole import — keep going and merge whatever the other batches found.
-          failedBatches.push(b + 1);
-          continue;
-        }
-        const data = result.data || {};
-        mergedUnits = mergeUnits(mergedUnits, data.units);
-        insured = insured || data.insured || "";
-        county = county || data.county || "";
-      }
-
-      // Clean up the job node now that we've read the results — no need to keep it around.
-      fetch(`${DB}/tenants/${tenantId}/aphJobs/${jobId}.json?auth=${token}`, { method: "DELETE" }).catch(()=>{});
-
-      if (!mergedUnits.length) {
-        throw new Error(failedBatches.length
-          ? `No APH units found — batch${failedBatches.length > 1 ? "es" : ""} ${failedBatches.join(", ")} of ${batches.length} failed to process. Check the file and try again.`
-          : "No APH units found in PDF — check the file and try again");
-      }
-      if (failedBatches.length) {
-        setError(`Note: batch${failedBatches.length > 1 ? "es" : ""} ${failedBatches.join(", ")} of ${batches.length} couldn't be read (often just boilerplate or blank pages) — proceeding with the data found in the rest.`);
-      }
-      const data = { insured, county, units: mergedUnits };
-      setParsed(data);
-
-      // A field typically has a separate insurance unit per crop it's grown (Winter Wheat,
-      // Spring Wheat, Barley, Mustard...), so a single field can produce a dozen+ rows here.
-      // Match once per farm/field group instead of once per row — every unit sharing the same
-      // fieldName gets the same match automatically. A mapping saved from a previous import
-      // (aphFieldMap) takes priority, so a farm you've already matched needs no re-matching
-      // on future imports.
-      const savedFieldMap = await fetch(
-        `${DB}/${apBase(tenantId,farmId)}/aphFieldMap.json?auth=${token}`
-      ).then(r => r.json()).catch(() => null) || {};
-
-      const groupMatch = {}; // groupKey -> fieldId
-      (data.units || []).forEach(unit => {
-        const key = groupKeyOf(unit.fieldName);
-        if (!key || groupMatch[key]) return;
-        if (savedFieldMap[key]) { groupMatch[key] = savedFieldMap[key]; return; }
-        let match = fields.find(f => f.common?.toLowerCase() === key);
-        if (!match) match = fields.find(f =>
-          key.includes(f.common?.toLowerCase()) || f.common?.toLowerCase().includes(key)
-        );
-        if (match) groupMatch[key] = match.id;
-      });
-      const auto = {};
-      (data.units || []).forEach((unit, i) => { auto[i] = groupMatch[groupKeyOf(unit.fieldName)] || ""; });
-      setMatches(auto);
-      setStage("review");
-    } catch (err) { setError(err.message); setStage("upload"); }
-  };
-
-  const matchedCount = Object.values(matches).filter(Boolean).length;
-
-  // The crop insurance unit number for a parsed row — a mapping CSV's "Insurance Unit" column
-  // (if edited) wins, otherwise whatever Claude read directly off the PDF for that unit.
-  const unitNumberFor = (idx) => (unitOverrides[idx] ?? parsed?.units?.[idx]?.unitNumber ?? "").trim();
-
-  // ── Export the parsed units to CSV so the field mapping can be fixed in a spreadsheet ────
-  // Only the mapping (and insurance unit number) is editable here — the yield/production
-  // history from the PDF is left alone and re-attached by _unit index on import, so nothing
-  // about the parsed data itself can drift out of sync.
-  const exportMappingCSV = () => {
-    const headers = ["_unit", "APH Field Name", "Legal", "Crop", "Years", "APH Yield", "Insurance Unit", "Match To", "Acres"];
-    const rows = (parsed.units || []).map((u, i) => {
-      const ys = u.years || [];
-      const yearRange = ys.length ? `${Math.min(...ys.map(y => y.year))}-${Math.max(...ys.map(y => y.year))}` : "";
-      const latestAcres = [...ys].sort((a, b) => b.year - a.year)[0]?.acres ?? "";
-      // Pre-fill Match To with whatever's already matched in-browser (existing field name, or
-      // the new-field draft name), so exporting after some manual matching doesn't lose it.
-      const m = matches[i];
-      let matchTo = "";
-      if (m && !String(m).startsWith("NEW:")) matchTo = fields.find(f => f.id === m)?.common || "";
-      else if (m) matchTo = newFieldDrafts[String(m).slice(4)]?.common || "";
-      return [i, u.fieldName || "", u.legal || "", u.crop || "", yearRange, u.aphYield ?? "", unitNumberFor(i), matchTo, latestAcres];
-    });
-    // Sort by legal description (natural/numeric-aware, so "9-31N-5E" sorts before "16-31N-5E")
-    // so units on the same section land next to each other when reviewing in a spreadsheet.
-    // _unit stays intact as the real join key, so row order here has no effect on re-import.
-    rows.sort((a, b) => String(a[2]).localeCompare(String(b[2]), undefined, { numeric: true, sensitivity: "base" }));
-    const csv = [headers, ...rows].map(r => r.map(csvEscape).join(",")).join("\n");
-    downloadTextFile(`aph-field-mapping-${(parsed.insured || "import").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.csv`, csv);
-  };
-
-  // ── Read a mapped CSV back and resolve "Match To" into matches/newFieldDrafts ───────────
-  // Existing-field matches are exact (case-insensitive) name lookups against `fields`. Any
-  // other text creates a new field — grouped by the *target name itself* (not the original
-  // PDF grouping), since the whole point of the spreadsheet round-trip is letting the user
-  // split or merge units differently than the insurance company grouped them.
-  const importMappingCSV = async (file) => {
-    setError("");
-    try {
-      const text = await file.text();
-      const rows = parseCSV(text);
-      const nextMatches = {};
-      const nextDrafts = {};
-      const nextOverrides = {};
-      let unresolved = 0;
-      rows.forEach(row => {
-        const idx = parseInt(row["_unit"], 10);
-        if (Number.isNaN(idx) || !parsed.units[idx]) return;
-        if ("Insurance Unit" in row) nextOverrides[idx] = row["Insurance Unit"] || "";
-        const target = (row["Match To"] || "").trim();
-        if (!target) { nextMatches[idx] = ""; return; }
-        const existing = fields.find(f => (f.common || "").toLowerCase() === target.toLowerCase());
-        if (existing) {
-          nextMatches[idx] = existing.id;
-        } else {
-          const draftKey = target.toLowerCase();
-          nextMatches[idx] = `NEW:${draftKey}`;
-          nextDrafts[draftKey] = nextDrafts[draftKey] || {
-            common: target,
-            acres: row["Acres"] || "",
-            legal: parsed.units[idx].legal || "",
-          };
-          unresolved++;
-        }
-      });
-      setMatches(m => ({ ...m, ...nextMatches }));
-      setNewFieldDrafts(d => ({ ...d, ...nextDrafts }));
-      setUnitOverrides(o => ({ ...o, ...nextOverrides }));
-      if (unresolved > 0) {
-        setError(`Mapped CSV loaded — ${unresolved} row${unresolved !== 1 ? "s" : ""} will create new field${unresolved !== 1 ? "s" : ""}. Review below before importing.`);
-      }
-    } catch (err) {
-      setError("Could not read that CSV — " + err.message);
-    }
-  };
-
-  const handleSave = async () => {
-    setStage("saving");
-    try {
-      // Materialize any "create new field" selections into real fields first. This is the
-      // only place this modal actually creates fields — everything up to now was just local
-      // draft state, so Cancel never leaves an orphan field behind. Reuses AgriPlan's own
-      // addField (passed in as onCreateField) so new fields sync to FieldLog exactly the way
-      // manually-added fields do.
-      const newGroupKeys = [...new Set(
-        Object.values(matches).filter(v => typeof v === "string" && v.startsWith("NEW:")).map(v => v.slice(4))
-      )];
-      const createdByGroup = {};
-      const actuallyCreatedIds = new Set(); // only fields genuinely created here — not redirected below
-      for (const key of newGroupKeys) {
-        const draft = newFieldDrafts[key] || {};
-        if (!draft.common || !draft.common.trim()) {
-          throw new Error(`Enter a name for the new field (currently "${key}")`);
-        }
-        const trimmedName = draft.common.trim();
-        // A repeat import (or just picking "+ Create new field..." out of habit instead of
-        // scrolling to find it in the dropdown) can easily end up naming a "new" field the same
-        // as one that already exists. Since aphData is keyed by field NAME, not id, a true
-        // duplicate would silently share that name's aphData bucket with the original field —
-        // which is exactly what caused a stray crop entry to keep reappearing no matter how
-        // many times a field was "re-imported": each import was quietly creating another
-        // same-named field instead of updating the one already there. Redirect to the existing
-        // field instead of creating a duplicate.
-        // Check both the existing fields list AND anything already created earlier in this
-        // same import (two drafts typed with the same name shouldn't produce two fields either).
-        const collision = [...fields, ...Object.values(createdByGroup)]
-          .find(f => (f.common || "").trim().toLowerCase() === trimmedName.toLowerCase());
-        if (collision) {
-          createdByGroup[key] = collision;
-          continue;
-        }
-        // Which units actually resolved to this draft — keyed by the match value itself (not
-        // groupKeyOf), since a mapping CSV can group units by whatever name the user typed,
-        // independent of how the PDF originally grouped them.
-        const unitsInGroup = (parsed.units || [])
-          .map((u, idx) => ({ u, idx }))
-          .filter(({ idx }) => matches[idx] === `NEW:${key}`);
-        const groupCrops = [...new Set(unitsInGroup.map(({ u }) => u.crop).filter(Boolean))];
-        // Build this field's insuranceUnits from whatever unit number(s) the PDF (or a mapping
-        // CSV override) carries for its rows — a field can end up with more than one insurance
-        // unit if, say, its Winter Wheat and Spring Wheat units were merged into it here.
-        const insuranceUnitsByName = {};
-        unitsInGroup.forEach(({ u, idx }) => {
-          const num = unitNumberFor(idx);
-          if (!num) return;
-          const ys = [...(u.years || [])].sort((a, b) => b.year - a.year);
-          insuranceUnitsByName[num] = { name: num, acres: ys[0]?.acres ?? 0 };
-        });
-        createdByGroup[key] = onCreateField({
-          common: trimmedName, farm: "", entity: "",
-          legal: draft.legal || "", fieldNum: "", acres: +draft.acres || 0, crop: "",
-          eligibleCrops: groupCrops,
-          income: { bushelGuarantee:0, priceGuarantee:0, bushelProjection:0, currentPrice:0 },
-          expenseOverrides: {},
-          landlord: "", sharePercent: 100,
-          insuranceType: "APH", coverageLevel: 80, insuredAcres: +draft.acres || 0,
-          insuranceUnits: Object.values(insuranceUnitsByName),
-        });
-        actuallyCreatedIds.add(createdByGroup[key].id);
-      }
-      // Resolve every "NEW:<key>" match to the real field id just created (or the existing field
-      // it collided with), and keep a combined fields list (prop + freshly created) so the
-      // lookups below find them regardless.
-      const resolvedMatches = {};
-      Object.entries(matches).forEach(([i, v]) => {
-        resolvedMatches[i] = (typeof v === "string" && v.startsWith("NEW:"))
-          ? (createdByGroup[v.slice(4)]?.id || "")
-          : v;
-      });
-      const allFields = [...fields, ...Object.values(createdByGroup)];
-
-      // Merge insurance unit numbers AND eligible crops into any EXISTING matched field too —
-      // that includes fields matched normally from the dropdown, and any "new" field redirected
-      // above because it collided with an existing name. Additive only, via the same
-      // updateField path every other AgriPlan edit goes through (local state + the app's normal
-      // autosave), never a raw Firebase PUT from in here. Never removes or overwrites anything
-      // already on the field.
-      if (onUpdateField) {
-        const addsByField = {}; // fieldId -> { units: {unitName -> {name,acres}}, crops: Set }
-        (parsed.units || []).forEach((u, idx) => {
-          const fieldId = resolvedMatches[idx];
-          if (!fieldId || actuallyCreatedIds.has(fieldId)) return;
-          const field = allFields.find(f => f.id === fieldId);
-          if (!field) return;
-          addsByField[fieldId] = addsByField[fieldId] || { units: {}, crops: new Set() };
-          const num = unitNumberFor(idx);
-          if (num) {
-            const already = (field.insuranceUnits || []).some(
-              eu => (typeof eu === "string" ? eu : eu?.name) === num
-            );
-            if (!already) {
-              const ys = [...(u.years || [])].sort((a, b) => b.year - a.year);
-              addsByField[fieldId].units[num] = { name: num, acres: ys[0]?.acres ?? 0 };
-            }
-          }
-          if (u.crop && !(field.eligibleCrops || []).includes(u.crop)) {
-            addsByField[fieldId].crops.add(u.crop);
-          }
-        });
-        Object.entries(addsByField).forEach(([fieldId, adds]) => {
-          const field = fields.find(f => f.id === fieldId);
-          if (!field) return;
-          const upd = {};
-          if (Object.keys(adds.units).length > 0) {
-            upd.insuranceUnits = [...(field.insuranceUnits || []), ...Object.values(adds.units)];
-          }
-          if (adds.crops.size > 0) {
-            upd.eligibleCrops = [...(field.eligibleCrops || []), ...adds.crops];
-          }
-          if (Object.keys(upd).length > 0) onUpdateField(fieldId, upd);
-        });
-      }
-
-      // Merge into whatever APH data already exists rather than replacing it outright —
-      // aphData.json is a single node, and a PUT overwrites the whole thing. Importing a
-      // second PDF covering different fields must not erase the first import's data, so we
-      // fetch what's there now and only touch the field+crop combos this import matched.
-      const existingAphData = await fetch(
-        `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData.json?auth=${token}`
-      ).then(r => r.json()).catch(() => ({}));
-
-      // Build aphData: { [fieldCommon]: { [crop]: { years: {[year]: {acres, yield, production}}, aphYield, aphYears } } }
-      const aphData = { ...(existingAphData || {}) };
-      (parsed.units || []).forEach((unit, i) => {
-        const fieldId = resolvedMatches[i]; if (!fieldId) return;
-        const field = allFields.find(f => f.id === fieldId); if (!field) return;
-        const key = field.common;
-        const crop = unit.crop;
-        aphData[key] = { ...(aphData[key] || {}) };
-        const existingCrop = aphData[key][crop];
-        aphData[key][crop] = {
-          years: { ...(existingCrop?.years || {}) },
-          aphYield: unit.aphYield,
-          aphYears: unit.aphYears,
-        };
-        (unit.years || []).forEach(y => {
-          // A year with 0 acres means this crop was NOT grown on this unit that year — the
-          // source APH document marks these rows "Z, Zero Acres" (a different unit/crop was
-          // grown there instead, or it was fallow). Including them here would make this crop
-          // incorrectly show up in the field's rotation history for years it wasn't planted.
-          if (!y.acres) return;
-          aphData[key][crop].years[String(y.year)] = { acres: y.acres, yield: y.yield, production: y.production };
-        });
-      });
-      const url = `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData.json?auth=${token}`;
-      const res = await fetch(url, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(aphData)
-      });
-      if (!res.ok) throw new Error(`Firebase save failed: ${res.status}`);
-
-      // Extract price elections and save to cropPrices (insurance price only — not projected sell)
-      const priceUpdates = {};
-      (parsed.units || []).forEach((unit, i) => {
-        const fieldId = resolvedMatches[i]; if(!fieldId) return;
-        const crop = unit.crop;
-        if(crop && unit.priceElection > 0) {
-          if(!priceUpdates[crop] || unit.priceElection > priceUpdates[crop].priceGuar) {
-            priceUpdates[crop] = { priceGuar: unit.priceElection };
-          }
-        }
-      });
-      if(Object.keys(priceUpdates).length > 0) {
-        // Merge with existing cropPrices (don't overwrite projected sell prices)
-        const existingPrices = await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`
-        ).then(r=>r.json()).catch(()=>({}));
-        const merged = {...(existingPrices||{})};
-        Object.entries(priceUpdates).forEach(([crop, {priceGuar}]) => {
-          merged[crop] = { ...(merged[crop]||{}), priceGuar };
-        });
-        await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`,
-          { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(merged) }
-        ).catch(()=>{});
-      }
-
-      // Remember every farm-name → AgriPlan-field match from this import so future imports
-      // (next year's APH PDF, a corrected re-import, etc.) auto-fill without re-matching.
-      const fieldMapUpdates = {};
-      (parsed.units || []).forEach((unit, i) => {
-        const fieldId = resolvedMatches[i]; if (!fieldId) return;
-        const key = groupKeyOf(unit.fieldName);
-        if (key) fieldMapUpdates[key] = fieldId;
-      });
-      if (Object.keys(fieldMapUpdates).length > 0) {
-        const existingFieldMap = await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphFieldMap.json?auth=${token}`
-        ).then(r=>r.json()).catch(()=>({}));
-        const mergedFieldMap = { ...(existingFieldMap||{}), ...fieldMapUpdates };
-        await fetch(
-          `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphFieldMap.json?auth=${token}`,
-          { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(mergedFieldMap) }
-        ).catch(()=>{});
-      }
-
-      onImported(aphData);
-      setStage("done");
-    } catch (err) { setError(err.message); setStage("review"); }
-  };
-
-  // z-index high enough to sit above the onboarding wizard's own overlay
-  // (9000) when this modal is reused there — still the topmost thing within
-  // AgriPlan's own normal usage either way.
-  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9500 };
-  const box = { background:"#fff", borderRadius:12, padding:28, width:720, maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)", border:"1px solid #ccdda0", fontFamily:"'Barlow',sans-serif" };
-  const hdr = { fontFamily:"'Playfair Display',serif", fontSize:20, color:"#1a3010", marginBottom:4 };
-  const sub = { fontSize:12, color:"#7a9260", marginBottom:20 };
-  const btn = (bg, fg) => ({ background:bg, color:fg, border:"none", borderRadius:6, padding:"8px 20px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" });
-
-  return (
-    <div style={overlay}>
-      <div style={box}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
-          <div>
-            <div style={hdr}>📥 Import APH Data</div>
-            <div style={sub}>Upload your Actual Production History PDF from your crop insurance agent</div>
-          </div>
-          <button onClick={onClose} style={{ background:"none", border:"1px solid #ccdda0", borderRadius:6, padding:"4px 12px", cursor:"pointer", color:"#7a9260", fontSize:13 }}>✕</button>
-        </div>
-
-        {error && <div style={{ background:"#fff0f0", border:"1px solid #e08080", borderRadius:6, padding:"8px 12px", marginBottom:12, fontSize:12, color:"#c02020" }}>⚠ {error}</div>}
-
-        {stage === "upload" && (
-          <div style={{ textAlign:"center", padding:"40px 20px", border:"2px dashed #b8d09a", borderRadius:8, background:"#f8fbf5" }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>📄</div>
-            <div style={{ fontSize:14, color:"#3a6020", marginBottom:16, fontWeight:600 }}>Select your APH PDF</div>
-            <div style={{ fontSize:12, color:"#7a9260", marginBottom:20 }}>PDF from your crop insurance agent — covers 10 years of yield history per field unit</div>
-            <label style={{ ...btn("#2a7a18","#fff"), display:"inline-block", cursor:"pointer" }}>
-              Choose PDF
-              <input type="file" accept="application/pdf,.pdf" onChange={handleFile} style={{ display:"none" }} />
-            </label>
-          </div>
-        )}
-
-        {stage === "converting" && (
-          <div style={{ textAlign:"center", padding:"60px 20px" }}>
-            <div style={{ fontSize:36, marginBottom:16, animation:"spin 1.5s linear infinite" }}>📄</div>
-            <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Preparing PDF...</div>
-            <div style={{ fontSize:12, color:"#7a9260", marginTop:8 }}>
-              {pageProgress.total > 0 ? `Converting page ${pageProgress.done} of ${pageProgress.total}` : "Loading PDF reader..."}
-            </div>
-          </div>
-        )}
-
-        {stage === "parsing" && (
-          <div style={{ textAlign:"center", padding:"60px 20px" }}>
-            <div style={{ fontSize:36, marginBottom:16, animation:"spin 1.5s linear infinite" }}>⏳</div>
-            <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Reading APH data...</div>
-            <div style={{ fontSize:12, color:"#7a9260", marginTop:8 }}>
-              {batchProgress.total > 1
-                ? `Processing batch ${Math.min(batchProgress.done+1, batchProgress.total)} of ${batchProgress.total} — large document, splitting into multiple requests`
-                : "Claude is extracting field units, crops, and yield history from your PDF"}
-            </div>
-          </div>
-        )}
-
-        {stage === "review" && parsed && (
-          <>
-            <div style={{ background:"#f0f8e8", border:"1px solid #a8d880", borderRadius:6, padding:"8px 14px", marginBottom:10, fontSize:12, color:"#2a6010" }}>
-              Found <strong>{parsed.units?.length}</strong> field unit{parsed.units?.length !== 1 ? "s" : ""} for <strong>{parsed.insured || "Unknown"}</strong>
-              {parsed.county ? ` — ${parsed.county}` : ""}.
-              {" "}<strong>{matchedCount}</strong> matched to AgriPlan fields.
-            </div>
-            <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:16 }}>
-              <span style={{ fontSize:11, color:"#7a9260" }}>
-                Insurance units often don't line up with your field names — match below, or fix it in a spreadsheet:
-              </span>
-              <button onClick={exportMappingCSV} style={{ background:"#f8fbf5", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 10px", fontSize:11, color:"#3a6020", cursor:"pointer", whiteSpace:"nowrap" }}>
-                ⬇ Export mapping CSV
-              </button>
-              <label style={{ background:"#f8fbf5", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 10px", fontSize:11, color:"#3a6020", cursor:"pointer", whiteSpace:"nowrap" }}>
-                ⬆ Import mapped CSV
-                <input type="file" accept=".csv,text/csv" style={{ display:"none" }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) importMappingCSV(f); e.target.value = ""; }} />
-              </label>
-            </div>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:16 }}>
-              <thead>
-                <tr style={{ background:"#1e3a18", color:"#c8e8a0" }}>
-                  {["APH Field Name","Crop","Years","APH Yield","↔ Match to AgriPlan Field"].map(h => (
-                    <th key={h} style={{ padding:"6px 10px", textAlign:"left", fontSize:10, textTransform:"uppercase", letterSpacing:0.6 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(parsed.units || []).map((unit, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? "#f6f9f0" : "#fff", borderBottom:"1px solid #e0eccc" }}>
-                    <td style={{ padding:"6px 10px", color:"#1a3010", fontWeight:600 }}>{unit.fieldName || "—"}{unit.legal ? <div style={{ fontSize:10, color:"#7a9260", fontWeight:400 }}>{unit.legal}</div> : null}</td>
-                    <td style={{ padding:"6px 10px" }}>
-                      <span style={{ background:"#d4ecc0", color:"#1a4010", padding:"1px 7px", borderRadius:3, fontSize:11, fontWeight:600 }}>{unit.crop || "—"}</span>
-                    </td>
-                    <td style={{ padding:"6px 10px", color:"#527a38", fontFamily:"'IBM Plex Mono',monospace", fontSize:11 }}>
-                      {unit.years?.length || 0} yrs
-                      <div style={{ fontSize:10, color:"#8a9a70" }}>
-                        {unit.years?.length ? `${Math.min(...unit.years.map(y=>y.year))}–${Math.max(...unit.years.map(y=>y.year))}` : ""}
-                      </div>
-                    </td>
-                    <td style={{ padding:"6px 10px", fontFamily:"'IBM Plex Mono',monospace", fontSize:11, color:"#2a6010", fontWeight:600 }}>
-                      {unit.aphYield ? `${unit.aphYield} bu/ac` : "—"}
-                    </td>
-                    <td style={{ padding:"6px 10px" }}>
-                      {(() => {
-                        const groupKey = groupKeyOf(unit.fieldName);
-                        const m = matches[i] || "";
-                        // "NEW:<key>" can come from either the in-browser dropdown (keyed by the
-                        // PDF's own field-name grouping) or an imported mapping CSV (keyed by
-                        // whatever name the user typed in "Match To") — handle both the same way.
-                        const isNew = typeof m === "string" && m.startsWith("NEW:");
-                        const newKey = isNew ? m.slice(4) : null;
-                        const draft = isNew ? (newFieldDrafts[newKey] || { common: "", acres: "" }) : null;
-                        const updDraft = (k, v) => setNewFieldDrafts(d => ({ ...d, [newKey]: { ...(d[newKey]||{}), [k]: v } }));
-                        const siblingCount = (parsed.units || []).filter(u => groupKeyOf(u.fieldName) === groupKey).length;
-                        return (
-                          <>
-                            <select
-                              value={isNew ? `NEW:${newKey}` : m}
-                              onChange={e => {
-                                const val = e.target.value;
-                                // Applying a match here also applies it to every other row sharing
-                                // this same farm/field name — no need to re-pick it for each crop.
-                                setMatches(mm => {
-                                  const next = { ...mm };
-                                  (parsed.units || []).forEach((u, j) => { if (groupKeyOf(u.fieldName) === groupKey) next[j] = val; });
-                                  return next;
-                                });
-                                if (val === `NEW:${groupKey}`) {
-                                  // Seed the draft from the PDF's own data the first time this
-                                  // group is set to "create new" — editable below.
-                                  setNewFieldDrafts(d => (d[groupKey] ? d : {
-                                    ...d,
-                                    [groupKey]: {
-                                      common: (unit.fieldName || groupKey).split("|")[0].trim(),
-                                      acres: (() => {
-                                        const ys = [...(unit.years || [])].sort((a, b) => b.year - a.year);
-                                        return ys[0]?.acres ?? "";
-                                      })(),
-                                      legal: unit.legal || "",
-                                    },
-                                  }));
-                                }
-                              }}
-                              style={{ width:"100%", border:"1px solid #b8d09a", borderRadius:4, padding:"4px 6px", fontSize:11, background:"#f8fbf5", color:"#1a3010" }}>
-                              <option value="">— skip —</option>
-                              {[...fields].sort((a,b)=>(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f => <option key={f.id} value={f.id}>{f.common}{f.fieldNum ? ` #${f.fieldNum}` : ""}</option>)}
-                              <option value={`NEW:${groupKey}`}>+ Create new field…</option>
-                              {isNew && newKey !== groupKey && <option value={`NEW:${newKey}`}>🆕 {draft?.common || newKey} (from mapping CSV)</option>}
-                            </select>
-                            {siblingCount > 1 && !isNew && (
-                              <div style={{ fontSize:9, color:"#8a9a70", marginTop:2 }}>applies to {siblingCount} rows for this field</div>
-                            )}
-                            {isNew && (
-                              <div style={{ marginTop:6, padding:8, background:"#fffbe8", border:"1px solid #e0d090", borderRadius:4, display:"flex", flexDirection:"column", gap:4 }}>
-                                <input value={draft.common} onChange={e => updDraft("common", e.target.value)}
-                                  placeholder="New field name" style={{ border:"1px solid #d8c880", borderRadius:3, padding:"3px 6px", fontSize:11 }} />
-                                <input value={draft.acres} onChange={e => updDraft("acres", e.target.value)} type="number"
-                                  placeholder="Acres" style={{ border:"1px solid #d8c880", borderRadius:3, padding:"3px 6px", fontSize:11 }} />
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-              <button onClick={onClose} style={{ ...btn("#f8fbf5","#7a9260"), border:"1px solid #ccdda0" }}>Cancel</button>
-              <button
-                onClick={handleSave}
-                disabled={matchedCount === 0}
-                style={{ ...btn(matchedCount > 0 ? "#2a7a18" : "#aac890", "#fff") }}>
-                Import {matchedCount} Field{matchedCount !== 1 ? "s" : ""}
-              </button>
-            </div>
-          </>
-        )}
-
-        {stage === "saving" && (
-          <div style={{ textAlign:"center", padding:"40px 20px" }}>
-            <div style={{ fontSize:14, color:"#3a6020", fontWeight:600 }}>Saving to database...</div>
-          </div>
-        )}
-
-        {stage === "done" && (
-          <div style={{ textAlign:"center", padding:"40px 20px" }}>
-            <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
-            <div style={{ fontSize:16, color:"#2a6010", fontWeight:700, marginBottom:8 }}>APH data imported!</div>
-            <div style={{ fontSize:12, color:"#7a9260", marginBottom:24 }}>
-              {matchedCount} field unit{matchedCount !== 1 ? "s" : ""} imported. History tab is now available with crop rotation and yield data. Any price elections found in the PDF have been saved to 💲 Prices.
-            </div>
-            <button onClick={onClose} style={btn("#2a7a18","#fff")}>Done</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-
-// ── New Year Modal ────────────────────────────────────────────────────────────
-function NewYearModal({existingYears,onConfirm,onClose}){
-  const nextYr = String(Math.max(...existingYears.map(Number))+1);
-  const [newYear,setNewYear]=useState(nextYr);
-  const [copyFrom,setCopyFrom]=useState(existingYears[existingYears.length-1]);
-  const [mode,setMode]=useState("copy"); // "copy" | "blank"
-
-  const yearValid = /^20\d{2}$/.test(newYear) && !existingYears.includes(newYear);
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
-      <div style={{background:"#fff",borderRadius:12,padding:32,width:460,boxShadow:"0 20px 60px rgba(0,0,0,0.25)",border:"1px solid #ccdda0"}}>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#1a3010",marginBottom:6}}>Start a New Year</div>
-        <div style={{fontSize:12,color:"#7a9260",marginBottom:24}}>Create a new crop plan year. Your current year's data is saved and you can switch back any time.</div>
-
-        <div style={{marginBottom:16}}>
-          <label style={{fontSize:11,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:6}}>New Plan Year</label>
-          <input type="number" value={newYear} onChange={e=>setNewYear(e.target.value)} min="2020" max="2040"
-            style={{background:"#f4f8ee",border:`2px solid ${yearValid?"#3a9020":"#cc9090"}`,borderRadius:6,padding:"10px 14px",fontSize:18,fontFamily:"'IBM Plex Mono',monospace",color:"#1a3010",width:"100%",outline:"none"}}/>
-          {existingYears.includes(newYear)&&<div style={{fontSize:11,color:"#c02020",marginTop:4}}>Year {newYear} already exists — switch to it using the year selector in the header.</div>}
-        </div>
-
-        <div style={{marginBottom:20}}>
-          <label style={{fontSize:11,color:"#527a38",textTransform:"uppercase",letterSpacing:0.8,display:"block",marginBottom:8}}>Starting Point</label>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <label style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",borderRadius:6,border:`2px solid ${mode==="copy"?"#3a9020":"#ccdda0"}`,cursor:"pointer",background:mode==="copy"?"#f0fce8":"#fff"}}>
-              <input type="radio" checked={mode==="copy"} onChange={()=>setMode("copy")} style={{marginTop:2,accentColor:"#3a9020"}}/>
-              <div>
-                <div style={{fontSize:12,fontWeight:600,color:"#1a3010"}}>Copy fields from a previous year</div>
-                <div style={{fontSize:11,color:"#7a9260",marginTop:2}}>Copies all field structure, acres, and eligibility. Income and expenses reset to crop defaults — you'll update them when you get new projections.</div>
-                {mode==="copy"&&(
-                  <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:11,color:"#527a38"}}>Copy from:</span>
-                    <select value={copyFrom} onChange={e=>setCopyFrom(e.target.value)}
-                      style={{background:"#fff",border:"1px solid #b8d09a",borderRadius:4,padding:"3px 8px",fontSize:12,color:"#1a3010"}}>
-                      {existingYears.map(y=><option key={y} value={y}>{y}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </label>
-            <label style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",borderRadius:6,border:`2px solid ${mode==="blank"?"#3a9020":"#ccdda0"}`,cursor:"pointer",background:mode==="blank"?"#f0fce8":"#fff"}}>
-              <input type="radio" checked={mode==="blank"} onChange={()=>setMode("blank")} style={{marginTop:2,accentColor:"#3a9020"}}/>
-              <div>
-                <div style={{fontSize:12,fontWeight:600,color:"#1a3010"}}>Start completely blank</div>
-                <div style={{fontSize:11,color:"#7a9260",marginTop:2}}>Empty field list — add fields manually or import data later.</div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          <button onClick={onClose} style={{background:"#fff",border:"1px solid #ccdda0",borderRadius:6,padding:"9px 20px",fontSize:12,cursor:"pointer",color:"#7a9260",fontFamily:"'Barlow',sans-serif"}}>Cancel</button>
-          <button onClick={()=>yearValid&&onConfirm(newYear,mode,copyFrom)}
-            disabled={!yearValid}
-            style={{background:yearValid?"#2a7a18":"#ccc",border:"none",borderRadius:6,padding:"9px 24px",fontSize:12,cursor:yearValid?"pointer":"not-allowed",color:"#fff",fontFamily:"'Barlow',sans-serif",fontWeight:600}}>
-            Create {newYear} Plan →
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main App ──────────────────────────────────────────────────────────────────
-// AgriPlan module — tenant-isolated, starts blank inside Agri Logix
-
-// ── Tenant-only customization gate ──────────────────────────────────────────
-// A handful of features exist for exactly one tenant (Chris's own Flat Acre
-// Farms / Via Terra operation) and should stay completely invisible to every
-// other tenant on the platform. Rather than deleting that code, gate it
-// behind isFlatAcreTenant(tenantId) — same pattern works for any future
-// single-tenant customization: `if (isFlatAcreTenant(tenantId)) { ...custom... } else { ...regular... }`.
-// FLAT_ACRE_TENANT_ID must be the real Firebase tenantId for that tenant —
-// find it in the browser console while logged into that account:
-// fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/users/${JSON.parse(localStorage.getItem("al_session")).localId}.json?auth=${JSON.parse(localStorage.getItem("al_session")).idToken}`).then(r=>r.json()).then(d=>console.log("tenantId:", d.tenantId))
-const FLAT_ACRE_TENANT_ID = "Kya4wOKb5naH6ngRwoaKNuntJdw2_org";
-const isFlatAcreTenant = (tenantId) => !!tenantId && tenantId === FLAT_ACRE_TENANT_ID;
-
-// ── One-time Flat Acre Farms / Via Terra workbook import ───────────────────
-// Uses the currently logged-in user's own Firebase session (tenantId/token from
-// props) — no separate credentials ever change hands. Reads the pre-built data
-// file at /flatAcreImportData.json and safely merges it in: anything already
-// saved at a given path is left untouched, only missing records get added.
-function ImportWorkbookModal({ tenantId, token, onClose }) {
-  const [status, setStatus] = useState("idle"); // idle | running | done | error
-  const [log, setLog] = useState([]);
-  const addLog = (msg) => setLog(l => [...l, msg]);
-  const VIA_TERRA_FARM_ID = "viaterra";
-  const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-  const fieldKey = (f) => `${(f.common||"").trim().toLowerCase()}|${String(f.fieldNum||"").trim().toLowerCase()}`;
-
-  async function dbGet(path) {
-    const res = await fetch(`${DB}/${path}.json?auth=${token}`);
-    if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
-    return res.json();
-  }
-  async function dbPut(path, value) {
-    const res = await fetch(`${DB}/${path}.json?auth=${token}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
-    });
-    if (!res.ok) throw new Error(`PUT ${path} -> ${res.status}: ${await res.text()}`);
-  }
-
-  async function importAgriPlanYears(entityFields, basePath, label) {
-    for (const [year, newFields] of Object.entries(entityFields || {})) {
-      if (!newFields.length) continue;
-      const path = `tenants/${tenantId}/${basePath}/fields/${year}`;
-      const existingObj = (await dbGet(path)) || {};
-      const existingByKey = new Map(Object.values(existingObj).map(f => [fieldKey(f), f]));
-      const merged = { ...existingObj };
-      let nextIdx = Object.keys(existingObj).length, added = 0, skipped = 0;
-      for (const f of newFields) {
-        if (existingByKey.has(fieldKey(f))) { skipped++; continue; }
-        merged[String(nextIdx++)] = f; added++;
-      }
-      await dbPut(path, merged);
-      addLog(`${label} ${year}: +${added} new field-years, ${skipped} already present`);
-    }
-  }
-
-  async function importListPath(path, list, keyFn, label) {
-    const existingObj = (await dbGet(path)) || {};
-    const existingKeys = new Set(Object.values(existingObj).map(keyFn));
-    const merged = { ...existingObj };
-    let nextIdx = Object.keys(existingObj).length, added = 0;
-    for (const f of (list || [])) {
-      if (existingKeys.has(keyFn(f))) continue;
-      merged[f.id != null ? String(f.id) : String(nextIdx++)] = f; added++;
-    }
-    await dbPut(path, merged);
-    addLog(`${label}: +${added} new`);
-  }
-
-  const run = async () => {
-    setStatus("running"); setLog([]);
-    try {
-      const resp = await fetch("/flatAcreImportData.json");
-      if (!resp.ok) throw new Error("Could not load /flatAcreImportData.json");
-      const { agriPlanFields, currentFields } = await resp.json();
-
-      const farmPath = `tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/profile`;
-      const existingFarm = await dbGet(farmPath);
-      if (!existingFarm) {
-        await dbPut(farmPath, { id: VIA_TERRA_FARM_ID, name: "Via Terra", color: "#1a4a80", createdAt: new Date().toISOString() });
-        addLog("Created Via Terra farm.");
-      } else {
-        addLog("Via Terra farm already exists — leaving it as-is.");
-      }
-
-      addLog("Importing AgriPlan — Flat Acre Farms…");
-      await importAgriPlanYears(agriPlanFields.flatAcre, "agriPlan", "Flat Acre Farms");
-      addLog("Importing AgriPlan — Via Terra…");
-      await importAgriPlanYears(agriPlanFields.viaTerra, `farms/${VIA_TERRA_FARM_ID}/agriPlan`, "Via Terra");
-
-      addLog("Importing AgriScale field lists…");
-      await importListPath(`tenants/${tenantId}/agriScale/fields`, currentFields.flatAcre.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms AgriScale");
-      await importListPath(`tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/agriScale/fields`, currentFields.viaTerra.agriScaleFields, f=>(f.name||"").trim().toLowerCase(), "Via Terra AgriScale");
-
-      addLog("Importing FieldLog field lists…");
-      await importListPath(`tenants/${tenantId}/fieldlog/fields`, currentFields.flatAcre.fieldLogFields, f=>(f.name||"").trim().toLowerCase(), "Flat Acre Farms FieldLog");
-      await importListPath(`tenants/${tenantId}/farms/${VIA_TERRA_FARM_ID}/fieldlog/fields`, currentFields.viaTerra.fieldLogFields, f=>(f.name||"").trim().toLowerCase(), "Via Terra FieldLog");
-
-      addLog("Done — switch farms using the picker at the top to see Via Terra.");
-      setStatus("done");
-    } catch (e) {
-      addLog("ERROR: " + e.message);
-      setStatus("error");
-    }
-  };
-
-  return (<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-    <div style={{background:"#fff",borderRadius:10,padding:24,width:560,maxHeight:"80vh",overflowY:"auto"}}>
-      <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,marginBottom:12,color:"#1a4010"}}>Import Flat Acre / Via Terra Workbook Data</div>
-      <div style={{fontSize:13,color:"#527a38",marginBottom:16,lineHeight:1.5}}>
-        Imports 12 years of crop-plan data (2015-2026) and 9 years of expenses (2018-2026) for both Flat
-        Acre Farms and Via Terra. Creates the Via Terra farm if it doesn't exist yet. Safe to run more than
-        once — anything already saved is left alone, only missing records get added.
-      </div>
-      {status==="idle" && <button onClick={run} style={{padding:"10px 18px",background:"#2a7010",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:14}}>Start Import</button>}
-      {status!=="idle" && <div style={{background:"#f4f8ef",border:"1px solid #ccdda0",borderRadius:6,padding:12,fontFamily:"'IBM Plex Mono',monospace",fontSize:11,maxHeight:300,overflowY:"auto"}}>
-        {log.map((l,i)=><div key={i}>{l}</div>)}
-        {status==="running" && <div>Working…</div>}
-      </div>}
-      <div style={{marginTop:16,display:"flex",justifyContent:"flex-end",gap:8}}>
-        <button onClick={onClose} style={{padding:"8px 16px",background:"transparent",border:"1px solid #ccc",borderRadius:6,cursor:"pointer"}}>{status==="done"?"Close & Refresh":"Cancel"}</button>
-      </div>
-    </div>
-  </div>);
-}
-
-export default function AgriPlanModule({ tenantId, token, userProfile, persist, farmId, farmName } = {}){
-  // Configure Firebase and localStorage mode for this tenant
- _isAgriLogixTenant = !!tenantId;
-  _tenantIdCache = tenantId || null;
-  initAgriPlan(tenantId, token, farmId);
-  // Standalone (no tenantId) mode is the original single-user AgriPlan with
-  // no accounts at all — always full access there. Inside Agri Logix, this
-  // is the same owner/manager/operator tiering AgriScale already enforces;
-  // AgriPlan just never read the role it was handed until now.
-  const perms = _isAgriLogixTenant ? getPerms(userProfile) : getPerms({ role: "owner" });
-  const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
-  const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
-  const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026")||[]):loadFields(loadYears().slice(-1)[0]));
-  const[selectedField,setSelectedField]=useState(null);
-  const[entityFilter,setEntityFilter]=useState("all");
-  const[expanded,setExpanded]=useState(()=>tenantId?new Set([]):new Set([]));
-  const[addMode,setAddMode]=useState(false);
-  const[searchQ,setSearchQ]=useState("");
-  const[mainView,setMainView]=useState("table");
-  const[showNewYear,setShowNewYear]=useState(false);
-
-  const [dbLoaded, setDbLoaded] = useState(false);
-  const [showRulesEditor, setShowRulesEditor] = useState(false);
-  const [showImportAPH,   setShowImportAPH]   = useState(false);
-  const [showImportWorkbook, setShowImportWorkbook] = useState(false);
-  const [aphData,         setAphData]         = useState(null); // loaded from Firebase after import
-  const [fieldHistory,    setFieldHistory]    = useState({}); // manual crop history per field — also where AgriScale pushes actual production (bushels/lastUpdated/source alongside crop/yield/acres)
-  const [contractedByCrop, setContractedByCrop] = useState({}); // crop -> {contractedBu,pricedBu,contractedRevenue} — AgriScale's grain marketing contracts, mirrored per year (see fbWatchContracts)
-  const [tenantCrops,     setTenantCrops]     = useState([]);   // per-tenant crop list
-  const [showCropsMgr,   setShowCropsMgr]   = useState(false);
-  const [expenseDefaults, setExpenseDefaults] = useState(_isAgriLogixTenant?{}:{...DEFAULT_RATES});
-  const [cropExpDefaults, setCropExpDefaults] = useState(_isAgriLogixTenant?{}:{...CROP_EXP_DEFAULTS});
-  const [showRatesEditor,  setShowRatesEditor]  = useState(false);
-  const [showPricesEditor, setShowPricesEditor] = useState(false);
-  const [cropPrices,       setCropPrices]       = useState({}); // {crop: {priceGuar, projPrice}}
-  const [flSeedLogs,       setFlSeedLogs]       = useState({}); // {fieldName: [{date,crop,seedRate,variety}]}
-  // Sync module-level vars so calc() / getRate() / CropSelect use current tenant values
-  _expRates          = expenseDefaults;
-  _cropRates         = cropExpDefaults;
-  _tenantCrops        = tenantCrops.length > 0 ? tenantCrops : ALL_CROPS;
-  _globallyIneligible = _isAgriLogixTenant ? new Set() : null;
-  _aphData            = aphData;
-  _fieldHistory       = fieldHistory;
-  _cropPrices         = Object.keys(cropPrices).length > 0 ? cropPrices : null;
-  const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
-  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
-  const saveTimer = useRef(null);
-  const undoStack = useRef([]);
-  const [canUndo, setCanUndo] = useState(false);
-
-  useEffect(()=>{const l=document.createElement("link");l.rel="stylesheet";l.href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Barlow:wght@300;400;500;600&display=swap";document.head.appendChild(l);},[]);
-
-  // On mount: load once then subscribe to real-time updates
-  useEffect(()=>{
-    let unsubFields = null;
-    let unsubFieldHistory = null;
-    let unsubContracts = null;
-    let firstLoad = true;
-
-    // Load years + hist revenue + rotation rules once
-    async function loadOnce(){
-      try{
-        const [fbYears, fbHistRev, fbRules] = await Promise.all([
-          fbLoadYears(), fbLoadHistRevenue(), fbLoadRotationRules()
-        ]);
-        if(fbYears&&fbYears.length>0){
-          setYears(fbYears);
-          localStorage.setItem("agriplan_years",JSON.stringify(fbYears));
-        }
-        if(fbHistRev&&Object.keys(fbHistRev).length>0){
-          saveHistRevCache(fbHistRev);
-        }
-        if(fbRules&&Object.keys(fbRules).length>0){
-          setRotationConfig(fbRules);
-        }
-      }catch(e){ console.warn("Firebase load failed:",e); }
-    }
-    loadOnce();
-
-    // Load APH data if it exists
-    if(tenantId && token) {
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d) setAphData(d); }).catch(()=>{});
-      // Load chemical plantback restrictions written by FieldLog
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
-      // Load seeding logs from FieldLog (Default Farm) for cross-module display
-      (async () => {
-        try {
-          const DB = "https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-          const [flFieldsData, flActsData] = await Promise.all([
-            fetch(`${DB}/${flBase(tenantId,farmId)}/fields.json?auth=${token}`).then(r=>r.json()),
-            fetch(`${DB}/${flBase(tenantId,farmId)}/activities.json?auth=${token}`).then(r=>r.json()),
-          ]);
-          // Build fieldId → name map
-          const idToName = {};
-          if(flFieldsData) Object.values(flFieldsData).forEach(f => { if(f?.id) idToName[f.id] = f.name; });
-          // Filter seeding activities for current year, group by field name
-          const yr = new Date().getFullYear();
-          const logs = {};
-          if(flActsData) Object.values(flActsData).forEach(a => {
-            if(a?.type !== "seeding") return;
-            const actYr = a.date ? new Date(a.date).getFullYear() : null;
-            if(actYr !== yr) return;
-            const name = idToName[a.fieldId]; if(!name) return;
-            const crops = a.data?.crops?.length > 0 ? a.data.crops :
-              (a.data?.crop ? [{crop: a.data.crop, seedRate: a.data.seedRate, variety: a.data.variety}] : []);
-            if(!logs[name]) logs[name] = [];
-            // Normalise fertilisers (new array format or legacy single-entry)
-            const ferts = a.data?.ferts?.length>0 ? a.data.ferts
-              : a.data?.fertBlend ? [{blend:a.data.fertBlend==="Custom Blend"?a.data.fertCustom:a.data.fertBlend,rate:a.data.fertRate,total:a.data.totalFert,placement:"Seed-placed"}]
-              : [];
-            // Normalise inoculants
-            const inoculants = a.data?.inoculants?.length>0 ? a.data.inoculants
-              : a.data?.inoculantProduct ? [{product:a.data.inoculantProduct,rate:a.data.inoculantRate}]
-              : [];
-            logs[name].push({
-              id: a.id, date: a.date, crops, ferts, inoculants,
-              equipment: a.data?.equipment, depth: a.data?.depth, notes: a.notes
-            });
-          });
-          setFlSeedLogs(logs);
-        } catch(e) { console.warn("FieldLog seed log load failed:", e.message); }
-      })();
-      // Load manual field history from Firebase — this is also where AgriScale
-      // pushes actual harvested bushels (a `bushels`/`lastUpdated`/`source` on
-      // top of the usual crop/yield/acres entry), so actuals ride along with
-      // the same crop-rotation/APH-suggestion data AgriPlan already reads
-      // here, rather than living in a second parallel node. Live-subscribed
-      // (not fetch-once) so a harvest export from AgriScale shows up here
-      // without needing to reload this tab — same reasoning as fbWatchFields.
-      unsubFieldHistory = fbWatchFieldHistory(d => setFieldHistory(d));
-      // Grain marketing contracts (buyer/price/bushels/delivery) live in
-      // AgriScale's MARKET tab — this just watches the crop-level revenue
-      // summary it mirrors over for the currently active budget year, so
-      // it's visible in reports without duplicating contract data entry here.
-      unsubContracts = fbWatchContracts(activeYear, d => setContractedByCrop(d));
-      // Load tenant crop price elections from Firebase
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{
-          if(!d) return;
-          if(Array.isArray(d)){
-            // New array format: [{crop, priceGuar, projPrice}]
-            const obj={}; d.forEach(({crop,priceGuar,projPrice})=>{ if(crop) obj[crop]={priceGuar,projPrice}; });
-            setCropPrices(obj);
-          } else if(typeof d==="object"){
-            // Legacy object format
-            setCropPrices(d);
-          }
-        }).catch(()=>{});
-      // Load tenant crop list from Firebase
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/crops.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setTenantCrops(d); }).catch(()=>{});
-      // Load tenant-specific expense defaults (replaces hardcoded FA/VT constants)
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/expenseDefaults.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setExpenseDefaults(d); }).catch(()=>{});
-      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropExpDefaults.json?auth=${token}`)
-        .then(r=>r.json()).then(d=>{ if(d&&typeof d==="object") setCropExpDefaults(d); }).catch(()=>{});
-    }
-
-    // Real-time listener for fields — fires immediately on connect, then on every change
-    try{
-      unsubFields = fbWatchFields(activeYear, (fbFields)=>{
-        if(fbFields&&fbFields.length>0){
-          // Skip our own saves (debounce: if we just saved, don't overwrite with stale data)
-          // Agri Logix: always load from Firebase (fields start blank, first SSE = source of truth)
-          // Standalone: skip first SSE to preserve localStorage-loaded data
-          if(!firstLoad || tenantId){
-            // Normalise eligibleCrops — restore script may have set it to []
-            // giving all crops eligibility by default when not set
-            const normalized = fbFields.filter(f=>f && typeof f==="object" && f.income && f.id!=null).map(f=>({
-              ...f,
-              eligibleCrops: (()=>{ const raw=f.eligibleCrops; const arr=Array.isArray(raw)?raw:raw&&typeof raw==="object"?Object.values(raw):[]; return arr.length>0?arr:(_tenantCrops||ALL_CROPS); })()
-            }));
-            setFields(normalized);
-            if(tenantId) saveTenantFieldsCache(tenantId, activeYear, normalized);
-          }
-          firstLoad = false;
-          if(!tenantId){ localStorage.setItem(lsKey(activeYear),JSON.stringify(fbFields)); localStorage.setItem('agriplan_data_version',DATA_VERSION); }
-        }
-        setDbLoaded(true);
-      });
-    }catch(e){
-      console.warn("Firebase watch failed:",e);
-      setDbLoaded(true);
-    }
-
-     // Safety net: unblock after 8s even if SSE never fires
-    const fallbackTimer = setTimeout(() => {
-      setDbLoaded(true);
-      if(tenantId){
-        setFields(prev => {
-          if(prev && prev.length>0) return prev; // already have something (live or cached)
-          const cached = loadTenantFieldsCache(tenantId, activeYear);
-          return (cached && cached.length>0) ? cached : prev;
-        });
-      }
-    }, 8000);
-
-    return ()=>{ if(unsubFields) unsubFields(); if(unsubFieldHistory) unsubFieldHistory(); if(unsubContracts) unsubContracts(); clearTimeout(fallbackTimer); };
-  },[activeYear]);
-
-  const isSavingRef = useRef(false);
-
-  // Keep selectedField in sync when fields array updates (SSE, edits, etc.)
-  useEffect(()=>{
-    if(!selectedField) return;
-    const fresh = fields.find(f=>f.id===selectedField.id);
-    if(fresh && JSON.stringify(fresh)!==JSON.stringify(selectedField)) setSelectedField(fresh);
-  },[fields]);
-
-  useEffect(()=>{
-    if(fields!==null&&fields!==undefined){
-      if(saveTimer.current) clearTimeout(saveTimer.current);
-      setSaveStatus('saving');
-      saveTimer.current = setTimeout(()=>{
-        isSavingRef.current = true;
-        saveFields(activeYear, fields, (status)=>{
-          setSaveStatus(status);
-          if(status==='saved'){
-            setTimeout(()=>{ setSaveStatus('idle'); isSavingRef.current=false; }, 2000);
-          } else {
-            isSavingRef.current = false;
-          }
-        });
-      }, 800);
-    }
-  },[fields,activeYear]);
-
-  const switchYear=useCallback(yr=>{saveFields(activeYear,fields);setActiveYear(yr);setFields(tenantId?(loadTenantFieldsCache(tenantId,yr)||[]):loadFields(yr));setSelectedField(null);setMainView("table");setSearchQ("");},[activeYear,fields,tenantId]);
-  
-   // Retry any queued offline save the moment the browser comes back online —
-  // same behavior AgriScale already has.
-  useEffect(()=>{
-    if(!tenantId) return;
-    const retry = () => {
-      const q = loadTenantQueue(tenantId, activeYear);
-      if(!q) return;
-      setSaveStatus('pushing');
-      fbSaveFields(activeYear, q.fields)
-        .then(()=>{ clearTenantQueue(tenantId, activeYear); setSaveStatus('saved'); setTimeout(()=>setSaveStatus('idle'),2000); })
-        .catch(()=>setSaveStatus('queued'));
-    };
-    window.addEventListener('online', retry);
-    return ()=>window.removeEventListener('online', retry);
-  },[tenantId,activeYear]);
- 
-  const createYear=useCallback((newYr,mode,copyFromYr)=>{
-    const src=mode==="copy"?(tenantId?[...fields]:loadFields(copyFromYr)):[];
-    // Always blank the crop when creating a new year — user selects crops fresh
-    const newFields=src.map(f=>({...f,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`,crop:"",expenseOverrides:{}}));
-    saveFields(newYr,newFields);
-    const updatedYears=[...years,newYr].sort();
-    saveYears(updatedYears);
-    setYears(updatedYears);
-    setShowNewYear(false);
-    saveFields(activeYear,fields);
-    setActiveYear(newYr);
-    setFields(newFields);
-    setSelectedField(null);
-    setMainView("table");
-  },[years,activeYear,fields]);
-
-  const deleteYear=useCallback((yr)=>{
-    if(years.length<=1){alert("Cannot delete the only year.");return;}
-    // Remove from years list
-    const updatedYears=years.filter(y=>y!==yr);
-    saveYears(updatedYears);
-    setYears(updatedYears);
-    // Clear localStorage for this year (standalone only)
-    if(!_isAgriLogixTenant){ try{ localStorage.removeItem(lsKey(yr)); }catch{} }
-    // Switch to most recent remaining year
-    const switchTo=updatedYears[updatedYears.length-1];
-    setActiveYear(switchTo);
-    setFields(loadFields(switchTo));
-    setSelectedField(null);
-    setMainView("table");
-  },[years]);
-  const filtered=useMemo(()=>{let fs=fields;if(entityFilter!=="all")fs=fs.filter(f=>f.entity===entityFilter);if(searchQ){const q=searchQ.toLowerCase();fs=fs.filter(f=>f.common?.toLowerCase().includes(q)||f.farm?.toLowerCase().includes(q)||f.crop?.toLowerCase().includes(q)||f.legal?.toLowerCase().includes(q));}return fs;},[fields,entityFilter,searchQ]);
-  const totals=useMemo(()=>filtered.reduce((a,f)=>{const c=calc(f);return{acres:a.acres+f.acres,revenue:a.revenue+c.revenue,guarantee:a.guarantee+c.guarantee,expenses:a.expenses+c.expenses,net:a.net+c.net};},{acres:0,revenue:0,guarantee:0,expenses:0,net:0}),[filtered]);
-  const farmGroups=useMemo(()=>{const g={};filtered.forEach(f=>{const k=`${f.entity}::${f.farm}`;if(!g[k])g[k]={entity:f.entity,farm:f.farm,fields:[]};g[k].fields.push(f);});const cmp=(a,b)=>(a||"").localeCompare(b||"",undefined,{numeric:true,sensitivity:"base"});const groups=Object.values(g);groups.forEach(grp=>grp.fields.sort((a,b)=>cmp(a.common,b.common)));groups.sort((a,b)=>cmp(a.farm,b.farm)||cmp(a.entity,b.entity));return groups;},[filtered]);
-  const pushUndo = useCallback((prev)=>{
-    undoStack.current=[...undoStack.current.slice(-19),prev]; // keep last 20
-    setCanUndo(true);
-  },[]);
-  const handleUndo = useCallback(()=>{
-    if(undoStack.current.length===0) return;
-    const prev=undoStack.current.pop();
-    setFields(prev);
-    if(undoStack.current.length===0) setCanUndo(false);
-  },[]);
-  const updateField=useCallback((id,upd)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,...upd}:f);}),[pushUndo]);
-  const updateIncome=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,income:{...f.income,[k]:+v}}:f);}),[pushUndo]);
-  const updateExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,expenseOverrides:{...(f.expenseOverrides||{}),[k]:+v}}:f);}),[pushUndo]);
-  const resetExpense=useCallback((id,k)=>setFields(p=>p.map(f=>{if(f.id!==id)return f;const ov={...(f.expenseOverrides||{})};delete ov[k];return{...f,expenseOverrides:ov};})),[]);
-  // Actual $ spent per category, for the active year's field record — distinct
-  // from expenseOverrides (which change the PROJECTED $/ac rate). This is real
-  // money actually spent, entered as a total dollar figure per category so it
-  // reads the way a grower actually tracks spend ("I spent $12k on seed here"),
-  // not a rate they'd have to back-calculate.
-  const updateActualExpense=useCallback((id,k,v)=>setFields(p=>{pushUndo(p);return p.map(f=>f.id===id?{...f,actualExpenses:{...(f.actualExpenses||{}),[k]:v===""?undefined:+v}}:f);}),[pushUndo]);
-  // Replaces the whole actualExpenses map at once — used by the "enter one
-  // total, split it across categories" quick-entry tool in the Expenses tab,
-  // so growers don't have to hand-type 18 category amounts to get a real
-  // actual-vs-projected picture.
-  // Farm-wide actual-expense entry (FarmExpensesView's "Actual" mode) — same
-  // mechanism as applying a projected budget total (top Expenses screen):
-  // enter one total $ for the whole entity, divide by that entity's acres to
-  // get a $/ac rate, then scale that rate back out to real $ per field by
-  // that field's own acres. Writes to actualExpenses (real $) instead of
-  // expenseOverrides (a projected rate).
-  const applyActualExpenses=useCallback((entity,rates)=>{
-    setFields(p=>{
-      pushUndo(p);
-      return p.map(f=>{
-        if(f.entity!==entity) return f;
-        const upd={...(f.actualExpenses||{})};
-        Object.entries(rates).forEach(([k,rate])=>{ upd[k]=Math.round(rate*f.acres*100)/100; });
-        return{...f,actualExpenses:upd};
-      });
-    });
-  },[pushUndo]);
-  // Manual actual-bushels entry (per field) — writes into the same
-  // fieldHistory[common][year] record AgriScale pushes into (marked
-  // source:"manual" so the UI can label it), so every downstream reader
-  // (reports, Home, calcFieldActuals) just works regardless of where the
-  // number came from.
-  const saveActualBushels=useCallback((common,year,bushelsStr)=>{
-    const bu=parseFloat(bushelsStr);
-    const acres=fields.find(f=>f.common===common)?.acres||0;
-    const yearData={...(fieldHistory[common]?.[year]||{})};
-    if(!bu||bu<=0){ delete yearData.bushels; delete yearData.yieldPerAc; delete yearData.source; delete yearData.lastUpdated; }
-    else{ yearData.bushels=bu; yearData.yieldPerAc=acres>0?+(bu/acres).toFixed(2):undefined; yearData.source="manual"; yearData.lastUpdated=new Date().toISOString(); }
-    const updated={...fieldHistory,[common]:{...(fieldHistory[common]||{}),[year]:yearData}};
-    setFieldHistory(updated);
-    if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
-  },[fieldHistory,fields,tenantId,token,farmId]);
-  // Farm-wide bulk harvest entry (FarmHarvestView) — same total-÷-acres
-  // mechanism as farm-wide expenses: enter total bushels for one crop across
-  // an entity, split across every field growing that crop, proportional to
-  // acres.
-  const applyHarvest=useCallback((updates)=>{ // {common: bushels}
-    const now=new Date().toISOString();
-    const merged={...fieldHistory};
-    Object.entries(updates).forEach(([common,bu])=>{
-      const acres=fields.find(f=>f.common===common)?.acres||0;
-      merged[common]={...(merged[common]||{}),[activeYear]:{...(merged[common]?.[activeYear]||{}),bushels:bu,yieldPerAc:acres>0?+(bu/acres).toFixed(2):undefined,source:"manual",lastUpdated:now}};
-    });
-    setFieldHistory(merged);
-    if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(merged)}).catch(()=>{});
-  },[fieldHistory,fields,activeYear,tenantId,token,farmId]);
-  // Removes a single crop's entire imported APH history (all years) from one field — for
-  // cleaning up a crop that got attributed to the wrong field during an APH import (e.g. a
-  // duplicate same-named field that shared the wrong field's aphData bucket before that was
-  // fixed). Deletes only that one field+crop sub-path, not the whole aphData tree.
-  const deleteAphCrop=useCallback((fieldCommon,crop)=>{
-    if(!tenantId||!token) return;
-    const url=`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/aphData/${encodeURIComponent(fieldCommon)}/${encodeURIComponent(crop)}.json?auth=${token}`;
-    fetch(url,{method:"DELETE"})
-      .then(()=>{
-        setAphData(prev=>{
-          if(!prev?.[fieldCommon]?.[crop]) return prev;
-          const next={...prev,[fieldCommon]:{...prev[fieldCommon]}};
-          delete next[fieldCommon][crop];
-          if(Object.keys(next[fieldCommon]).length===0) delete next[fieldCommon];
-          return next;
-        });
-      })
-      .catch(e=>console.error(`Failed to remove ${crop} from ${fieldCommon}'s APH history:`,e.message));
-  },[tenantId,token,farmId]);
-  const deleteField=useCallback(id=>{
-    setFields(p=>{
-      const remaining=p.filter(f=>f.id!==id);
-      // Save immediately — auto-save misses this if remaining is empty
-      saveFields(activeYear, remaining, (s)=>setSaveStatus(s));
-      // Also remove from FieldLog Default Farm if it was synced there
-      const deleted=p.find(f=>f.id===id);
-      if(deleted&&tenantId&&token){(async()=>{
-        try{
-          const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-          const data=await fetch(`${DB}/${flBase(tenantId,farmId)}/fields.json?auth=${token}`).then(r=>r.json());
-          if(!data) return;
-          const match=Object.entries(data).find(([,f])=>f.name===deleted.common);
-          if(match){
-            await fetch(`${DB}/${flBase(tenantId,farmId)}/fields/${match[0]}.json?auth=${token}`,{method:"DELETE"});
-            console.log(`[SYNC] Deleted "${deleted.common}" from AgriField`);
-          }
-        }catch(e){console.warn("Delete sync to AgriField failed:",e.message);}
-      })();}
-      return remaining;
-    });
-    setSelectedField(null);setMainView("table");
-  },[activeYear,tenantId,token]);
-  const addField=useCallback(nf=>{
-    const field={...nf,id:`f${Date.now()}${Math.floor(Math.random()*9999)}`};
-    setFields(p=>[...p,field]);setAddMode(false);setSelectedField(field);setMainView("detail");
-    // field.id is assigned synchronously above (before the async FieldLog sync below fires),
-    // so callers — e.g. ImportAPHModal creating fields straight from a parsed APH PDF — can
-    // use the returned field's id immediately without waiting on the state update.
-    // ── Sync to FieldLog — update existing (keep boundary) or add to Default Farm ──
-    if(tenantId&&token){(async()=>{
-      const DB="https://agrilogix-1bd06-default-rtdb.firebaseio.com";
-      const norm=s=>(s||"").trim().toLowerCase();
-      try{
-        // Get all farm paths (Default + named farms)
-        const farmsData=await fetch(`${DB}/tenants/${tenantId}/farms.json?auth=${token}&shallow=true`).then(r=>r.json()).catch(()=>null);
-        const farmPaths=[`tenants/${tenantId}/fieldlog`];
-        if(farmsData&&typeof farmsData==="object") Object.keys(farmsData).forEach(id=>farmPaths.push(`tenants/${tenantId}/farms/${id}/fieldlog`));
-        // Search all farms for existing field by name
-        let matchPath=null, matchKey=null, matchField=null;
-        for(const p of farmPaths){
-          const d=await fetch(`${DB}/${p}/fields.json?auth=${token}`).then(r=>r.json()).catch(()=>null);
-          if(!d) continue;
-          const entry=Object.entries(d).find(([,f])=>norm(f?.name)===norm(field.common));
-          if(entry){ matchPath=p; matchKey=entry[0]; matchField=entry[1]; break; }
-        }
-        if(matchField){
-          // Field exists — update info but KEEP boundary, lat/lng, and all other FieldLog data
-          const updated={
-            ...matchField,                              // preserve everything (boundary, activities, etc.)
-            acres: String(field.acres||matchField.acres||""),
-            legalDesc: field.legal||matchField.legalDesc||"",
-            notes: field.farm ? `Farm: ${field.farm}` : (matchField.notes||""),
-          };
-          await fetch(`${DB}/${matchPath}/fields/${matchKey}.json?auth=${token}`,{
-            method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)
-          });
-          console.log(`[SYNC] Updated "${field.common}" in AgriField — boundary preserved`);
-        } else {
-          // Not found anywhere — add to Default Farm
-          const flId=`fl${Date.now()}${Math.floor(Math.random()*9999)}`;
-          await fetch(`${DB}/${flBase(tenantId,farmId)}/fields/${flId}.json?auth=${token}`,{
-            method:"PUT",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({id:flId,name:field.common,acres:String(field.acres||""),legalDesc:field.legal||"",notes:field.farm?`Farm: ${field.farm}`:"",boundary:[]})
-          });
-          console.log(`[SYNC] "${field.common}" → AgriField Default Farm (new)`);
-        }
-      }catch(e){console.warn("AgriPlan→AgriField sync failed:",e.message);}
-    })();}
-    return field;
-  },[tenantId,token]);
-  const selectField=f=>{setSelectedField(typeof f==="object"?f:fields.find(x=>x.id===f)||null);setMainView("detail");setAddMode(false);};
-
-  return(<div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#f1f5eb",color:"#1a3010",fontFamily:"'Barlow',sans-serif",overflow:"hidden"}}>
-    <div style={{height:"4px",flexShrink:0,background:"linear-gradient(90deg, #4FA95C, #C9A227)"}}/>
-    {showRulesEditor&&<RotationRulesEditor onClose={()=>setShowRulesEditor(false)}/>}
-    {!dbLoaded&&<div style={{position:"fixed",inset:0,background:"rgba(241,245,235,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
-      <div style={{fontSize:28}}>🌾</div>
-      <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"#2a5a18"}}>Loading AgriPlan...</div>
-      <div style={{fontSize:12,color:"#7a9260"}}>Syncing with database</div>
-    </div>}
-    {showNewYear&&<NewYearModal existingYears={years} onConfirm={createYear} onClose={()=>setShowNewYear(false)}/> }
-    {showPricesEditor&&<CropPricesModal
-      tenantId={tenantId} token={token} farmId={farmId}
-      tenantCrops={tenantCrops} cropPrices={cropPrices}
-      onSave={p=>setCropPrices(p)}
-      onClose={()=>setShowPricesEditor(false)}/>}
-    {showCropsMgr&&<ManageCropsModal
-      tenantId={tenantId} token={token} farmId={farmId} tenantCrops={tenantCrops}
-      onSave={crops=>setTenantCrops(crops)}
-      onClose={()=>setShowCropsMgr(false)}/>}
-    {showRatesEditor&&<ExpenseDefaultsModal
-      tenantId={tenantId} token={token} farmId={farmId}
-      expenseDefaults={expenseDefaults} cropExpDefaults={cropExpDefaults}
-      onSave={(base,crops)=>{ setExpenseDefaults(base); setCropExpDefaults(crops); }}
-      onClose={()=>setShowRatesEditor(false)}/>}
-    {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} farmId={farmId} fields={fields} onCreateField={addField} onUpdateField={updateField} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
-    {showImportWorkbook&&isFlatAcreTenant(tenantId)&&<ImportWorkbookModal tenantId={tenantId} token={token} onClose={()=>setShowImportWorkbook(false)}/>}
-    {/* Header */}
-    <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
-      <span style={{fontFamily:"'Playfair Display',serif",fontSize:19,color:"#c8e8a0",letterSpacing:0.5}}>🌾 AgriPlan</span>
-      <span style={{fontSize:10,color:"#7aaa60",borderLeft:"1px solid #3a6020",paddingLeft:12,textTransform:"uppercase",letterSpacing:1.5}}>Farm Income &amp; Expense Planner</span>
-      {/* Year switcher */}
-      <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,0.08)",borderRadius:6,padding:"2px 4px",gap:2}}>
-        {years.map(yr=>(
-          <div key={yr} style={{display:"flex",alignItems:"center",borderRadius:4,background:yr===activeYear?"#4a9030":"transparent",transition:"background 0.15s"}}>
-            <button onClick={()=>switchYear(yr)}
-              style={{padding:"3px 10px",border:"none",cursor:"pointer",fontSize:12,fontWeight:yr===activeYear?700:400,
-                background:"transparent",color:yr===activeYear?"#e8fce0":"#8ac870",
-                fontFamily:"'IBM Plex Mono',monospace",borderRadius:4}}>
-              {yr}
-            </button>
-            {years.length>1&&(
-              <button onClick={()=>{if(window.confirm(`Delete the ${yr} plan? This cannot be undone.`)) deleteYear(yr);}}
-                title={`Delete ${yr} plan`}
-                style={{padding:"1px 4px",border:"none",background:"transparent",cursor:"pointer",
-                  color:yr===activeYear?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.2)",fontSize:10,lineHeight:1,
-                  borderRadius:3}}
-                onMouseEnter={e=>e.currentTarget.style.color="#ff9090"}
-                onMouseLeave={e=>e.currentTarget.style.color=yr===activeYear?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.2)"}>
-                ✕
-              </button>
-            )}
-          </div>
-        ))}
-        <button onClick={()=>setShowNewYear(true)}
-          title="Start a new plan year"
-          style={{padding:"3px 8px",borderRadius:4,border:"1px dashed rgba(255,255,255,0.3)",cursor:"pointer",fontSize:13,
-            background:"transparent",color:"#7aaa60",marginLeft:2,lineHeight:1}}>
-          +
-        </button>
-      </div>
-      <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
-        {canUndo&&<button onClick={handleUndo} title="Undo last change" style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:4,padding:"4px 10px",color:"#a8d880",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↩ Undo</button>}
-        {saveStatus==='saving'&&<span style={{fontSize:10,color:"#90c870",opacity:0.8}}>⟳ Saving...</span>}
-        <button onClick={()=>setShowRulesEditor(true)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:4,padding:"4px 10px",color:"#a8d880",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} title="Edit rotation rules">⚙ Rotation Rules</button>
-        {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
-        {saveStatus==='queued'&&<span style={{fontSize:11,color:"#ffb060",background:"rgba(255,150,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ffb060"}} title="Saved on this device — will sync automatically when signal returns">⚠ Offline — saved locally</span>}
-        {saveStatus==='error'&&<span style={{fontSize:11,color:"#ff6050",background:"rgba(255,80,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ff6050",cursor:"pointer"}} title="Click to retry" onClick={()=>saveFields(activeYear,fields,(s)=>setSaveStatus(s))}>⚠ Save failed — tap to retry</span>}
-        <button onClick={()=>{setMainView("table");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="table"&&!addMode?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>All Fields</button>
-        {(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)&&<button onClick={()=>{setMainView("history");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="history"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📅 History</button>}
-        {perms.canViewCosts&&<button onClick={()=>{setMainView("expenses");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="expenses"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💰 Expenses</button>}
-        {perms.canViewCosts&&<button onClick={()=>{setMainView("harvest");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="harvest"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Harvest</button>}
-        <button onClick={()=>{setAddMode(true);setMainView("add");setSelectedField(null);}} style={{background:"#4a9030",border:"none",borderRadius:4,padding:"5px 14px",color:"#e8fce0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>+ Add Field</button>
-        {tenantId&&<button onClick={()=>setShowImportAPH(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import APH</button>}
-        {isFlatAcreTenant(tenantId)&&<button onClick={()=>setShowImportWorkbook(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>📥 Import Workbook</button>}
-        {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowRatesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>⚙️ Rates</button>}
-        {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
-        {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
-        {perms.canReport&&<button onClick={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>}
-        {perms.canReport&&<button onClick={()=>openPrint(filtered,entityFilter,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>}
-      </div>
-    </div>
-
-    <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-      {/* Sidebar */}
-      <div style={{width:235,background:"#e6eed8",borderRight:"1px solid #c8d4b8",overflowY:"auto",flexShrink:0,display:"flex",flexDirection:"column"}}>
-        <div style={{display:"flex",gap:4,padding:"8px 10px",borderBottom:"1px solid #c8d4b8"}}>
-          {[["all","All"],...([...new Set(fields.map(f=>f.entity))].filter(Boolean).map(e=>[e,e.length>8?e.slice(0,7)+"…":e]))].map(([v,l])=>(<button key={v} onClick={()=>setEntityFilter(v)} style={{flex:1,fontSize:10,padding:"4px 0",borderRadius:3,border:"none",cursor:"pointer",background:entityFilter===v?"#2a7a18":"#eef4e6",color:entityFilter===v?"#ffffff":"#6a8a50",fontWeight:entityFilter===v?700:400,fontFamily:"'Barlow',sans-serif"}}>{l}</button>))}
-        </div>
-        <div style={{padding:"6px 10px",borderBottom:"1px solid #c8d4b8"}}>
-          <input placeholder="🔍 search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{background:"#ffffff",border:"1px solid #1e3020",borderRadius:4,padding:"4px 8px",color:"#1a7010",fontFamily:"'Barlow',sans-serif",fontSize:11,width:"100%",outline:"none"}}/>
-        </div>
-        <div style={{overflowY:"auto",flex:1}}>
-          {farmGroups.map(g=>{
-            const k=`${g.entity}::${g.farm}`;const open=expanded.has(k);
-            const acres=g.fields.reduce((s,f)=>s+f.acres,0);const hasOv=g.fields.some(f=>Object.keys(f.expenseOverrides||{}).length>0);
-            return(<div key={k}>
-              <div onClick={()=>setExpanded(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;})} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",cursor:"pointer",fontSize:10,color:"#1a4010",fontWeight:700,textTransform:"uppercase",letterSpacing:0.8,background:"#e4f0d0",borderBottom:"1px solid #c8d4b8"}}>
-                <span style={{fontSize:8}}>{open?"▾":"▸"}</span>
-                <span style={{flex:1}}>{g.farm}</span>
-                {hasOv&&<span title="One or more fields have custom expense overrides" style={{color:"#8a6010",fontSize:9}}>★</span>}
-                <span style={{color:"#2a5020",fontSize:9,fontWeight:600}}>{acres.toFixed(0)}ac</span>
-              </div>
-              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
-                return(<div key={f.id} onClick={()=>selectField(f)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
-                  <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
-                  <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
-                  {hasOv&&<span title="This field has custom expense overrides — see Expenses tab to review or reset" style={{color:"#8a6010",fontSize:9}}>★</span>}
-                  <span style={{fontSize:9,color:"#7a9260",flexShrink:0}}>{f.acres.toFixed(0)}ac</span>
-                </div>);
-              })}
-            </div>);
-          })}
-        </div>
-        {/* Crop breakdown */}
-        <div style={{borderTop:"1px solid #c8d4b8",padding:"8px 10px"}}>
-          <div style={{fontSize:9,color:"#3a7028",textTransform:"uppercase",letterSpacing:0.8,marginBottom:5}}>Crop Acres (filtered)</div>
-          {(()=>{const cm={};filtered.forEach(f=>{cm[f.crop]=(cm[f.crop]||0)+f.acres;});return Object.entries(cm).sort((a,b)=>b[1]-a[1]).slice(0,7).map(([c,ac])=>(<div key={c} style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#527a38",padding:"1px 0"}}><span>{c}</span><span style={{color:"#7a9260"}}>{ac.toFixed(0)}</span></div>));})()}
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div style={{flex:1,overflowY:"auto",padding:20,background:"#f1f5eb",position:"relative"}}>
-        <div aria-hidden="true" style={{position:"absolute",right:"-70px",bottom:"-70px",width:"320px",height:"320px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.045,pointerEvents:"none"}}/>
-        {/* Summary strip */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}}>
-          <SCard label="Acres" val={totals.acres.toFixed(0)+" ac"} color="#2a7010" sub={`${filtered.length} field units`}/>
-          {perms.canViewCosts
-            ? <SCard label="Projected Revenue" val={f$(totals.revenue)} color="#1a7010" sub={`$${f2(totals.revenue/(totals.acres||1))}/ac avg`}/>
-            : <SCard label="Projected Revenue" val={REDACTED} color="#1a7010" sub="restricted"/>}
-          {perms.canViewInsurance
-            ? <SCard label="Ins. Guarantee" val={f$(totals.guarantee)} color="#7a6010" sub={`$${f2(totals.guarantee/(totals.acres||1))}/ac avg`}/>
-            : <SCard label="Ins. Guarantee" val={REDACTED} color="#7a6010" sub="restricted"/>}
-          {perms.canViewCosts
-            ? <SCard label="Total Expenses" val={f$(totals.expenses)} color="#c05010" sub={`$${f2(totals.expenses/(totals.acres||1))}/ac avg`}/>
-            : <SCard label="Total Expenses" val={REDACTED} color="#c05010" sub="restricted"/>}
-          {perms.canViewCosts
-            ? <SCard label="Net Income" val={f$(totals.net,true)} color={totals.net>=0?"#1a7010":"#c02020"} sub="revenue − expenses"/>
-            : <SCard label="Net Income" val={REDACTED} color="#6a8a50" sub="restricted"/>}
-        </div>
-        {addMode?(<AddFieldForm onSave={addField} onCancel={()=>{setAddMode(false);setMainView("table");}}/>)
-          :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
-          :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} onApplyActualExpenses={applyActualExpenses} />)
-          :mainView==="harvest"&&perms.canViewCosts?(<FarmHarvestView fields={fields} activeYear={activeYear} fieldHistory={fieldHistory} onApplyHarvest={applyHarvest} />)
-          :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onSaveActualBushels={saveActualBushels} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
-            const updated={...fieldHistory,[common]:hist};
-            setFieldHistory(updated);
-            if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
-          }}/>)
-          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} onPrint={()=>openPrint(filtered,entityFilter,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear} perms={perms}/>)}
-      </div>
-    </div>
-  </div>);
-}
+const btnBase_static = {cursor:"pointer",fontFamily:"'IBM Plex Mono',monospace",borderRadius:"4px",fontWeight:"bold",transition:"all 0.15s"};
