@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill } from "./agriscale.js";
+import { sumLoadsBushels, sumLoadsLbs, lastLoadDateISO, buildGuaranteeProgress, buildBinSummary, detectCropMismatch, detectBinOverfill, mergeFarmFields, mergeFarmBins, buildCropTotals, buildMarketingSummary, contractDeliveryStatus } from "./agriscale.js";
 
 describe("sumLoadsBushels", () => {
   it("converts net lbs to bushels using each load's own grainBushelLbs", () => {
@@ -203,6 +203,118 @@ describe("detectCropMismatch", () => {
   });
 });
 
+describe("mergeFarmFields", () => {
+  it("regression: importing fields for Farm B does not wipe Farm A's fields (the Flat Acre / Via Terra bug)", () => {
+    // Reproduces the exact reported sequence: import fields while on Flat
+    // Acre (writes the full set incl. Flat Acre's new fields), then switch to
+    // Via Terra and import there too — Flat Acre's fields must survive.
+    const flatAcreField = { id: "f1", name: "North 40", farmId: "flatAcre" };
+    const afterFlatAcreImport = mergeFarmFields([], [flatAcreField], "flatAcre");
+    expect(afterFlatAcreImport).toEqual([flatAcreField]);
+
+    // Switching farms remounts the module, so allFieldsRef starts from the
+    // full set just written (afterFlatAcreImport), and the display state for
+    // Via Terra is empty (no Via Terra fields yet).
+    const viaTerraField = { id: "f2", name: "South 80", farmId: "viaTerra" };
+    const afterViaTerraImport = mergeFarmFields(afterFlatAcreImport, [viaTerraField], "viaTerra");
+
+    expect(afterViaTerraImport).toContainEqual(flatAcreField);
+    expect(afterViaTerraImport).toContainEqual(viaTerraField);
+    expect(afterViaTerraImport).toHaveLength(2);
+  });
+
+  it("replaces the current farm's own fields (edits/deletes) rather than appending duplicates", () => {
+    const allFields = [
+      { id: "f1", name: "North 40", farmId: "flatAcre" },
+      { id: "f2", name: "South 80", farmId: "viaTerra" },
+    ];
+    // Editing Flat Acre's field and saving — the new subset replaces the old one for that farm
+    const edited = { id: "f1", name: "North 40 (renamed)", farmId: "flatAcre" };
+    const result = mergeFarmFields(allFields, [edited], "flatAcre");
+    expect(result).toEqual([{ id: "f2", name: "South 80", farmId: "viaTerra" }, edited]);
+  });
+
+  it("treats untagged fields and farmId 'default' as the same default farm", () => {
+    const allFields = [{ id: "f1", name: "Legacy Field" }]; // no farmId at all, pre-multi-farm data
+    const result = mergeFarmFields(allFields, [{ id: "f1", name: "Legacy Field renamed" }], "default");
+    expect(result).toEqual([{ id: "f1", name: "Legacy Field renamed" }]);
+  });
+});
+
+describe("mergeFarmBins", () => {
+  it("leaves another farm's own bins untouched", () => {
+    const allBins = [
+      { id: "b1", name: "Flat Acre Bin", farmId: "flatAcre" },
+      { id: "b2", name: "Via Terra Bin", farmId: "viaTerra" },
+    ];
+    const newViaTerraBin = { id: "b3", name: "New Via Terra Bin", farmId: "viaTerra" };
+    const result = mergeFarmBins(allBins, [{ id: "b2", name: "Via Terra Bin", farmId: "viaTerra" }, newViaTerraBin], "viaTerra");
+    expect(result).toContainEqual({ id: "b1", name: "Flat Acre Bin", farmId: "flatAcre" });
+    expect(result).toContainEqual(newViaTerraBin);
+    expect(result).toHaveLength(3);
+  });
+
+  it("keeps shared (untagged or 'shared') bins visible/writable from any farm", () => {
+    const allBins = [{ id: "b1", name: "Main Bin Site", farmId: "shared" }];
+    const result = mergeFarmBins(allBins, [{ id: "b1", name: "Main Bin Site (updated)", farmId: "shared" }], "viaTerra");
+    expect(result).toEqual([{ id: "b1", name: "Main Bin Site (updated)", farmId: "shared" }]);
+  });
+});
+
+describe("buildCropTotals", () => {
+  it("sums bushels across all fields grouped by grain name", () => {
+    const fields = [
+      { name: "North 40", loads: [{ net: 6000, grainBushelLbs: 60, grainName: "WHEAT" }] }, // 100 bu
+      { name: "South 80", loads: [{ net: 3000, grainBushelLbs: 60, grainName: "WHEAT" }, { net: 2880, grainBushelLbs: 48, grainName: "BARLEY" }] }, // 50 bu wheat, 60 bu barley
+    ];
+    const totals = buildCropTotals(fields);
+    expect(totals).toEqual([
+      { crop: "WHEAT", totalBu: 150 },
+      { crop: "BARLEY", totalBu: 60 },
+    ]);
+  });
+
+  it("returns an empty list for no fields/loads", () => {
+    expect(buildCropTotals([])).toEqual([]);
+    expect(buildCropTotals([{ name: "Empty", loads: [] }])).toEqual([]);
+  });
+});
+
+describe("buildMarketingSummary", () => {
+  it("computes uncommitted bushels as harvested minus contracted", () => {
+    const fields = [{ name: "North 40", loads: [{ net: 12000, grainBushelLbs: 60, grainName: "WHEAT" }] }]; // 200 bu
+    const contracts = [{ id: "c1", crop: "WHEAT", bushels: "120" }];
+    const [summary] = buildMarketingSummary(fields, contracts);
+    expect(summary).toEqual({ crop: "WHEAT", harvestedBu: 200, contractedBu: 120, uncommittedBu: 80 });
+  });
+
+  it("shows a negative uncommittedBu (forward sold) rather than clamping to 0 when oversold", () => {
+    const fields = [{ name: "North 40", loads: [{ net: 6000, grainBushelLbs: 60, grainName: "WHEAT" }] }]; // 100 bu
+    const contracts = [{ id: "c1", crop: "WHEAT", bushels: "150" }];
+    const [summary] = buildMarketingSummary(fields, contracts);
+    expect(summary.uncommittedBu).toBe(-50);
+  });
+
+  it("includes a crop with contracts but no harvest yet (pre-harvest forward contract)", () => {
+    const summary = buildMarketingSummary([], [{ id: "c1", crop: "CANOLA", bushels: "500" }]);
+    expect(summary).toEqual([{ crop: "CANOLA", harvestedBu: 0, contractedBu: 500, uncommittedBu: -500 }]);
+  });
+
+  it("sums multiple contracts for the same crop", () => {
+    const contracts = [
+      { id: "c1", crop: "WHEAT", bushels: "100" },
+      { id: "c2", crop: "WHEAT", bushels: "50" },
+    ];
+    const [summary] = buildMarketingSummary([], contracts);
+    expect(summary.contractedBu).toBe(150);
+  });
+
+  it("ignores contracts with no crop or non-positive bushels", () => {
+    const contracts = [{ id: "c1", crop: "", bushels: "100" }, { id: "c2", crop: "WHEAT", bushels: "0" }];
+    expect(buildMarketingSummary([], contracts)).toEqual([]);
+  });
+});
+
 describe("detectBinOverfill", () => {
   const wheat = { name: "WHEAT", bushel_lbs: 60 };
 
@@ -231,5 +343,35 @@ describe("detectBinOverfill", () => {
   it("falls back to 60 lbs/bu when the grain is missing", () => {
     const bin = { name: "Bin 1", capacityBu: 100, storedLbs: 0 };
     expect(detectBinOverfill(bin, null, 6600)).toEqual({ binName: "Bin 1", capacityBu: 100, wouldBeBu: 110, overBy: 10 });
+  });
+});
+
+describe("contractDeliveryStatus", () => {
+  const today = new Date(2026, 7, 2); // Aug 2, 2026 — matches today's date in this session
+
+  it("flags a delivery date in the past as overdue", () => {
+    expect(contractDeliveryStatus("2026-07-20", today)).toEqual({ status: "overdue", daysUntil: -13 });
+  });
+
+  it("flags a delivery date within 14 days as soon", () => {
+    expect(contractDeliveryStatus("2026-08-10", today)).toEqual({ status: "soon", daysUntil: 8 });
+  });
+
+  it("flags a delivery date more than 14 days out as ok", () => {
+    expect(contractDeliveryStatus("2026-10-01", today)).toEqual({ status: "ok", daysUntil: 60 });
+  });
+
+  it("treats today itself as soon (0 days until)", () => {
+    expect(contractDeliveryStatus("2026-08-02", today)).toEqual({ status: "soon", daysUntil: 0 });
+  });
+
+  it("returns unknown for empty/missing delivery", () => {
+    expect(contractDeliveryStatus("", today)).toEqual({ status: "unknown", daysUntil: null });
+    expect(contractDeliveryStatus(undefined, today)).toEqual({ status: "unknown", daysUntil: null });
+  });
+
+  it("returns unknown for legacy free-text delivery values instead of guessing", () => {
+    expect(contractDeliveryStatus("Oct 2026", today)).toEqual({ status: "unknown", daysUntil: null });
+    expect(contractDeliveryStatus("Fall harvest", today)).toEqual({ status: "unknown", daysUntil: null });
   });
 });

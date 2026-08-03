@@ -149,6 +149,42 @@ export function mergeFarmBins(allBins, currentFarmBins, farmId) {
   return [...others, ...(currentFarmBins || [])];
 }
 
+// ── Grain marketing: contracted vs. actually hauled off, by crop ──────────
+// buildCropTotals groups every logged load by its own grainName (the same
+// "crop" identity used everywhere else in AgriScale) and sums bushels — a
+// plain re-slice of load history, not a new data source. buildMarketingSummary
+// layers contract bushels on top: `uncommittedBu` positive means harvested
+// grain with nothing sold against it yet; negative means sold ahead of what's
+// actually been hauled off (a normal forward-contracting pattern, not an
+// error) — shown as "forward sold" rather than clamped to 0.
+export function buildCropTotals(fields) {
+  const totals = {};
+  (fields || []).forEach(f => (f.loads || []).filter(Boolean).forEach(l => {
+    const crop = l.grainName || "Unknown";
+    const bu = (parseFloat(l.net) || 0) / (parseFloat(l.grainBushelLbs) || 60);
+    totals[crop] = (totals[crop] || 0) + bu;
+  }));
+  return Object.entries(totals)
+    .map(([crop, totalBu]) => ({ crop, totalBu }))
+    .sort((a, b) => b.totalBu - a.totalBu);
+}
+
+export function buildMarketingSummary(fields, contracts) {
+  const cropTotals = buildCropTotals(fields);
+  const contractedByCrop = {};
+  (contracts || []).forEach(c => {
+    const bu = parseFloat(c.bushels) || 0;
+    if (!c.crop || bu <= 0) return;
+    contractedByCrop[c.crop] = (contractedByCrop[c.crop] || 0) + bu;
+  });
+  const crops = new Set([...cropTotals.map(c => c.crop), ...Object.keys(contractedByCrop)]);
+  return [...crops].map(crop => {
+    const harvestedBu = cropTotals.find(c => c.crop === crop)?.totalBu || 0;
+    const contractedBu = contractedByCrop[crop] || 0;
+    return { crop, harvestedBu, contractedBu, uncommittedBu: harvestedBu - contractedBu };
+  }).sort((a, b) => b.harvestedBu - a.harvestedBu);
+}
+
 // ── Bin summary for the Report tab / printable report — grouped by which
 // bin each load's binId points to. The displayed crop is derived from the
 // grain(s) actually recorded into the bin, NOT bin.grainName: that field is
@@ -187,4 +223,21 @@ export function buildBinSummary(fields, bins, grains) {
       loads: loadsInBin.length, totLbs, totBu, fields: fieldList,
     };
   });
+}
+
+// ── Contract delivery reminders ────────────────────────────────────────
+// `delivery` is expected to be an ISO date (yyyy-mm-dd) from the date
+// picker in ContractForm. Older contracts saved before that picker existed
+// may still hold a free-text value like "Oct 2026" — that can't be turned
+// into a reliable countdown, so it's reported as "unknown" rather than
+// guessed at (e.g. mis-parsed as some other date).
+export function contractDeliveryStatus(delivery, today = new Date()) {
+  if (!delivery || !/^\d{4}-\d{2}-\d{2}$/.test(delivery)) return { status: "unknown", daysUntil: null };
+  const due = new Date(delivery + "T00:00:00");
+  if (isNaN(due.getTime())) return { status: "unknown", daysUntil: null };
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const d = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const daysUntil = Math.round((d - t) / 86400000);
+  const status = daysUntil < 0 ? "overdue" : daysUntil <= 14 ? "soon" : "ok";
+  return { status, daysUntil };
 }
