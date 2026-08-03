@@ -5146,7 +5146,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
     {showImportAPH&&<ImportAPHModal tenantId={tenantId} token={token} farmId={farmId} fields={fields} onCreateField={addField} onUpdateField={updateField} onClose={()=>setShowImportAPH(false)} onImported={(data)=>{setAphData(data);setShowImportAPH(false);}}/>}
     {showImportWorkbook&&isFlatAcreTenant(tenantId)&&<ImportWorkbookModal tenantId={tenantId} token={token} onClose={()=>setShowImportWorkbook(false)}/>}
     {/* Header */}
-    <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
+    <div style={{background:"#1e3a18",borderBottom:"1px solid #2a5020",padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:56,boxSizing:"border-box",flexShrink:0}}>
       <span style={{fontFamily:"'Playfair Display',serif",fontSize:19,color:"#c8e8a0",letterSpacing:0.5}}>🌾 AgriPlan</span>
       <span style={{fontSize:10,color:"#7aaa60",borderLeft:"1px solid #3a6020",paddingLeft:12,textTransform:"uppercase",letterSpacing:1.5}}>Farm Income &amp; Expense Planner</span>
       {/* Year switcher */}
