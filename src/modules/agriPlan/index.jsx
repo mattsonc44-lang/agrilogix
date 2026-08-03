@@ -4933,6 +4933,31 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
     };
   },[contractedByCrop]);
   const farmGroups=useMemo(()=>{const g={};filtered.forEach(f=>{const k=`${f.entity}::${f.farm}`;if(!g[k])g[k]={entity:f.entity,farm:f.farm,fields:[]};g[k].fields.push(f);});const cmp=(a,b)=>(a||"").localeCompare(b||"",undefined,{numeric:true,sensitivity:"base"});const groups=Object.values(g);groups.forEach(grp=>grp.fields.sort((a,b)=>cmp(a.common,b.common)));groups.sort((a,b)=>cmp(a.farm,b.farm)||cmp(a.entity,b.entity));return groups;},[filtered]);
+  // Farm-wide budget-overrun check (all fields, not just the currently
+  // filtered/searched subset FieldsTable's own copy of this same math uses)
+  // — mirrored to Firebase so Home's needs-attention feed can show it without
+  // duplicating AgriPlan's expense-rate engine (calc/getRate/_expRates/
+  // _cropRates, all of which are only fully set up here). calc/calcActual
+  // read straight off each field object, so this works regardless of which
+  // role is currently looking at AgriPlan — the mirror stays fresh even if
+  // no owner/manager has this tab open; only the DISPLAY on Home is gated by
+  // canViewCosts, same as every other $ figure in this app.
+  const overBudgetAll=useMemo(()=>{
+    return fields.map(f=>{const c=calc(f);const a=calcActual(f);return a&&a.total>c.expenses?{common:f.common,variance:a.total-c.expenses}:null;})
+      .filter(Boolean).sort((x,y)=>y.variance-x.variance);
+  },[fields]);
+  useEffect(()=>{
+    if(!tenantId||!token) return;
+    const payload={
+      count:overBudgetAll.length,
+      totalOver:overBudgetAll.reduce((s,o)=>s+o.variance,0),
+      top:overBudgetAll.slice(0,5),
+      lastUpdated:new Date().toISOString(),
+    };
+    fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/budgetAlerts/${activeYear}.json?auth=${token}`,{
+      method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),
+    }).catch(()=>{});
+  },[overBudgetAll,tenantId,token,farmId,activeYear]);
   const pushUndo = useCallback((prev)=>{
     undoStack.current=[...undoStack.current.slice(-19),prev]; // keep last 20
     setCanUndo(true);
