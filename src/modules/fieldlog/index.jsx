@@ -4680,7 +4680,7 @@ if(loading) return(
 return(
 <div style={S.app}>
 {/* Header */}
-<div style={{...S.header,position:"sticky",top:0}}>
+<div style={{...S.header,position:"sticky",top:0,height:"56px",boxSizing:"border-box"}}>
 <div style={{position:"absolute",top:0,left:0,right:0,height:"4px",background:`linear-gradient(90deg, ${T.logoGreenSoft}, ${T.logoGold})`}}/>
 <div style={{width:"36px",height:"36px",background:T.gold,borderRadius:"8px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",flexShrink:0}}>🌾</div>
 <div>
