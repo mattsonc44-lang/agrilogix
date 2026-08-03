@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTankMixTotals, toGallons } from "./fieldlog.js";
+import { calcTankMixTotals, toGallons, findActivePlantbackRestrictions } from "./fieldlog.js";
 
 describe("calcTankMixTotals", () => {
   it("scales a per-acre rate by field acres", () => {
@@ -132,5 +132,48 @@ describe("calcTankMixTotals — totalGal", () => {
     const tankMix = [{ id: "c1", chemical: "X", oz: "16", unit: "fl oz/ac" }];
     const { items } = calcTankMixTotals(tankMix, 80, 10);
     expect(items[0].totalGalAmbiguous).toBe(false);
+  });
+});
+
+describe("findActivePlantbackRestrictions", () => {
+  const today = new Date(2026, 7, 2); // Aug 2, 2026
+
+  it("flags a restriction that hasn't expired yet", () => {
+    const fr = { field1: { fieldName: "North 40", chemicals: {
+      "2,4-D Amine": { date: "2026-07-20", plantback: { Canola: 30, Soybeans: 15 } },
+    } } };
+    const active = findActivePlantbackRestrictions(fr, today);
+    // 13 days since application; Canola restricted 30 days -> 17 left, Soybeans 15 -> 2 left
+    expect(active).toEqual([
+      { fieldName: "North 40", chemName: "2,4-D Amine", crop: "Soybeans", daysRemaining: 2, appliedDate: "2026-07-20" },
+      { fieldName: "North 40", chemName: "2,4-D Amine", crop: "Canola", daysRemaining: 17, appliedDate: "2026-07-20" },
+    ]);
+  });
+
+  it("excludes a restriction that has already expired", () => {
+    const fr = { field1: { fieldName: "North 40", chemicals: {
+      "Assure II": { date: "2026-01-01", plantback: { Wheat: 120 } },
+    } } };
+    expect(findActivePlantbackRestrictions(fr, today)).toEqual([]);
+  });
+
+  it("checks every crop the chemical restricts, not just one", () => {
+    const fr = { field1: { fieldName: "West 50s", chemicals: {
+      "Sonalan 10G": { date: "2026-08-01", plantback: { Mustard: 0, Wheat: 365 } },
+    } } };
+    const active = findActivePlantbackRestrictions(fr, today);
+    expect(active.map(a => a.crop)).toEqual(["Wheat"]); // Mustard's 0-day restriction is already expired (daysRemaining not > 0)
+  });
+
+  it("skips entries with an unparseable applied date instead of guessing", () => {
+    const fr = { field1: { fieldName: "North 40", chemicals: {
+      "Unknown Chem": { date: "not-a-date", plantback: { Wheat: 30 } },
+    } } };
+    expect(findActivePlantbackRestrictions(fr, today)).toEqual([]);
+  });
+
+  it("returns an empty array for no restrictions", () => {
+    expect(findActivePlantbackRestrictions({}, today)).toEqual([]);
+    expect(findActivePlantbackRestrictions(null, today)).toEqual([]);
   });
 });
