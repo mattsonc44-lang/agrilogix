@@ -267,8 +267,8 @@ app: {fontFamily:"'Barlow',sans-serif",background:T.pageGradient,minHeight:"100v
 header:{background:T.panel,borderBottom:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",alignItems:"center",gap:"14px",position:"sticky",top:0,zIndex:50},
 content:{padding:"20px",maxWidth:"1100px",margin:"0 auto"},
 card: {background:T.card,border:`1px solid ${T.border}`,borderRadius:"10px",padding:"16px",marginBottom:"12px"},
-label: {display:"block",fontSize:"11px",color:T.muted,textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700,marginBottom:"5px"},
-input: {width:"100%",background:"#FFFFFF",border:`1px solid ${T.borderHi}`,borderRadius:"6px",padding:"8px 11px",color:T.text,fontSize:"14px",fontFamily:"'Barlow',sans-serif",outline:"none",boxSizing:"border-box"},
+label: {display:"block",fontSize:"12px",color:T.muted,textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700,marginBottom:"5px"},
+input: {width:"100%",background:"#FFFFFF",border:`1px solid ${T.borderHi}`,borderRadius:"6px",padding:"11px 12px",color:T.text,fontSize:"16px",fontFamily:"'Barlow',sans-serif",outline:"none",boxSizing:"border-box"},
 row: {marginBottom:"14px"},
 g2: {display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"},
 g3: {display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px"},
@@ -276,9 +276,9 @@ sh: {fontFamily:"'Playfair Display',serif",fontSize:"16px",color:T.gold,margin:"
 };
 const mkBtn=(v="primary")=>({
 display:"inline-flex",alignItems:"center",gap:"6px",
-padding:"8px 16px",borderRadius:"6px",
+padding:"11px 18px",borderRadius:"6px",
 border:v==="ghost"?`1px solid ${T.border}`:v==="outline"?`1px solid ${T.gold}`:"none",
-cursor:"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Barlow',sans-serif",
+cursor:"pointer",fontSize:"14px",fontWeight:600,fontFamily:"'Barlow',sans-serif",
 background:v==="primary"?T.gold:v==="danger"?T.danger:"transparent",
 color:v==="primary"?"#FFFFFF":v==="danger"?"#FFFFFF":v==="outline"?T.gold:T.muted,
 });
@@ -886,7 +886,7 @@ return(
 <div style={{background:"#F8F4EC",border:`1px solid #E0CFA0`,borderRadius:"8px",padding:"14px",marginBottom:"14px"}}>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
 <p style={{margin:0,fontSize:"11px",color:"#7A6020",textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>🌱 Crop(s) Seeded</p>
-<button style={{...mkBtn("ghost"),padding:"4px 10px",fontSize:"12px",borderColor:"#C0A040",color:"#7A6020"}} onClick={addCrop}>+ Add Crop</button>
+<button style={{...mkBtn("ghost"),padding:"7px 12px",fontSize:"13px",borderColor:"#C0A040",color:"#7A6020"}} onClick={addCrop}>+ Add Crop</button>
 </div>
 {crops.map((c,i)=>(
 <div key={c.id} style={{background:"#FFFFFF",border:`1px solid #E0CFA0`,borderRadius:"7px",padding:"11px",marginBottom:"8px"}}>
@@ -941,7 +941,7 @@ onNo={()=>dismiss("seeds",c.id)}
 <div style={{background:"#FBF6EC",border:`1px solid #E0CFA0`,borderRadius:"8px",padding:"14px",marginBottom:"14px"}}>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
 <p style={{margin:0,fontSize:"11px",color:T.muted,textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>⚗️ Fertilizer Products</p>
-<button style={{...mkBtn("ghost"),padding:"4px 10px",fontSize:"12px",borderColor:"#C0A040",color:"#7A6020"}} onClick={addFert}>+ Add Fertilizer</button>
+<button style={{...mkBtn("ghost"),padding:"7px 12px",fontSize:"13px",borderColor:"#C0A040",color:"#7A6020"}} onClick={addFert}>+ Add Fertilizer</button>
 </div>
 {ferts.length===0&&<div style={{textAlign:"center",padding:"14px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px"}}>Click "+ Add Fertilizer" to log products applied</div>}
 {ferts.map((f,i)=>(
@@ -1005,7 +1005,7 @@ onNo={()=>dismiss("ferts",f.id)}
 <div style={{background:"#EFF7ED",border:`1px solid #A8CCA4`,borderRadius:"8px",padding:"14px",marginBottom:"14px"}}>
 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
 <p style={{margin:0,fontSize:"11px",color:"#2A6A28",textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>🧪 Inoculant / Seed Treatment</p>
-<button style={{...mkBtn("ghost"),padding:"4px 10px",fontSize:"12px",borderColor:"#80B87C",color:"#2A6A28"}} onClick={addInoculant}>+ Add Inoculant</button>
+<button style={{...mkBtn("ghost"),padding:"7px 12px",fontSize:"13px",borderColor:"#80B87C",color:"#2A6A28"}} onClick={addInoculant}>+ Add Inoculant</button>
 </div>
 {inoculants.length===0&&<div style={{textAlign:"center",padding:"14px",color:T.faint,fontSize:"13px",border:`1px dashed #C0DCC0`,borderRadius:"6px"}}>{hasPulse?"Pulse crop detected — ":""}Click "+ Add Inoculant" to log treatments</div>}
 {inoculants.map((n,i)=>(
@@ -1419,7 +1419,7 @@ return(
 <div style={{...S.row,display:"flex",alignItems:"flex-end"}}><div style={{fontSize:"11px",color:T.muted,paddingBottom:"9px"}}>Fill this in to see how much of each product goes in one tank load, instead of a whole-field total.</div></div>
 </div>
 <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:v.spotSpray?"8px":"14px"}}>
-<input type="checkbox" id="spotSprayChk" checked={!!v.spotSpray} onChange={e=>set({...v,spotSpray:e.target.checked})} style={{width:"16px",height:"16px"}}/>
+<input type="checkbox" id="spotSprayChk" checked={!!v.spotSpray} onChange={e=>set({...v,spotSpray:e.target.checked})} style={{width:"22px",height:"22px"}}/>
 <label htmlFor="spotSprayChk" style={{fontSize:"13px",cursor:"pointer"}}>🎯 Spot-spray system (WeedIt, GreenSeeker, See &amp; Spray, etc.)</label>
 </div>
 {v.spotSpray && (
@@ -1434,7 +1434,7 @@ return(
 <p style={{margin:0,fontSize:"11px",color:"#2A5080",textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>💧 Tank Mix</p>
 <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
 {(products.tankMixPresets||[]).length>0&&(
-<select style={{...S.input,marginBottom:0,fontSize:"12px",color:"#7A3090",borderColor:"#C0A0D8",background:"#F8F0FF",maxWidth:"160px"}}
+<select style={{...S.input,marginBottom:0,fontSize:"14px",color:"#7A3090",borderColor:"#C0A0D8",background:"#F8F0FF",maxWidth:"180px"}}
 value=""
 onChange={e=>{
 const preset=(products.tankMixPresets||[]).find(p=>p.id===e.target.value);
@@ -1451,7 +1451,7 @@ tankMix: preset.chemicals.map(c=>({...c,id:genId()}))
 ))}
 </select>
 )}
-<button style={{...mkBtn("ghost"),padding:"5px 12px",fontSize:"12px",borderColor:"#1E5078",color:"#1E5078"}} onClick={add}>+ Add Chemical</button>
+<button style={{...mkBtn("ghost"),padding:"8px 14px",fontSize:"13px",borderColor:"#1E5078",color:"#1E5078"}} onClick={add}>+ Add Chemical</button>
 </div>
 </div>
 {mix.length===0&&<div style={{textAlign:"center",padding:"18px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px"}}>Click "+ Add Chemical" to build your tank mix</div>}
@@ -1516,11 +1516,11 @@ plantback: plantbackArr,
 if(onAddChemical) onAddChemical(entry);
 } catch(e) { if(onAddChemical) onAddChemical({name:c.chemicalName,type:"",defaultRate:c.oz||"",unit:c.unit||"L/ac",labeledCrops:[],plantback:[]}); }
 setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
-}} style={{background:"#2A6A28",color:"#fff",border:"none",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
+}} style={{background:"#2A6A28",color:"#fff",border:"none",borderRadius:"4px",padding:"7px 12px",fontSize:"13px",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
 {savePrompt[c.id]==="loading"?"⏳ Looking up…":"🔍 Yes + Look up label"}
 </button>
-<button onClick={()=>{ if(onAddChemical) onAddChemical({name:c.chemicalName,type:"",defaultRate:c.oz||"",unit:c.unit||"L/ac",labeledCrops:[],plantback:[]}); setSavePrompt(p=>({...p,[c.id]:"dismissed"})); }} style={{background:"none",border:"1px solid #A8CCA8",borderRadius:"4px",padding:"4px 10px",fontSize:"11px",cursor:"pointer",color:"#5A7A58",fontFamily:"inherit"}}>Yes (no lookup)</button>
-<button onClick={()=>setSavePrompt(p=>({...p,[c.id]:"dismissed"}))} style={{background:"none",border:"none",fontSize:"11px",cursor:"pointer",color:"#888",fontFamily:"inherit"}}>Skip</button>
+<button onClick={()=>{ if(onAddChemical) onAddChemical({name:c.chemicalName,type:"",defaultRate:c.oz||"",unit:c.unit||"L/ac",labeledCrops:[],plantback:[]}); setSavePrompt(p=>({...p,[c.id]:"dismissed"})); }} style={{background:"none",border:"1px solid #A8CCA8",borderRadius:"4px",padding:"7px 12px",fontSize:"13px",cursor:"pointer",color:"#5A7A58",fontFamily:"inherit"}}>Yes (no lookup)</button>
+<button onClick={()=>setSavePrompt(p=>({...p,[c.id]:"dismissed"}))} style={{background:"none",border:"none",padding:"7px 12px",fontSize:"13px",cursor:"pointer",color:"#888",fontFamily:"inherit"}}>Skip</button>
 </div>
 )}
 {savePrompt[c.id]==="dismissed" && (c.chemicalName||"").trim().length>1 && (
@@ -1535,7 +1535,7 @@ setSavePrompt(p=>({...p,[c.id]:"dismissed"}));
 {["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal"].map(u=><option key={u}>{u}</option>)}
 </select>
 </div>
-<button style={{...mkBtn("ghost"),padding:"7px 10px",color:T.danger,border:"none",background:"transparent",fontSize:"16px"}} onClick={()=>del(c.id)}>✕</button>
+<button style={{...mkBtn("ghost"),padding:"9px 12px",color:T.danger,border:"none",background:"transparent",fontSize:"18px"}} onClick={()=>del(c.id)}>✕</button>
 </div>
 </div>
 ))}
@@ -1592,7 +1592,7 @@ return (
 <span style={{display:"flex",alignItems:"center",gap:"6px"}}>
 <strong style={{color:"#1E5078"}}>{gal?`${Number(it.totalGal.toFixed(2))} gal`:`${Number(it.total.toFixed(2))} ${it.totalUnit}`}</strong>
 {it.totalGal!=null && (
-<button type="button" onClick={()=>toggleUnit(it)} title="Switch units" style={{background:"none",border:"1px solid #C0D0E8",borderRadius:"3px",padding:"1px 6px",fontSize:"10px",cursor:"pointer",color:"#6A85A8",fontFamily:"inherit"}}>
+<button type="button" onClick={()=>toggleUnit(it)} title="Switch units" style={{background:"none",border:"1px solid #C0D0E8",borderRadius:"3px",padding:"4px 8px",fontSize:"12px",cursor:"pointer",color:"#6A85A8",fontFamily:"inherit"}}>
 {gal?it.totalUnit:"gal"}
 </button>
 )}
@@ -2118,7 +2118,7 @@ return(
 <label style={S.label}>Activity Type</label>
 <div style={S.g3}>
 {Object.entries(ACTIVITY_META).map(([k,m])=>(
-<button key={k} style={{...mkBtn("ghost"),justifyContent:"center",flexDirection:"column",padding:"10px 4px",fontSize:"11px",gap:"3px",background:type===k?m.color:T.card,color:type===k?"#FDFAF4":T.muted,border:`1px solid ${type===k?m.color:T.border}`,borderRadius:"8px"}} onClick={()=>{setType(k);setData({});setErr("");}}>
+<button key={k} style={{...mkBtn("ghost"),justifyContent:"center",flexDirection:"column",padding:"14px 8px",fontSize:"13px",gap:"3px",background:type===k?m.color:T.card,color:type===k?"#FDFAF4":T.muted,border:`1px solid ${type===k?m.color:T.border}`,borderRadius:"8px"}} onClick={()=>{setType(k);setData({});setErr("");}}>
 <span style={{fontSize:"20px"}}>{m.icon}</span><span style={{fontWeight:700}}>{m.label}</span>
 </button>
 ))}
@@ -2136,10 +2136,10 @@ const newCrops = (data.crops||[]).length > 0
 : [{id:String(Date.now()),crop:agriPlanSuggestion.crop,seedRate:"",totalSeed:"",variety:"",rowSpacing:"",seedTreatment:""}];
 setData(d=>({...d,crops:newCrops}));
 setAgriPlanApplied(true);
-}} style={{background:"#2A7010",color:"#fff",border:"none",borderRadius:"5px",padding:"6px 16px",fontSize:"12px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+}} style={{background:"#2A7010",color:"#fff",border:"none",borderRadius:"5px",padding:"8px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
 ✓ Use this crop
 </button>
-<button onClick={()=>setAgriPlanApplied(true)} style={{background:"none",border:"1px solid #5A9040",borderRadius:"5px",padding:"6px 12px",fontSize:"11px",cursor:"pointer",color:"#5A9040",fontFamily:"inherit"}}>
+<button onClick={()=>setAgriPlanApplied(true)} style={{background:"none",border:"1px solid #5A9040",borderRadius:"5px",padding:"8px 14px",fontSize:"12px",cursor:"pointer",color:"#5A9040",fontFamily:"inherit"}}>
 Dismiss
 </button>
 </div>
@@ -2172,7 +2172,7 @@ Dismiss
 <div style={{background:"#F0F6FF",border:"2px solid #6090C0",borderRadius:"6px",padding:"10px 14px",margin:"8px 0"}}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
 <div style={{fontWeight:700,color:"#1A3A5C",fontSize:"12px"}}>🌬️ SPRAY CONDITIONS</div>
-<button type="button" onClick={getSprayForecast} disabled={forecastLoading} style={{fontSize:"11px",padding:"4px 10px",borderRadius:"5px",border:"1px solid #6090C0",background:"#fff",color:"#1A3A5C",fontWeight:600,cursor:forecastLoading?"default":"pointer"}}>
+<button type="button" onClick={getSprayForecast} disabled={forecastLoading} style={{fontSize:"12px",padding:"7px 12px",borderRadius:"5px",border:"1px solid #6090C0",background:"#fff",color:"#1A3A5C",fontWeight:600,cursor:forecastLoading?"default":"pointer"}}>
 {forecastLoading ? "Checking…" : sprayForecast ? "🔄 Refresh" : "📍 Check forecast"}
 </button>
 </div>
@@ -2226,7 +2226,7 @@ placeholder={voiceListening?"🎤 Speak now — transcript will appear here…":
 value={notes}
 onChange={e=>setNotes(e.target.value)}
 />
-<button onClick={()=>voiceToggle(t=>setNotes(t))} title={voiceListening?"Stop recording":"Speak to fill notes"} style={{position:"absolute",right:"6px",top:"6px",width:"32px",height:"32px",borderRadius:"50%",border:"none",cursor:"pointer",background:voiceListening?"#E05050":T.gold,color:"#FFF",fontSize:"16px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:voiceListening?"0 0 0 3px rgba(224,80,80,0.3)":"none"}}>
+<button onClick={()=>voiceToggle(t=>setNotes(t))} title={voiceListening?"Stop recording":"Speak to fill notes"} style={{position:"absolute",right:"6px",top:"6px",width:"40px",height:"40px",borderRadius:"50%",border:"none",cursor:"pointer",background:voiceListening?"#E05050":T.gold,color:"#FFF",fontSize:"16px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:voiceListening?"0 0 0 3px rgba(224,80,80,0.3)":"none"}}>
 {voiceListening?"⏹":"🎤"}
 </button>
 </div>
