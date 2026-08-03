@@ -20,15 +20,16 @@ function baseUrl() { return _tenantId ? AGRILOGIX_URL : STANDALONE_URL; }
 function authSuffix() { return _token ? `?auth=${_token}` : ""; }
 
 function path(key, yr) {
+  const yearKeyed = key === "fields" || key === "contracts";
   if (_tenantId) {
     // "default" farm (or no farm at all) keeps the original unscoped path for
     // backward compatibility; any other farm gets its own subtree so multiple
     // farming entities under one tenant don't share AgriPlan data.
     const seg = (_farmId && _farmId !== "default") ? `farms/${_farmId}/` : "";
     const base = `tenants/${_tenantId}/${seg}agriPlan`;
-    return key === "fields" ? `${base}/fields/${yr}` : `${base}/${key}`;
+    return yearKeyed ? `${base}/${key}/${yr}` : `${base}/${key}`;
   }
-  return key === "fields" ? `agriplan/fields/${yr}` : `agriplan/${key}`;
+  return yearKeyed ? `agriplan/${key}/${yr}` : `agriplan/${key}`;
 }
 
 async function dbGet(p) {
@@ -89,6 +90,26 @@ export function fbWatchFields(year, callback) {
 // manual page reload. Same live-update pattern as fbWatchFields above.
 export function fbWatchFieldHistory(callback) {
   const url = `${baseUrl()}/${path("fieldHistory")}.json${authSuffix()}`;
+  const sse = new EventSource(url);
+  sse.addEventListener("put", (e) => {
+    try {
+      const { data } = JSON.parse(e.data);
+      callback(data && typeof data === "object" ? data : {});
+    } catch (_) {}
+  });
+  sse.onerror = () => {};
+  return () => sse.close();
+}
+
+// Grain marketing contracts live in AgriScale (crop, buyer, bushels, price,
+// delivery — see agriScale/index.jsx's ContractForm); this just watches the
+// crop-level revenue summary AgriScale mirrors over per year, the same
+// live-update pattern as fbWatchFieldHistory above, so a contract added in
+// AgriScale shows up in AgriPlan's reports without a reload. Contracted
+// revenue is a forward commitment, not realized production — kept separate
+// from fieldHistory's actual/realized bushels rather than merged into it.
+export function fbWatchContracts(year, callback) {
+  const url = `${baseUrl()}/${path("contracts", year)}.json${authSuffix()}`;
   const sse = new EventSource(url);
   sse.addEventListener("put", (e) => {
     try {
