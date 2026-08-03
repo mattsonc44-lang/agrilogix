@@ -22,7 +22,7 @@ export default function MultiFarmModule({ tenantId, token, userProfile, farms = 
     let cancelled = false;
     setLoading(true);
     Promise.all(farms.map(f =>
-      fetchFarmSnapshot(tenantId, token, f.id, enabledModules, year).then(snap => [f.id, computeFarmStats(snap, year)])
+      fetchFarmSnapshot(tenantId, token, f.id, enabledModules, year).then(snap => [f.id, computeFarmStats(snap, year, f.id)])
     )).then(results => {
       if (cancelled) return;
       const map = {};
