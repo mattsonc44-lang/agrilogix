@@ -67,9 +67,13 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
     actualExpensesTotal, actualNet,
     flFields, flActivities, recentActs, activitiesThisWeek,
     seasonBushels, loadsThisWeek,
-    openTodos, partsNeeded, lowStockItems, slVehicles, guaranteeProgress, acres, dueMaintenance,
-  } = computeFarmStats(d, year);
+    openTodos, partsNeeded, lowStockItems, slVehicles, guaranteeProgress, acres, dueMaintenance, needsAttention,
+  } = computeFarmStats(d, year, farmId);
   const flFieldName = id => flFields.find(f => f.id === id)?.name || "Field";
+  // Budget-overrun is a $ figure the same way AgriPlan's own banner is —
+  // hidden there for roles without canViewCosts, so hidden here too rather
+  // than leaking a "fields over budget" count to an operator.
+  const visibleNeedsAttention = needsAttention.filter(item => item.id !== "budget-overrun" || perms.canViewCosts);
 
   const showAgriPlan = enabledModules.includes("agriPlan");
   const showFieldLog = enabledModules.includes("fieldlog");
@@ -190,27 +194,29 @@ export default function HomeModule({ tenantId, token, userProfile, farmId, farmN
           })}
         </div>
 
-        {/* Needs attention */}
+        {/* Needs attention — one feed pulled from every enabled module
+            (ServiceLog todos/maintenance/stock, AgriScale contracts/bins,
+            AgriPlan budget, FieldLog plantback), instead of having to know
+            which module to go check. See farmStats.js's needsAttention. */}
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "10px", padding: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "16px", color: T.gold }}>Needs Attention</div>
-            {showServiceLog && <button onClick={() => onNavigate("serviceLog", "todos")} style={{ ...mkBtn("ghost"), padding: "3px 10px", fontSize: "11px" }}>Open Service →</button>}
           </div>
-          {!showServiceLog && <div style={{ fontSize: "12px", color: T.faint, fontStyle: "italic" }}>AgriService isn't enabled for your account.</div>}
-          {showServiceLog && openTodos.length === 0 && <div style={{ fontSize: "12px", color: T.faint, fontStyle: "italic" }}>Nothing pending — all caught up.</div>}
-          {showServiceLog && openTodos.slice(0, 6).map((t, i) => (
-            <div key={t.id || i} onClick={() => onNavigate("serviceLog", "todos")}
+          {visibleNeedsAttention.length === 0 && <div style={{ fontSize: "12px", color: T.faint, fontStyle: "italic" }}>Nothing pending — all caught up.</div>}
+          {visibleNeedsAttention.slice(0, 8).map(item => (
+            <div key={item.id} onClick={() => onNavigate(item.module, item.tab)}
               onMouseEnter={e => e.currentTarget.style.background = T.cardHov}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 4px", margin: "0 -4px", borderRadius: "6px", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
-              <span style={{ width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0, background: t.priority === "high" ? T.danger : t.priority === "low" ? T.faint : T.warning }} />
+              <span style={{ width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0, background: item.severity === "danger" ? T.danger : item.severity === "warning" ? T.warning : T.faint }} />
+              <span style={{ fontSize: "15px", flexShrink: 0 }}>{item.icon}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.text}</div>
-                <div style={{ fontSize: "11px", color: T.muted }}>{t.vehicleName}</div>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</div>
+                <div style={{ fontSize: "11px", color: T.muted }}>{item.sub}</div>
               </div>
             </div>
           ))}
-          {showServiceLog && openTodos.length > 6 && <div style={{ fontSize: "11px", color: T.faint, marginTop: "6px" }}>+ {openTodos.length - 6} more</div>}
+          {visibleNeedsAttention.length > 8 && <div style={{ fontSize: "11px", color: T.faint, marginTop: "6px" }}>+ {visibleNeedsAttention.length - 8} more</div>}
         </div>
       </div>
 
