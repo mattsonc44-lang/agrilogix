@@ -2638,7 +2638,11 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     return checker ? checker(cropHistEntry.history, activeYear || "2026") : [];
   }, [field.crop, cropHistEntry, activeYear]);
   const[tab,setTab]=useState("income");
-  const[priorYear,setPriorYear]=useState("2023 Actuals");
+  // Default to the newest year on file (last key in YEAR_LABELS), not the
+  // oldest — this remounts fresh every time a field is opened (FieldDetail
+  // unmounts when you go back to the table), so a hardcoded starting year
+  // would always win over whatever year you actually want to compare to.
+  const[priorYear,setPriorYear]=useState(()=>{const ks=Object.keys(YEAR_LABELS);return ks[ks.length-1];});
   const[editing,setEditing]=useState(false);
   // Manual actual-bushels entry — closes the loop for tenants not on
   // AgriScale, who'd otherwise have no way to record what a field actually
