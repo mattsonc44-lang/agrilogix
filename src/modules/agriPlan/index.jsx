@@ -1995,16 +1995,26 @@ function getPlantbackWarnings(fieldRestrictions, fieldCommon, crop) {
 // isFlatAcreTenant(tenantId). Every other tenant gets real answers only:
 // their own manually-entered / APH-imported history, or nothing yet.
 function resolveFieldHistoryEntry(field, manualHistory, tenantId) {
-  const ownYears = Object.keys(manualHistory || {});
-  if (ownYears.length > 0) {
-    const history = {};
-    ownYears.forEach(y => { if (manualHistory[y]?.crop) history[y] = manualHistory[y].crop; });
-    if (Object.keys(history).length > 0) {
-      return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
-    }
+  // Merge manual entries with APH-imported years, same priority order as the
+  // farm-wide "All History" view (HistoryView) uses: manual wins, APH fills
+  // gaps. Previously this only looked at manualHistory, so anything that
+  // read history through here — rotation-rule checks, the crop picker's
+  // warnings, crop-suggestion scoring — was blind to imported APH data even
+  // though "All History" (and crop eligibility) already accounted for it,
+  // making a field's own numbers disagree with the farm-wide view for the
+  // same field.
+  const history = {};
+  const aphEntry = (_aphData && _aphData[field.common]) || {};
+  Object.entries(aphEntry).forEach(([crop, cropData]) => {
+    Object.keys(cropData?.years || {}).forEach(y => { history[y] = crop; });
+  });
+  Object.entries(manualHistory || {}).forEach(([y, data]) => { if (data?.crop) history[y] = data.crop; });
+  if (Object.keys(history).length > 0) {
+    return { common: field.common, farm: field.farm, fieldNum: field.fieldNum, acres: field.acres, history };
   }
-  // Legacy fallback only if this field has no manually-entered history at all
-  // yet, AND only for the one tenant this seed data actually belongs to.
+  // Legacy fallback only if this field has NEITHER manual entries NOR any
+  // imported APH data yet, AND only for the one tenant this seed data
+  // actually belongs to.
   if (!isFlatAcreTenant(tenantId)) return null;
   const keyFn = field.common + '|' + field.fieldNum;
   if (HISTORY_DATA[keyFn]) return HISTORY_DATA[keyFn];
@@ -2034,15 +2044,16 @@ function resolveFieldHistoryEntry(field, manualHistory, tenantId) {
 // once 2+ years exist, eligibility narrows to whatever's actually shown up.
 // This is a pure function of current data — nothing is stored, so there's
 // no separate manual list that can drift out of sync with real history.
+const PLAUSIBLE_YEAR = /^(19|20)\d{2}$/; // guards against a stray non-year key (e.g. a mis-parsed APH row or an array index) silently inflating the history count
 function computeEligibleCrops(field, fieldHistoryAll, aphDataAll, tenantCropsList) {
   const allCrops = tenantCropsList && tenantCropsList.length > 0 ? tenantCropsList : ALL_CROPS;
   if (!field?.common) return { crops: [...allCrops], years: [] };
   const manualHist = (fieldHistoryAll && fieldHistoryAll[field.common]) || {};
-  const manualYears = Object.keys(manualHist).filter(y => manualHist[y]?.crop);
+  const manualYears = Object.keys(manualHist).filter(y => manualHist[y]?.crop && PLAUSIBLE_YEAR.test(y));
   const aphEntry = (aphDataAll && aphDataAll[field.common]) || {};
-  const aphCrops = Object.keys(aphEntry).filter(c => aphEntry[c]?.years && Object.keys(aphEntry[c].years).length > 0);
+  const aphCrops = Object.keys(aphEntry).filter(c => aphEntry[c]?.years && Object.keys(aphEntry[c].years).some(y => PLAUSIBLE_YEAR.test(y)));
   const yearsSeen = new Set(manualYears);
-  aphCrops.forEach(c => Object.keys(aphEntry[c].years || {}).forEach(y => yearsSeen.add(y)));
+  aphCrops.forEach(c => Object.keys(aphEntry[c].years || {}).filter(y => PLAUSIBLE_YEAR.test(y)).forEach(y => yearsSeen.add(y)));
   const years = [...yearsSeen].sort();
   if (years.length <= 1) return { crops: [...allCrops], years }; // not enough history yet — stay permissive
   const grown = new Set(aphCrops);
@@ -2259,7 +2270,24 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
   const [editRow, setEditRow] = useState({});
   useEffect(()=>{ setManHist({...manualHistory}); },[manualHistory]);
 
-  const allEnteredYears = Object.keys(manHist).sort((a,b)=>b.localeCompare(a));
+  // APH-imported years for this field, merged in alongside manual entries so
+  // this table matches what "All History" already shows for the same field
+  // (see HistoryView) instead of only ever showing what's been typed here by
+  // hand. Read-only — edit by re-importing the APH PDF, not inline — and
+  // manual entries win if a year somehow exists in both.
+  const aphYearsForField = useMemo(() => {
+    const entry = (_aphData && _aphData[field.common]) || {};
+    const out = {};
+    Object.entries(entry).forEach(([crop, cropData]) => {
+      Object.entries(cropData?.years || {}).forEach(([y, yd]) => {
+        if (!manHist[y]) out[y] = { crop, yield: yd?.yield || "", acres: yd?.acres || "", source: "aph" };
+      });
+    });
+    return out;
+  }, [field.common, manHist]);
+
+  const allEnteredYears = [...new Set([...Object.keys(manHist), ...Object.keys(aphYearsForField)])].sort((a,b)=>b.localeCompare(a));
+  const rowData = { ...aphYearsForField, ...manHist };
 
   const saveRow = (year, data) => {
     const updated = {...manHist, [year]: data};
@@ -2441,6 +2469,14 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
                       <td style={{padding:"4px 6px"}}><input type="number" value={editRow.yield||""} onChange={e=>setEditRow(p=>({...p,yield:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
                       <td style={{padding:"4px 6px"}}><input type="number" value={editRow.acres||""} onChange={e=>setEditRow(p=>({...p,acres:e.target.value}))} style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:70}}/></td>
                       <td style={{padding:"4px 6px"}}><button onClick={commitEdit} style={{background:"#2a7a18",color:"#fff",border:"none",borderRadius:3,padding:"3px 10px",fontSize:11,cursor:"pointer",marginRight:4}}>✓</button><button onClick={()=>setEditingYear(null)} style={{background:"#f0f0f0",border:"1px solid #ccc",borderRadius:3,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>✕</button></td>
+                    </tr>
+                  ):aphYearsForField[yr]?(
+                    <tr key={yr} style={{background:i%2===0?"#f6f4e8":"#fffdf6",borderBottom:"1px solid #ecdfc0"}} title="Imported from an APH PDF — edit by re-importing, not inline">
+                      <td style={{padding:"5px 8px",fontWeight:700,color:"#7a5a1a"}}>{yr}</td>
+                      <td style={{padding:"5px 8px"}}><span style={{background:"#f0e2b8",padding:"1px 8px",borderRadius:3,fontSize:11,fontWeight:600,color:"#7a5a1a"}}>{aphYearsForField[yr].crop||"—"}</span></td>
+                      <td style={{padding:"5px 8px",fontFamily:"'IBM Plex Mono',monospace"}}>{aphYearsForField[yr].yield||"—"}</td>
+                      <td style={{padding:"5px 8px",fontFamily:"'IBM Plex Mono',monospace"}}>{aphYearsForField[yr].acres||"—"}</td>
+                      <td style={{padding:"5px 8px",fontSize:10,color:"#a08040"}}>📄 APH</td>
                     </tr>
                   ):(
                     <tr key={yr} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
