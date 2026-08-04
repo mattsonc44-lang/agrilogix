@@ -1845,7 +1845,7 @@ ${Object.entries(entMap).map(([ent,d])=>{const net=d.revenue-d.expenses;const ac
   <th class="r">Expenses</th><th class="r">Exp $/Ac</th>
   <th class="r">Net Income</th>${anyActual?`<th class="r">Actual Net</th>`:""}
 </tr></thead><tbody>
-${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numeric:true,sensitivity:"base"})||(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f=>{const c=calc(f);const a=calcFieldActuals(f,fieldHistory,activeYear);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const ni=c.net>=0?"pos":"neg";return`<tr>
+${[...fields].sort((a,b)=>(a.farm||"").localeCompare(b.farm||"",undefined,{numeric:true,sensitivity:"base"})||(a.common||"").localeCompare(b.common||"",undefined,{numeric:true,sensitivity:"base"})).map(f=>{const c=calc(f);const a=calcFieldActuals(f,fieldHistory,activeYear);const inelig=isFieldCropFlagged(f,fieldHistory);const ni=c.net>=0?"pos":"neg";return`<tr>
   <td><span class="badge ent">${(f.entity||"").slice(0,8)||"—"}</span></td>
   <td>${f.farm}</td>
   <td><strong>${f.common}</strong></td>
@@ -1888,30 +1888,36 @@ function SCard({label,val,color,sub}){
 function CropSelect({value,onChange,eligibleCrops,fieldRestrictions,fieldCommon,hist,targetYear}){
   const[open,setOpen]=useState(false);const ref=useRef();
   useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
-  const _ec=Array.isArray(eligibleCrops)?eligibleCrops:eligibleCrops&&typeof eligibleCrops==="object"?Object.values(eligibleCrops):[]; const isInelig=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)||!(_ec.length>0?_ec:(_tenantCrops||ALL_CROPS)).includes(c);
-  // Chemical plantback + rotation/insurance-rule warnings per candidate crop —
-  // same two rule sets checked everywhere else (see getPlantbackWarnings /
-  // getRotationRules), surfaced here so you see them while picking rather than
-  // only after the fact. Doesn't block selection — you may know something the
-  // rules don't (e.g. a waiver) — it's a warning, not a hard stop.
+  const _ec=Array.isArray(eligibleCrops)?eligibleCrops:eligibleCrops&&typeof eligibleCrops==="object"?Object.values(eligibleCrops):[];
+  const isRegionBlocked=c=>(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c);
+  const noHistory=c=>!(_ec.length>0?_ec:(_tenantCrops||ALL_CROPS)).includes(c);
+  // Chemical plantback + rotation/insurance-rule warnings, plus "no recorded
+  // history for this crop on this field" — none of these block selection.
+  // Eligibility is now computed automatically from history (see
+  // computeEligibleCrops) with no manual per-field override left to fall
+  // back on if the computed rule gets it wrong for a given year, so the
+  // worst a mismatch does is show a warning, never lock the crop out.
+  // Region/policy exclusions (GLOBALLY_INELIGIBLE) are the one thing still
+  // treated as a hard stop.
   const warningsFor = c => {
     const pb = getPlantbackWarnings(fieldRestrictions, fieldCommon, c);
     const checker = hist && targetYear ? getRotationRules()[c] : null;
     const rot = checker ? checker(hist, targetYear) : [];
-    return { pb, rot };
+    const noHist = (noHistory(c) && !isRegionBlocked(c)) ? ["No recorded history for this crop on this field"] : [];
+    return { pb, rot, noHist };
   };
   const valueWarnings = warningsFor(value);
-  const hasValueWarning = valueWarnings.pb.length>0 || valueWarnings.rot.length>0;
+  const hasValueWarning = valueWarnings.pb.length>0 || valueWarnings.rot.length>0 || valueWarnings.noHist.length>0;
   return(<div ref={ref} style={{position:"relative",display:"inline-block"}}>
     <button onClick={()=>setOpen(!open)} style={{background:"#ffffff",border:`1px solid ${hasValueWarning?"#c07010":"#2a4030"}`,borderRadius:5,padding:"7px 12px",color:"#1a3010",cursor:"pointer",fontSize:13,fontFamily:"'Barlow',sans-serif",display:"flex",alignItems:"center",gap:8,minWidth:185}}>
-      <span style={{width:8,height:8,borderRadius:"50%",background:isInelig(value)?"#c02020":"#3a9020",flexShrink:0}}/>
+      <span style={{width:8,height:8,borderRadius:"50%",background:isRegionBlocked(value)?"#c02020":hasValueWarning?"#c07010":"#3a9020",flexShrink:0}}/>
       <span style={{flex:1,textAlign:"left"}}>{value}</span>
-      {hasValueWarning&&<span title="This crop has chemical plantback or rotation/insurance restrictions — see below" style={{fontSize:13}}>⚠️</span>}
+      {hasValueWarning&&<span title="This crop has chemical plantback, rotation/insurance, or history warnings — see below" style={{fontSize:13}}>⚠️</span>}
       <span style={{fontSize:10,opacity:0.5}}>▾</span>
     </button>
     {open&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#f8fbf5",border:"1px solid #2a4030",borderRadius:5,width:280,maxHeight:320,overflowY:"auto",boxShadow:"0 8px 32px rgba(0,0,0,.7)",marginTop:2}}>
-      <div style={{padding:"6px 10px 2px",fontSize:9,color:"#4a8a30",textTransform:"uppercase",letterSpacing:1}}>✓ Eligible for this field</div>
-      {(_tenantCrops||ALL_CROPS).filter(c=>!isInelig(c)).map(c=>{
+      <div style={{padding:"6px 10px 2px",fontSize:9,color:"#4a8a30",textTransform:"uppercase",letterSpacing:1}}>✓ In your history</div>
+      {(_tenantCrops||ALL_CROPS).filter(c=>!isRegionBlocked(c)&&!noHistory(c)).map(c=>{
         const w=warningsFor(c); const warn=w.pb.length>0||w.rot.length>0;
         const title=warn?[...w.pb.map(x=>`⚗️ ${x.chemName} — ${x.daysRemaining}d plantback remaining`),...w.rot.map(x=>`🛡 ${x}`)].join("\n"):"";
         return(<div key={c} onClick={()=>{onChange(c);setOpen(false);}} title={title} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#1a6010":"#1a4010",background:c===value?"#d4ecc0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#d4ecc0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#d4ecc0":"transparent"}>
@@ -1921,8 +1927,20 @@ function CropSelect({value,onChange,eligibleCrops,fieldRestrictions,fieldCommon,
           {c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#3a8020"}}>✓</span>}
         </div>);
       })}
-      <div style={{padding:"8px 10px 2px",fontSize:9,color:"#904040",textTransform:"uppercase",letterSpacing:1,borderTop:"1px solid #2a2010",marginTop:4}}>✗ Not eligible</div>
-      {(_tenantCrops||ALL_CROPS).filter(c=>isInelig(c)).map(c=>(<div key={c} style={{padding:"7px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8,color:"#7a3030",cursor:"not-allowed",opacity:0.7}} title={(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region ineligible":"No APH on this field"}><span style={{width:6,height:6,borderRadius:"50%",background:"#c02020",flexShrink:0}}/>{c}<span style={{marginLeft:"auto",fontSize:9,color:"#904040"}}>{(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)?"Region":"No APH"}</span></div>))}
+      {(_tenantCrops||ALL_CROPS).some(c=>!isRegionBlocked(c)&&noHistory(c))&&(<>
+      <div style={{padding:"8px 10px 2px",fontSize:9,color:"#a07030",textTransform:"uppercase",letterSpacing:1,borderTop:"1px solid #2a2010",marginTop:4}}>⚠ No history yet — still selectable</div>
+      {(_tenantCrops||ALL_CROPS).filter(c=>!isRegionBlocked(c)&&noHistory(c)).map(c=>(
+        <div key={c} onClick={()=>{onChange(c);setOpen(false);}} title="Not yet grown/recorded on this field — selectable, just flagged" style={{padding:"7px 12px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:c===value?"#8a5010":"#a07030",background:c===value?"#f4e4c0":"transparent"}} onMouseEnter={e=>e.currentTarget.style.background="#f4e4c0"} onMouseLeave={e=>e.currentTarget.style.background=c===value?"#f4e4c0":"transparent"}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:"#c07010",flexShrink:0}}/>
+          {c}<span style={{fontSize:11}}>⚠️</span>
+          {c===value&&<span style={{marginLeft:"auto",fontSize:10,color:"#8a5010"}}>✓</span>}
+        </div>
+      ))}
+      </>)}
+      {(_globallyIneligible||GLOBALLY_INELIGIBLE).size>0&&(<>
+      <div style={{padding:"8px 10px 2px",fontSize:9,color:"#904040",textTransform:"uppercase",letterSpacing:1,borderTop:"1px solid #2a2010",marginTop:4}}>✗ Not eligible (Region/Policy)</div>
+      {(_tenantCrops||ALL_CROPS).filter(isRegionBlocked).map(c=>(<div key={c} style={{padding:"7px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8,color:"#7a3030",cursor:"not-allowed",opacity:0.7}} title="Region ineligible"><span style={{width:6,height:6,borderRadius:"50%",background:"#c02020",flexShrink:0}}/>{c}<span style={{marginLeft:"auto",fontSize:9,color:"#904040"}}>Region</span></div>))}
+      </>)}
     </div>)}
   </div>);
 }
@@ -2004,6 +2022,44 @@ function resolveFieldHistoryEntry(field, manualHistory, tenantId) {
     );
   }
   return null;
+}
+
+// ── Crop eligibility, derived live from a field's own history ──────────────
+// A crop is eligible if it shows up anywhere in this field's recorded
+// history — imported via an APH PDF (aphDataAll) or entered by hand on the
+// History & Plan tab / recorded by AgriScale (fieldHistoryAll) — no
+// difference between the two, matching how the field is actually farmed.
+// With fewer than 2 distinct years of history on file there isn't enough
+// signal to rule anything out, so every tenant crop counts as eligible;
+// once 2+ years exist, eligibility narrows to whatever's actually shown up.
+// This is a pure function of current data — nothing is stored, so there's
+// no separate manual list that can drift out of sync with real history.
+function computeEligibleCrops(field, fieldHistoryAll, aphDataAll, tenantCropsList) {
+  const allCrops = tenantCropsList && tenantCropsList.length > 0 ? tenantCropsList : ALL_CROPS;
+  if (!field?.common) return { crops: [...allCrops], years: [] };
+  const manualHist = (fieldHistoryAll && fieldHistoryAll[field.common]) || {};
+  const manualYears = Object.keys(manualHist).filter(y => manualHist[y]?.crop);
+  const aphEntry = (aphDataAll && aphDataAll[field.common]) || {};
+  const aphCrops = Object.keys(aphEntry).filter(c => aphEntry[c]?.years && Object.keys(aphEntry[c].years).length > 0);
+  const yearsSeen = new Set(manualYears);
+  aphCrops.forEach(c => Object.keys(aphEntry[c].years || {}).forEach(y => yearsSeen.add(y)));
+  const years = [...yearsSeen].sort();
+  if (years.length <= 1) return { crops: [...allCrops], years }; // not enough history yet — stay permissive
+  const grown = new Set(aphCrops);
+  manualYears.forEach(y => { const c = manualHist[y]?.crop; if (c) grown.add(c); });
+  return { crops: allCrops.filter(c => grown.has(c)), years };
+}
+
+// Shared "is this field currently planted to something outside its eligible
+// list" flag — same computed/legacy split as computeEligibleCrops, reused by
+// the fields table, farm sidebar, and CSV/print exports so none of them ever
+// disagree with what the crop picker itself considers eligible. Region/policy
+// exclusions (GLOBALLY_INELIGIBLE) stay a hard flag; "no history yet" is a
+// soft flag only — see computeEligibleCrops and CropSelect.
+function isFieldCropFlagged(f, fieldHistoryAll) {
+  if ((_globallyIneligible || GLOBALLY_INELIGIBLE).has(f.crop)) return true;
+  if (_isAgriLogixTenant) return !computeEligibleCrops(f, fieldHistoryAll, _aphData, _tenantCrops).crops.includes(f.crop);
+  return !((f.eligibleCrops) || []).includes(f.crop);
 }
 
 function getCropSuggestions(historyEntry, activeYear, fieldRestrictions, fieldCommon) {
@@ -2638,6 +2694,21 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     return checker ? checker(cropHistEntry.history, activeYear || "2026") : [];
   }, [field.crop, cropHistEntry, activeYear]);
   const[tab,setTab]=useState("income");
+  // Crop eligibility is derived live from this field's own recorded history
+  // (APH-imported + manually entered — see computeEligibleCrops) for every
+  // real AgriLogix tenant. The old field.eligibleCrops property is left
+  // alone in Firebase (harmless) but no longer drives what's selectable, so
+  // there's nothing to keep in sync and it can never go stale. Standalone
+  // (no-login) mode keeps the original manual-checkbox behavior since it has
+  // no tenant-scoped history to compute from.
+  const eligibility = useMemo(() => {
+    if (!_isAgriLogixTenant) {
+      const raw = field.eligibleCrops;
+      const crops = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : (_tenantCrops || ALL_CROPS);
+      return { crops, years: null };
+    }
+    return computeEligibleCrops(field, fieldHistory, _aphData, _tenantCrops);
+  }, [field.common, field.eligibleCrops, fieldHistory]);
   // Default to the newest year on file (last key in YEAR_LABELS), not the
   // oldest — this remounts fresh every time a field is opened (FieldDetail
   // unmounts when you go back to the table), so a hardcoded starting year
@@ -2757,7 +2828,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
         )}
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={field.eligibleCrops} fieldRestrictions={fieldRestrictions} fieldCommon={field.common} hist={cropHistEntry?.history} targetYear={activeYear||"2026"}/>
+        <CropSelect value={field.crop} onChange={v=>onUpdate(field.id,{crop:v})} eligibleCrops={eligibility.crops} fieldRestrictions={fieldRestrictions} fieldCommon={field.common} hist={cropHistEntry?.history} targetYear={activeYear||"2026"}/>
         <button onClick={()=>{setEditDraft({entity:field.entity||"",farm:field.farm||"",farmNumber:field.farmNumber||"",legal:field.legal||"",common:field.common||"",fieldNum:field.fieldNum||"",acres:field.acres||"",insuranceUnits:field.insuranceUnits||[]});setEditing(true);}}
           style={{background:"#f0f8e8",border:"1px solid #4a8030",borderRadius:4,padding:"6px 10px",color:"#2a6010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>✏️ Edit</button>
         <button onClick={()=>{if(window.confirm("Delete this field?"))onDelete(field.id);}} style={{background:"#fff0f0",border:"1px solid #4a2020",borderRadius:4,padding:"6px 10px",color:"#c02020",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>Delete</button>
@@ -2987,10 +3058,23 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
 
     {/* Eligibility Tab */}
     {tab==="eligibility"&&(<div>
-      <p style={{fontSize:12,color:"#5a7a40",marginBottom:16}}>Toggle crops with APH history on this field. Unchecked crops show <span style={{color:"#c02020"}}>red</span> and cannot be planted.</p>
+      <p style={{fontSize:12,color:"#5a7a40",marginBottom:16}}>
+        {_isAgriLogixTenant ? (
+          eligibility.years.length<=1
+            ? `Automatically computed from this field's history — imported via APH or entered on the History & Plan tab. Only ${eligibility.years.length===0?"no years":`1 year (${eligibility.years[0]})`} on file so far, so every crop shows as eligible until there's at least 2 years to narrow it down from.`
+            : `Automatically computed from ${eligibility.years.length} years of recorded history on this field (${eligibility.years.join(", ")}). A crop outside this list still works in the picker above — it'll just show a ⚠️ warning instead of being blocked.`
+        ) : "Toggle crops with APH history on this field. Unchecked crops show red and cannot be planted."}
+      </p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
         {(_tenantCrops||ALL_CROPS).filter(c=>!(_globallyIneligible||GLOBALLY_INELIGIBLE).has(c)).map(c=>{
-          // Normalize eligibleCrops — Firebase may return array or plain object
+          if(_isAgriLogixTenant){
+            const on=eligibility.crops.includes(c);
+            return(<div key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:on?"#e8f8e0":"#fdf4f0",border:`1px solid ${on?"#2a7a18":"#e0c090"}`,borderRadius:5,fontSize:12,color:on?"#1a7010":"#a07030"}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:on?"#3a9020":"#c07010",flexShrink:0}}/>{c}
+              {!on&&<span style={{marginLeft:"auto",fontSize:9,color:"#a07030"}}>⚠ no history</span>}
+            </div>);
+          }
+          // Standalone (no-login) legacy mode only — real tenants never reach here.
           const _raw=field.eligibleCrops;
           const _ec=Array.isArray(_raw)?_raw:_raw&&typeof _raw==="object"?Object.values(_raw):(_tenantCrops||ALL_CROPS);
           const on=_ec.includes(c);
@@ -2999,10 +3083,18 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
           <span style={{width:8,height:8,borderRadius:"50%",background:on?"#3a9020":"#7a3030",flexShrink:0}}/>{c}
         </label>);})}
       </div>
+      {/* GLOBALLY_INELIGIBLE (Corn/Hemp/Chem-Fallow/Soybeans/Cotton/Rice) was
+          Flat Acre Farms' own real regional/policy restriction, hardcoded
+          before multi-tenancy existed. Every real tenant — including Flat
+          Acre's own live account — now gets an empty set here (see
+          _globallyIneligible assignment above), so this box only renders
+          when there's actually something in it, instead of showing an
+          always-empty "Always Ineligible" panel to everyone. */}
+      {(_globallyIneligible||GLOBALLY_INELIGIBLE).size>0&&(
       <div style={{padding:"12px 14px",background:"#fdf4f4",borderRadius:6,border:"1px solid #2a1a1a"}}>
         <div style={{fontSize:10,color:"#904040",textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Always Ineligible (Region/Policy)</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[...(_globallyIneligible||GLOBALLY_INELIGIBLE)].map(c=>(<span key={c} style={{padding:"3px 10px",background:"#fff0f0",border:"1px solid #4a2020",borderRadius:3,fontSize:11,color:"#904040"}}>{c}</span>))}</div>
-      </div>
+      </div>)}
 
     </div>)}
     {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate} tenantId={tenantId} manualHistory={fieldHistory[field.common]||{}} fieldRestrictions={fieldRestrictions} onSaveHistory={hist=>onSaveFieldHistory&&onSaveFieldHistory(field.common,hist)}/>)}
@@ -3125,7 +3217,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHisto
         <Th label="Acres" k="acres" right/><Th label="Revenue" k="revenue" right/><Th label="Expenses" k="expenses" right/><Th label="Net" k="net" right/>
       </tr></thead>
       <tbody>
-        {sorted.map((f,i)=>{const c=calc(f);const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+        {sorted.map((f,i)=>{const c=calc(f);const inelig=isFieldCropFlagged(f,fieldHistory);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
           return(<tr key={f.id} onClick={()=>onSelect(f)} style={{background:i%2===0?"#f6f9f0":"#ffffff",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#e4f0d4"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#f6f9f0":"#ffffff"}>
             <td style={{padding:"7px 10px",borderBottom:"1px solid #d8e2c8"}}><span style={{background:"#d4ecc0",padding:"1px 5px",borderRadius:2,fontSize:9,color:"#2a7010"}}>{(f.entity||"").slice(0,3).toUpperCase()||"—"}</span></td>
             <td style={{padding:"7px 10px",color:"#3a6028",borderBottom:"1px solid #d8e2c8"}}>{f.farm}</td>
@@ -5225,7 +5317,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
                 {hasOv&&<span title="One or more fields have custom expense overrides" style={{color:"#8a6010",fontSize:9}}>★</span>}
                 <span style={{color:"#2a5020",fontSize:9,fontWeight:600}}>{acres.toFixed(0)}ac</span>
               </div>
-              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=(_globallyIneligible||GLOBALLY_INELIGIBLE).has(f.crop)||!(f.eligibleCrops||[]).includes(f.crop);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
+              {open&&g.fields.map(f=>{const act=selectedField&&f.id===selectedField.id;const inelig=isFieldCropFlagged(f,fieldHistory);const hasOv=Object.keys(f.expenseOverrides||{}).length>0;
                 return(<div key={f.id} onClick={()=>selectField(f)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px 5px 18px",cursor:"pointer",fontSize:11,background:act?"#d4ecc0":"transparent",color:act?"#1a7010":"#527a38",borderLeft:`2px solid ${act?"#3a9020":"transparent"}`}}>
                   <span style={{width:6,height:6,borderRadius:"50%",background:inelig?"#c02020":"#3a9020",flexShrink:0}}/>
                   <span style={{flex:1,lineHeight:1.3,wordBreak:"break-word"}}>{f.common}{f.fieldNum&&String(f.fieldNum).trim()?<span style={{fontSize:9,color:"#7a9a60",marginLeft:4}}>#{f.fieldNum}</span>:null}</span>
