@@ -1615,6 +1615,113 @@ function FarmHarvestView({ fields, activeYear, fieldHistory, onApplyHarvest }) {
   );
 }
 
+// ── Rotation Planner (multi-field "plan next year" view) ──────────────────────
+// Reuses getCropSuggestions (the same rotation + plantback-aware scoring
+// engine the single-field History tab already uses via handlePlant) across
+// every field at once, so a grower can review and apply next year's crop
+// plan farm-wide from one screen instead of visiting each field separately.
+// Nothing here is a new rules engine — it's the existing suggestion/warning
+// logic, just applied in bulk.
+function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions, tenantId, onApplyPlan }) {
+  const nextYear = String(+activeYear + 1);
+  const cropOpts = _tenantCrops || ALL_CROPS;
+
+  const fieldPlans = useMemo(() => {
+    return fields.map(f => {
+      const histEntry = resolveFieldHistoryEntry(f, fieldHistory[f.common] || {}, tenantId);
+      const suggestions = getCropSuggestions(histEntry, activeYear, fieldRestrictions, f.common);
+      const top = suggestions.find(s => s.eligible) || suggestions[0] || null;
+      return { field: f, histEntry, suggestions, top, defaultCrop: top?.crop || f.crop || "" };
+    });
+  }, [fields, fieldHistory, activeYear, fieldRestrictions, tenantId]);
+
+  const [plan, setPlan] = useState({}); // fieldId -> manual override, falls back to defaultCrop
+  const [applying, setApplying] = useState(false);
+  const cropFor = fp => plan[fp.field.id] ?? fp.defaultCrop;
+
+  const warningFor = (fp, crop) => {
+    if (!crop) return null;
+    const checker = getRotationRules()[crop];
+    const violations = checker ? checker(fp.histEntry?.history || {}, nextYear) : [];
+    return violations.length > 0 ? violations[0] : null;
+  };
+
+  const buildEntry = fp => ({ common: fp.field.common, fieldNum: fp.field.fieldNum, acres: fp.field.acres, crop: cropFor(fp) });
+
+  const applyAll = () => {
+    const planByField = fieldPlans.map(buildEntry).filter(p => p.crop);
+    if (planByField.length === 0) return;
+    setApplying(true);
+    onApplyPlan(planByField);
+  };
+
+  const applyOne = fp => {
+    const entry = buildEntry(fp);
+    if (!entry.crop) return;
+    onApplyPlan([entry]);
+  };
+
+  const warnCount = fieldPlans.filter(fp => warningFor(fp, cropFor(fp))).length;
+
+  return (
+    <div style={{padding:"24px",maxWidth:1000,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#1a3010"}}>Plan {nextYear} rotation</div>
+          <div style={{fontSize:12,color:"#7a9260",marginTop:2}}>Suggestions use the same rotation + plantback rules as the crop picker — {fieldPlans.length} field{fieldPlans.length!==1?"s":""}{warnCount>0?`, ${warnCount} flagged`:""}.</div>
+        </div>
+        <button onClick={applyAll} disabled={applying}
+          style={{background:applying?"#4a9030":"#2a7a18",border:"none",borderRadius:5,padding:"8px 18px",fontSize:12,fontWeight:600,cursor:applying?"default":"pointer",color:"#fff",fontFamily:"'Barlow',sans-serif"}}>
+          {applying?"Applying…":`Apply all to ${nextYear}`}
+        </button>
+      </div>
+
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead><tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
+          {["Field","This Year","Last Year","Suggested","Plan",""].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {fieldPlans.map((fp,i) => {
+            const hist = fp.histEntry?.history || {};
+            const thisYr = hist[activeYear] || fp.field.crop;
+            const lastYr = hist[String(+activeYear-1)];
+            const crop = cropFor(fp);
+            const warn = warningFor(fp, crop);
+            return (
+              <tr key={fp.field.id} style={{background:i%2===0?"#f6f9f0":"#fff",borderBottom:"1px solid #e0eccc"}}>
+                <td style={{padding:"6px 10px",fontWeight:600,color:"#1a3010"}}>{fp.field.common}</td>
+                <td style={{padding:"6px 10px"}}>{thisYr?<span style={{background:cropColor(thisYr),padding:"1px 7px",borderRadius:3,fontSize:10,color:"#fff",fontWeight:600}}>{thisYr}</span>:<span style={{color:"#ccc"}}>—</span>}</td>
+                <td style={{padding:"6px 10px"}}>{lastYr?<span style={{background:cropColor(lastYr),padding:"1px 7px",borderRadius:3,fontSize:10,color:"#fff",fontWeight:600}}>{lastYr}</span>:<span style={{color:"#ccc"}}>—</span>}</td>
+                <td style={{padding:"6px 10px",fontSize:11,color:fp.top?"#2a7010":"#c07010"}}>
+                  {fp.top ? `🌱 ${fp.top.crop}` : "no eligible pick"}
+                  {fp.top&&<div style={{fontSize:9,color:"#8a9a70"}}>{fp.top.lastUsed?`last grown ${fp.top.lastUsed}`:"not grown before"}</div>}
+                </td>
+                <td style={{padding:"5px 10px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <select value={crop} onChange={e=>setPlan(p=>({...p,[fp.field.id]:e.target.value}))}
+                      style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:150}}>
+                      <option value="">—</option>
+                      {cropOpts.map(c=><option key={c}>{c}</option>)}
+                    </select>
+                    {warn&&<span title={warn} style={{fontSize:12}}>⚠️</span>}
+                  </div>
+                </td>
+                <td style={{padding:"5px 10px"}}>
+                  <button onClick={()=>applyOne(fp)} disabled={!crop}
+                    style={{background:"none",border:"1px solid #5a9040",borderRadius:3,padding:"3px 10px",fontSize:10,cursor:crop?"pointer":"not-allowed",color:"#3a7020",opacity:crop?1:0.5}}>Apply</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{fontSize:10,color:"#8a9a70",marginTop:10,fontStyle:"italic"}}>
+        ⚠️ flags a rotation-rule conflict on the selected crop — applying still saves it, nothing is blocked. "Apply" creates {nextYear} (copied from {activeYear}) the first time it's used, then just updates that field's crop.
+      </div>
+    </div>
+  );
+}
+
 // ── CSV Export ────────────────────────────────────────────────────────────────
 // tenantId/fieldHistory/activeYear are only used to compute each tenant's OWN
 // real actual-vs-projected figures (calcFieldActuals) — nothing here ever
@@ -5036,6 +5143,38 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
     setMainView("table");
   },[years,activeYear,fields]);
 
+  // Bulk version of FieldHistoryTab's single-field handlePlant — applies a
+  // crop plan to several fields for next year in one pass instead of one
+  // read-modify-write cycle per field (which would race against itself if
+  // called in a loop). Field identity is common+fieldNum, not id — createYear
+  // regenerates every field's id when it copies a year forward, so id can't
+  // be used to match across years the way it can within one year.
+  const applyRotationPlan=useCallback((planByField)=>{
+    if(!planByField||planByField.length===0) return;
+    const ny=String(+activeYear+1);
+    const doApply=()=>{
+      try{
+        const raw=localStorage.getItem('agriplan_fields_'+ny);
+        if(!raw) return;
+        const savedFields=JSON.parse(raw);
+        const updated=savedFields.map(f=>{
+          const p=planByField.find(x=>x.common===f.common&&x.fieldNum===f.fieldNum)
+            || planByField.find(x=>x.common===f.common&&Math.abs(x.acres-f.acres)<1);
+          return p?{...f,crop:p.crop}:f;
+        });
+        localStorage.setItem('agriplan_fields_'+ny,JSON.stringify(updated));
+        fbSaveFields(ny,updated).catch(()=>{});
+      }catch(e){ console.warn('applyRotationPlan error:',e); }
+      switchYear(ny);
+    };
+    if(!years.includes(ny)){
+      createYear(ny,'copy',activeYear);
+      setTimeout(doApply,600);
+    }else{
+      doApply();
+    }
+  },[activeYear,years,switchYear,createYear]);
+
   const deleteYear=useCallback((yr)=>{
     if(years.length<=1){alert("Cannot delete the only year.");return;}
     // Remove from years list
@@ -5315,6 +5454,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {canUndo&&<button onClick={handleUndo} title="Undo last change" style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:4,padding:"4px 10px",color:"#a8d880",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↩ Undo</button>}
         {saveStatus==='saving'&&<span style={{fontSize:10,color:"#90c870",opacity:0.8}}>⟳ Saving...</span>}
         <button onClick={()=>setShowRulesEditor(true)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:4,padding:"4px 10px",color:"#a8d880",fontSize:10,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} title="Edit rotation rules">⚙ Rotation Rules</button>
+        <button onClick={()=>{setMainView("rotationPlan");setSelectedField(null);setAddMode(false);}} style={{background:mainView==="rotationPlan"?"#2a5a18":"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}} title="Plan next year's crop across every field">🌱 Plan Next Year</button>
         {saveStatus==='saved'&&<span style={{fontSize:10,color:"#90e870"}}>✓ Saved</span>}
         {saveStatus==='queued'&&<span style={{fontSize:11,color:"#ffb060",background:"rgba(255,150,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ffb060"}} title="Saved on this device — will sync automatically when signal returns">⚠ Offline — saved locally</span>}
         {saveStatus==='error'&&<span style={{fontSize:11,color:"#ff6050",background:"rgba(255,80,50,0.15)",padding:"3px 10px",borderRadius:4,border:"1px solid #ff6050",cursor:"pointer"}} title="Click to retry" onClick={()=>saveFields(activeYear,fields,(s)=>setSaveStatus(s))}>⚠ Save failed — tap to retry</span>}
@@ -5397,6 +5537,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
           :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} onApplyActualExpenses={applyActualExpenses} />)
           :mainView==="harvest"&&perms.canViewCosts?(<FarmHarvestView fields={fields} activeYear={activeYear} fieldHistory={fieldHistory} onApplyHarvest={applyHarvest} />)
+          :mainView==="rotationPlan"?(<RotationPlanView fields={fields} fieldHistory={fieldHistory} activeYear={activeYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} onApplyPlan={applyRotationPlan} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onSaveActualBushels={saveActualBushels} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
