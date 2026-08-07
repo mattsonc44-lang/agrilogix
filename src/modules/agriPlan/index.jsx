@@ -1615,6 +1615,52 @@ function FarmHarvestView({ fields, activeYear, fieldHistory, onApplyHarvest }) {
   );
 }
 
+// Crop dropdown for the rotation planner that shows each option's projected
+// net $/ac right in the list (getCropProfitability, same engine the field's
+// own History tab suggestion cards use) instead of a bare crop name — so you
+// can compare options without opening each one individually. A native
+// <select> can't style its <option> rows this way, hence the custom popover.
+function PlanCropPicker({ value, onChange, cropOpts, acres, fieldCommon, warnFor, canViewCosts }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  return (
+    <div ref={ref} style={{position:"relative",display:"inline-block"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{background:"#fff",border:"1px solid #2a4030",borderRadius:4,padding:"4px 8px",fontSize:12,fontFamily:"'Barlow',sans-serif",color:"#1a3010",cursor:"pointer",display:"flex",alignItems:"center",gap:6,width:150,textAlign:"left"}}>
+        <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value||"— select —"}</span>
+        <span style={{fontSize:9,opacity:0.5,flexShrink:0}}>▾</span>
+      </button>
+      {open&&(
+        <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#fff",border:"1px solid #2a4030",borderRadius:5,width:230,maxHeight:280,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.35)",marginTop:2}}>
+          {cropOpts.map(c=>{
+            const prof = canViewCosts ? getCropProfitability(c, acres, fieldCommon) : null;
+            const warn = warnFor(c);
+            return (
+              <div key={c} onClick={()=>{onChange(c);setOpen(false);}}
+                style={{padding:"6px 10px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:c===value?"#e8f8e0":"transparent"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#f0f8e8"}
+                onMouseLeave={e=>e.currentTarget.style.background=c===value?"#e8f8e0":"transparent"}>
+                <span style={{fontSize:12,color:"#1a3010",display:"flex",alignItems:"center",gap:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {c}{warn&&<span style={{fontSize:11,flexShrink:0}} title={warn}>⚠️</span>}
+                </span>
+                {prof&&(
+                  <span style={{fontSize:10,fontFamily:"'IBM Plex Mono',monospace",color:prof.projNet>=0?"#1a6010":"#c02020",whiteSpace:"nowrap",flexShrink:0}}>
+                    {f$(prof.projNet,true)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Rotation Planner (multi-field "plan next year" view) ──────────────────────
 // Reuses getCropSuggestions (the same rotation + plantback-aware scoring
 // engine the single-field History tab already uses via handlePlant) across
@@ -1708,11 +1754,9 @@ function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions,
                 </td>
                 <td style={{padding:"5px 10px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <select value={crop} onChange={e=>setPlan(pr=>({...pr,[fp.field.id]:e.target.value}))}
-                      style={{border:"1px solid #2a4030",borderRadius:4,padding:"4px 7px",fontSize:12,fontFamily:"'Barlow',sans-serif",outline:"none",width:150}}>
-                      <option value="">—</option>
-                      {cropOpts.map(c=><option key={c}>{c}</option>)}
-                    </select>
+                    <PlanCropPicker value={crop} onChange={c=>setPlan(pr=>({...pr,[fp.field.id]:c}))}
+                      cropOpts={cropOpts} acres={fp.field.acres} fieldCommon={fp.field.common}
+                      warnFor={c=>warningFor(fp,c)} canViewCosts={p.canViewCosts}/>
                     {warn&&<span title={warn} style={{fontSize:12}}>⚠️</span>}
                   </div>
                 </td>
