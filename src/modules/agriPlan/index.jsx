@@ -1635,7 +1635,12 @@ function PlanCropPicker({ value, onChange, cropOpts, acres, fieldCommon, warnFor
         <span style={{fontSize:9,opacity:0.5,flexShrink:0}}>▾</span>
       </button>
       {open&&(
-        <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#fff",border:"1px solid #2a4030",borderRadius:5,width:230,maxHeight:280,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.35)",marginTop:2}}>
+        <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#fff",border:"1px solid #2a4030",borderRadius:5,width:270,maxHeight:320,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.35)",marginTop:2}}>
+          {canViewCosts&&(
+            <div style={{padding:"5px 10px 3px",fontSize:8,color:"#8a9a70",textTransform:"uppercase",letterSpacing:0.6,display:"flex",justifyContent:"flex-end",gap:10}}>
+              <span style={{width:52,textAlign:"right"}}>Guar</span><span style={{width:52,textAlign:"right"}}>Proj</span>
+            </div>
+          )}
           {cropOpts.map(c=>{
             const prof = canViewCosts ? getCropProfitability(c, acres, fieldCommon) : null;
             const warn = warnFor(c);
@@ -1648,8 +1653,9 @@ function PlanCropPicker({ value, onChange, cropOpts, acres, fieldCommon, warnFor
                   {c}{warn&&<span style={{fontSize:11,flexShrink:0}} title={warn}>⚠️</span>}
                 </span>
                 {prof&&(
-                  <span style={{fontSize:10,fontFamily:"'IBM Plex Mono',monospace",color:prof.projNet>=0?"#1a6010":"#c02020",whiteSpace:"nowrap",flexShrink:0}}>
-                    {f$(prof.projNet,true)}
+                  <span style={{display:"flex",gap:10,flexShrink:0}}>
+                    <span style={{width:52,textAlign:"right",fontSize:10,fontFamily:"'IBM Plex Mono',monospace",color:prof.guarNet>=0?"#1a6010":"#c02020"}}>{f$(prof.guarNet,true)}</span>
+                    <span style={{width:52,textAlign:"right",fontSize:10,fontFamily:"'IBM Plex Mono',monospace",color:prof.projNet>=0?"#1a6010":"#c02020"}}>{f$(prof.projNet,true)}</span>
                   </span>
                 )}
               </div>
