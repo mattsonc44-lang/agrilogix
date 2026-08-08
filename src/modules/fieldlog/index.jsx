@@ -125,6 +125,7 @@ scouting: {label:"Scouting", icon:"🔍",color:"#2A7A3A"},
 rockPicking: {label:"Rock Picking", icon:"🪨",color:"#9A7060"},
 tillage: {label:"Tillage", icon:"⚙️", color:"#6B8F71"},
 harvest: {label:"Harvest", icon:"🌾",color:"#C09010"},
+soilTest: {label:"Soil Test", icon:"🧪",color:"#7A5A3A"},
 other: {label:"Other", icon:"📋",color:"#888888"},
 };
 const DEMO_FIELDS = [
@@ -1384,6 +1385,58 @@ return(
 );
 }
 
+function SoilTestForm({v,set}){
+const ph = parseFloat(v.ph);
+const p = parseFloat(v.phosphorus);
+const k = parseFloat(v.potassium);
+const om = parseFloat(v.organicMatter);
+
+const phNote = !isNaN(ph) ? (ph<5.5?{t:"Strongly acidic",c:"#B03A2A"}:ph<6.0?{t:"Acidic",c:"#B87A1A"}:ph<=7.2?{t:"Optimal range",c:"#2A7010"}:ph<=7.8?{t:"Slightly alkaline",c:"#B87A1A"}:{t:"Alkaline",c:"#B03A2A"}) : null;
+const pNote = !isNaN(p) ? (p<15?{t:"Low",c:"#B03A2A"}:p<25?{t:"Medium",c:"#B87A1A"}:{t:"High",c:"#2A7010"}) : null;
+const kNote = !isNaN(k) ? (k<125?{t:"Low",c:"#B03A2A"}:k<175?{t:"Medium",c:"#B87A1A"}:{t:"High",c:"#2A7010"}) : null;
+
+return(
+<div>
+<div style={{background:"#F8F6EC",border:`1px solid #E0CFA0`,borderRadius:"8px",padding:"14px",marginBottom:"14px"}}>
+<p style={{margin:"0 0 12px",fontSize:"11px",color:"#7A6020",textTransform:"uppercase",letterSpacing:"0.9px",fontWeight:700}}>🧪 Soil Test Results</p>
+<div style={S.g2}>
+<div style={S.row}>
+<label style={S.label}>pH</label>
+<input style={S.input} type="number" step="0.1" placeholder="e.g. 6.4" value={v.ph||""} onChange={e=>set({...v,ph:e.target.value})}/>
+{phNote && <div style={{fontSize:"12px",color:phNote.c,marginTop:"4px",fontWeight:600}}>{phNote.t}</div>}
+</div>
+<div style={S.row}>
+<label style={S.label}>Organic Matter (%)</label>
+<input style={S.input} type="number" step="0.1" placeholder="e.g. 3.2" value={v.organicMatter||""} onChange={e=>set({...v,organicMatter:e.target.value})}/>
+</div>
+</div>
+<div style={S.g2}>
+<div style={S.row}>
+<label style={S.label}>Phosphorus (P, ppm)</label>
+<input style={S.input} type="number" step="0.1" placeholder="e.g. 18" value={v.phosphorus||""} onChange={e=>set({...v,phosphorus:e.target.value})}/>
+{pNote && <div style={{fontSize:"12px",color:pNote.c,marginTop:"4px",fontWeight:600}}>{pNote.t}</div>}
+</div>
+<div style={S.row}>
+<label style={S.label}>Potassium (K, ppm)</label>
+<input style={S.input} type="number" step="0.1" placeholder="e.g. 150" value={v.potassium||""} onChange={e=>set({...v,potassium:e.target.value})}/>
+{kNote && <div style={{fontSize:"12px",color:kNote.c,marginTop:"4px",fontWeight:600}}>{kNote.t}</div>}
+</div>
+</div>
+<div style={S.g2}>
+<div style={S.row}>
+<label style={S.label}>Testing Lab</label>
+<input style={S.input} type="text" placeholder="e.g. AgVise Labs" value={v.lab||""} onChange={e=>set({...v,lab:e.target.value})}/>
+</div>
+<div style={S.row}>
+<label style={S.label}>Sample Depth (in)</label>
+<input style={S.input} type="number" step="1" placeholder="e.g. 6" value={v.sampleDepth||""} onChange={e=>set({...v,sampleDepth:e.target.value})}/>
+</div>
+</div>
+</div>
+</div>
+);
+}
+
 // ── Spraying Form ─────────────────────────────────────────────────────
 function SprayingForm({v,set,products={},onAddChemical,acres}){
 const mix=v.tankMix||[];
@@ -1637,6 +1690,9 @@ return parts.join(" · ")||"Scouting observation";
 if(activity.type==="harvest"){
 return [d.crop&&`Crop: ${d.crop}`, d.yieldPerAc&&`${d.yieldPerAc} bu/ac`, d.moisture&&`${d.moisture}% moisture`, d.grade&&d.grade, d.deliveredTo&&`→ ${d.deliveredTo}`].filter(Boolean).join(" · ");
 }
+if(activity.type==="soilTest"){
+return [d.ph&&`pH ${d.ph}`, d.phosphorus&&`P ${d.phosphorus}ppm`, d.potassium&&`K ${d.potassium}ppm`, d.organicMatter&&`OM ${d.organicMatter}%`, d.lab&&d.lab].filter(Boolean).join(" · ")||"Soil test";
+}
 return d.details||"";
 };
 const detail=()=>{
@@ -1706,6 +1762,16 @@ if(activity.type==="harvest") return(
 {canCost&&d.price&&<span><span style={{color:T.muted}}>Price:</span> ${d.price}/bu</span>}
 {d.equipment&&<span><span style={{color:T.muted}}>Equipment:</span> {d.equipment}</span>}
 {canCost&&d.price&&d.totalBushels&&<span style={{gridColumn:"span 2",fontWeight:700,color:T.blue}}>Revenue: ${(parseFloat(d.price)*parseFloat(d.totalBushels)).toLocaleString("en-US",{maximumFractionDigits:0})}</span>}
+</div>
+);
+if(activity.type==="soilTest") return(
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px 16px",marginTop:"10px",fontSize:"13px"}}>
+{d.ph&&<span><span style={{color:T.muted}}>pH:</span> {d.ph}</span>}
+{d.organicMatter&&<span><span style={{color:T.muted}}>Organic Matter:</span> {d.organicMatter}%</span>}
+{d.phosphorus&&<span><span style={{color:T.muted}}>Phosphorus (P):</span> {d.phosphorus} ppm</span>}
+{d.potassium&&<span><span style={{color:T.muted}}>Potassium (K):</span> {d.potassium} ppm</span>}
+{d.lab&&<span><span style={{color:T.muted}}>Lab:</span> {d.lab}</span>}
+{d.sampleDepth&&<span><span style={{color:T.muted}}>Depth:</span> {d.sampleDepth} in</span>}
 </div>
 );
 return d.details?<p style={{marginTop:"8px",fontSize:"13px"}}>{d.details}</p>:null;
@@ -2212,6 +2278,7 @@ return (
 </>}
 {type==="scouting" &&<ScoutingForm v={data} set={setData}/>}
 {type==="harvest" &&<HarvestForm v={data} set={setData} cropList={_flCrops||CROPS} perms={perms}/>}
+{type==="soilTest" &&<SoilTestForm v={data} set={setData}/>}
 {["rockPicking","tillage","other"].includes(type)&&<div style={S.row}><label style={S.label}>Details / Equipment</label><input style={S.input} type="text" placeholder="Describe equipment, area, conditions…" value={data.details||""} onChange={e=>setData({...data,details:e.target.value})}/></div>}
 {type&&(
 <div style={S.row}>
@@ -4477,6 +4544,30 @@ await dbWrite(path, merged, token);
 }catch(e){ console.warn("Chem restriction write failed:", e); }
 }, [tenantId, token, fields, products]);
 
+// ── Soil test mirror writer ───────────────────────────────────────────────────
+// Called after any soilTest activity is saved — writes the latest reading to a
+// shared Firebase path that AgriPlan can read for fertility warnings when planning crops
+const writeSoilTestMirror = useCallback(async (activity) => {
+if(!tenantId || !token) return;
+const field = fields.find(f => f.id === activity.fieldId);
+if(!field) return;
+const d = activity.data || {};
+if(!d.ph && !d.phosphorus && !d.potassium && !d.organicMatter) return;
+const safeKey = field.name.replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
+try{
+const path = `tenants/${tenantId}/fieldSoilTests/${safeKey}`;
+const existing = await dbRead(path, token).catch(()=>null);
+// Only overwrite if this test is same-or-newer than what's already mirrored
+if(existing?.date && new Date(activity.date) < new Date(existing.date)) return;
+const merged = {
+fieldName: field.name, date: activity.date,
+ph: d.ph||null, phosphorus: d.phosphorus||null, potassium: d.potassium||null,
+organicMatter: d.organicMatter||null, lab: d.lab||null,
+};
+await dbWrite(path, merged, token);
+}catch(e){ console.warn("Soil test mirror write failed:", e); }
+}, [tenantId, token, fields]);
+
 // ── Mutations ─────────────────────────────────────────────
 const addField=(f)=>{
 const nf=[...fields,f]; setFields(nf); persist(nf,activities); setView("home");
@@ -4517,10 +4608,12 @@ const nf=fields.map(f=>f.id===id?{...f,...u}:f); setFields(nf); persist(nf,activ
 const addActivity=(a)=>{
 const na=[...activities,a]; setActs(na); persist(fields,na);
 if(a.type==="spraying") writeChemRestrictions(a);
+if(a.type==="soilTest") writeSoilTestMirror(a);
 };
 const editActivity=(a)=>{
 const na=activities.map(x=>x.id===a.id?a:x); setActs(na); persist(fields,na);
 if(a.type==="spraying") writeChemRestrictions(a);
+if(a.type==="soilTest") writeSoilTestMirror(a);
 };
 const delActivity=(id)=>{
 const na=activities.filter(a=>a.id!==id); setActs(na); persist(fields,na);
