@@ -1677,19 +1677,21 @@ function PlanCropPicker({ value, onChange, cropOpts, acres, fieldCommon, warnFor
 // plan farm-wide from one screen instead of visiting each field separately.
 // Nothing here is a new rules engine — it's the existing suggestion/warning
 // logic, just applied in bulk.
-function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions, tenantId, onApplyPlan, perms }) {
+function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions, soilTests, tenantId, onApplyPlan, perms }) {
   const p = perms || PERMS.owner;
   const nextYear = String(+activeYear + 1);
   const cropOpts = _tenantCrops || ALL_CROPS;
+  const soilKey = c => (c || "").replace(/[.#$[\]\/]/g, '_').replace(/\s+/g, '_');
 
   const fieldPlans = useMemo(() => {
     return fields.map(f => {
       const histEntry = resolveFieldHistoryEntry(f, fieldHistory[f.common] || {}, tenantId);
       const suggestions = getCropSuggestions(histEntry, activeYear, fieldRestrictions, f.common);
       const top = suggestions.find(s => s.eligible) || suggestions[0] || null;
-      return { field: f, histEntry, suggestions, top, defaultCrop: top?.crop || f.crop || "" };
+      const soil = (soilTests || {})[soilKey(f.common)] || null;
+      return { field: f, histEntry, suggestions, top, defaultCrop: top?.crop || f.crop || "", soil };
     });
-  }, [fields, fieldHistory, activeYear, fieldRestrictions, tenantId]);
+  }, [fields, fieldHistory, activeYear, fieldRestrictions, soilTests, tenantId]);
 
   const [plan, setPlan] = useState({}); // fieldId -> manual override, falls back to defaultCrop
   const [applying, setApplying] = useState(false);
@@ -1699,7 +1701,9 @@ function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions,
     if (!crop) return null;
     const checker = getRotationRules()[crop];
     const violations = checker ? checker(fp.histEntry?.history || {}, nextYear) : [];
-    return violations.length > 0 ? violations[0] : null;
+    const rotWarn = violations.length > 0 ? violations[0] : null;
+    const fertWarns = getFertilityWarning(crop, fp.soil);
+    return [rotWarn, ...fertWarns].filter(Boolean).join(" · ") || null;
   };
 
   const buildEntry = fp => ({ common: fp.field.common, fieldNum: fp.field.fieldNum, acres: fp.field.acres, crop: cropFor(fp) });
@@ -1734,7 +1738,7 @@ function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions,
 
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
         <thead><tr style={{background:"#1e3a18",color:"#c8e8a0"}}>
-          {["Field","History","Suggested","Plan",...(p.canViewCosts?["Est. Net (of Plan)"]:[]),""].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}
+          {["Field","History","Soil","Suggested","Plan",...(p.canViewCosts?["Est. Net (of Plan)"]:[]),""].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}
         </tr></thead>
         <tbody>
           {fieldPlans.map((fp,i) => {
@@ -1756,6 +1760,14 @@ function RotationPlanView({ fields, fieldHistory, activeYear, fieldRestrictions,
                     {thisYr?<span style={{background:cropColor(thisYr),padding:"1px 7px",borderRadius:3,fontSize:10,color:"#fff",fontWeight:600}}>{thisYr}</span>:<span style={{color:"#ccc",fontSize:10}}>—</span>}
                     {lastYr&&<span style={{background:cropColor(lastYr),padding:"1px 7px",borderRadius:3,fontSize:10,color:"#fff",fontWeight:600,opacity:0.7}}>{lastYr}</span>}
                   </div>
+                </td>
+                <td style={{padding:"6px 10px",fontSize:10}}>
+                  {fp.soil ? (
+                    <div>
+                      <div style={{color:"#3a5028"}}>pH {fp.soil.ph||"—"} · P {fp.soil.phosphorus||"—"} · K {fp.soil.potassium||"—"}</div>
+                      <div style={{fontSize:9,color:"#8a9a70"}}>{fp.soil.date?new Date(fp.soil.date).toLocaleDateString("en-US",{month:"short",year:"numeric"}):""}</div>
+                    </div>
+                  ) : <span style={{color:"#ccc"}}>No test yet</span>}
                 </td>
                 <td style={{padding:"6px 10px",fontSize:11,color:fp.top?"#2a7010":"#c07010"}}>
                   {fp.top ? `🌱 ${fp.top.crop}` : "no eligible pick"}
@@ -2165,6 +2177,38 @@ function getPlantbackWarnings(fieldRestrictions, fieldCommon, crop) {
     }
   }
   return warnings.sort((a, b) => b.daysRemaining - a.daysRemaining);
+}
+
+// ── Fertility / soil-test warnings ────────────────────────────────────────────
+// Lightweight crop-vs-soil-test conflict check, sourced from the latest FieldLog
+// soil test mirrored to tenants/{tenantId}/fieldSoilTests/{safeKey}. Warn-only —
+// never blocks a crop selection — matching the plantback-warning treatment above.
+const FERTILITY_PROFILES = {
+  "Canola":     { minP: 15, minK: 125, phMin: 5.5, phMax: 7.5, note: "heavy P/K feeder" },
+  "Corn":       { minP: 20, minK: 150, phMin: 5.8, phMax: 7.5, note: "heavy feeder" },
+  "Sunflower":  { minP: 15, minK: 125, note: "heavy P feeder" },
+  "Peas":       { phMin: 6.0, phMax: 7.8, note: "pH-sensitive legume" },
+  "Lentils":    { phMin: 6.0, phMax: 7.8, note: "pH-sensitive legume" },
+  "Chickpeas":  { phMin: 6.0, phMax: 7.8, note: "pH-sensitive legume" },
+  "Alfalfa":    { minK: 150, phMin: 6.5, phMax: 7.8, note: "pH-sensitive, heavy K feeder" },
+  "Durum":      { minP: 15 },
+  "Wheat":      { minP: 12 },
+  "Barley":     { minP: 12 },
+};
+function getFertilityWarning(crop, soilTest) {
+  if (!crop || !soilTest) return [];
+  const profile = FERTILITY_PROFILES[crop]
+    || FERTILITY_PROFILES[crop?.replace("Spring ", "").replace("Winter ", "").replace("CC ", "")];
+  if (!profile) return [];
+  const warnings = [];
+  const ph = parseFloat(soilTest.ph);
+  const p = parseFloat(soilTest.phosphorus);
+  const k = parseFloat(soilTest.potassium);
+  if (!isNaN(ph) && profile.phMin != null && ph < profile.phMin) warnings.push(`pH ${ph} is below ${crop}'s preferred range (${profile.phMin}–${profile.phMax})`);
+  if (!isNaN(ph) && profile.phMax != null && ph > profile.phMax) warnings.push(`pH ${ph} is above ${crop}'s preferred range (${profile.phMin}–${profile.phMax})`);
+  if (!isNaN(p) && profile.minP != null && p < profile.minP) warnings.push(`Phosphorus ${p}ppm is low for ${crop} (${profile.note || "a heavier feeder"})`);
+  if (!isNaN(k) && profile.minK != null && k < profile.minK) warnings.push(`Potassium ${k}ppm is low for ${crop} (${profile.note || "a heavier feeder"})`);
+  return warnings;
 }
 
 // ── Field history lookup (manual entries take priority over the legacy seed
@@ -5018,6 +5062,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   _fieldHistory       = fieldHistory;
   _cropPrices         = Object.keys(cropPrices).length > 0 ? cropPrices : null;
   const [fieldRestrictions,setFieldRestrictions] = useState({}); // chemical plantback data from FieldLog
+  const [soilTests,setSoilTests] = useState({}); // latest soil test per field from FieldLog
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const saveTimer = useRef(null);
   const undoStack = useRef([]);
@@ -5059,6 +5104,9 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
       // Load chemical plantback restrictions written by FieldLog
       fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldRestrictions.json?auth=${token}`)
         .then(r=>r.json()).then(d=>{ if(d) setFieldRestrictions(d); }).catch(()=>{});
+      // Load latest soil test results written by FieldLog
+      fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/tenants/${tenantId}/fieldSoilTests.json?auth=${token}`)
+        .then(r=>r.json()).then(d=>{ if(d) setSoilTests(d); }).catch(()=>{});
       // Load seeding logs from FieldLog (Default Farm) for cross-module display
       (async () => {
         try {
@@ -5630,7 +5678,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
           :mainView==="history"&&(!tenantId||aphData||Object.keys(fieldHistory||{}).length>0)?(<HistoryView fields={filtered} allFields={fields} onSelectField={id=>{selectField(id);}} aphData={aphData} fieldHistory={fieldHistory} onDeleteAphCrop={deleteAphCrop} tenantId={tenantId} />)
           :mainView==="expenses"&&perms.canViewCosts?(<FarmExpensesView fields={fields} activeYear={activeYear} onApplyExpenses={(entity,rates)=>{pushUndo(fields);setFields(p=>p.map(f=>f.entity===entity?{...f,expenseOverrides:{...(f.expenseOverrides||{}),...rates}}:f));}} onApplyActualExpenses={applyActualExpenses} />)
           :mainView==="harvest"&&perms.canViewCosts?(<FarmHarvestView fields={fields} activeYear={activeYear} fieldHistory={fieldHistory} onApplyHarvest={applyHarvest} />)
-          :mainView==="rotationPlan"?(<RotationPlanView fields={fields} fieldHistory={fieldHistory} activeYear={activeYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} onApplyPlan={applyRotationPlan} perms={perms} />)
+          :mainView==="rotationPlan"?(<RotationPlanView fields={fields} fieldHistory={fieldHistory} activeYear={activeYear} fieldRestrictions={fieldRestrictions} soilTests={soilTests} tenantId={tenantId} onApplyPlan={applyRotationPlan} perms={perms} />)
           :mainView==="detail"&&selectedField?(<FieldDetail field={selectedField} onUpdateIncome={updateIncome} onUpdateExpense={updateExpense} onResetExpense={resetExpense} onUpdateActualExpense={updateActualExpense} onSaveActualBushels={saveActualBushels} onUpdate={updateField} onDelete={deleteField} activeYear={activeYear} allFields={fields} years={years} createYear={createYear} switchYear={switchYear} fieldRestrictions={fieldRestrictions} tenantId={tenantId} token={token} fieldHistory={fieldHistory} flSeedLogs={flSeedLogs} perms={perms} onSaveFieldHistory={(common,hist)=>{
             const updated={...fieldHistory,[common]:hist};
             setFieldHistory(updated);
