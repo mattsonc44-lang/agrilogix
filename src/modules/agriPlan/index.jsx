@@ -3474,7 +3474,7 @@ function FieldsTable({fields,onSelect,onExportCSV,onPrint,seedLogs={},fieldHisto
       <div style={{fontSize:12,color:"#7a9260"}}>— {fields.length} units · {totAc.toFixed(0)} ac</div>
       {p.canReport&&<div style={{marginLeft:"auto",display:"flex",gap:8}}>
         <button onClick={onExportCSV} style={{background:"#1a3a20",border:"1px solid #2a5030",borderRadius:4,padding:"6px 14px",color:"#2a7010",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ Export CSV</button>
-        <button onClick={onPrint} style={{background:"#d4e4f4",border:"1px solid #2a3a5a",borderRadius:4,padding:"6px 14px",color:"#70a0c0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Print / PDF</button>
+        <button onClick={onPrint} title="Prints every field, regardless of the current search/entity filter" style={{background:"#d4e4f4",border:"1px solid #2a3a5a",borderRadius:4,padding:"6px 14px",color:"#70a0c0",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Print All Fields</button>
       </div>}
     </div>
     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -5610,7 +5610,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         {tenantId&&<button onClick={()=>setShowCropsMgr(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🌾 Crops</button>}
         {tenantId&&perms.canViewCosts&&<button onClick={()=>setShowPricesEditor(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #3a6028",borderRadius:4,padding:"5px 12px",color:"#a8d880",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>💲 Prices</button>}
         {perms.canReport&&<button onClick={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a7a40",borderRadius:4,padding:"5px 12px",color:"#90d898",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>↓ CSV</button>}
-        {perms.canReport&&<button onClick={()=>openPrint(filtered,entityFilter,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Budget PDF</button>}
+        {perms.canReport&&<button onClick={()=>openPrint(fields,"all",tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} title="Prints every field, regardless of the current search/entity filter" style={{background:"rgba(255,255,255,0.1)",border:"1px solid #4a6a7a",borderRadius:4,padding:"5px 12px",color:"#90b8d8",fontSize:11,cursor:"pointer",fontFamily:"'Barlow',sans-serif"}}>🖨 Print All Fields</button>}
       </div>
     </div>
 
@@ -5684,7 +5684,7 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
             setFieldHistory(updated);
             if(tenantId&&token) fetch(`https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/fieldHistory.json?auth=${token}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(updated)}).catch(()=>{});
           }}/>)
-          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} onPrint={()=>openPrint(filtered,entityFilter,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear} perms={perms}/>)}
+          :(<FieldsTable fields={filtered} onSelect={selectField} onExportCSV={()=>exportCSV(filtered,tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} onPrint={()=>openPrint(fields,"all",tenantId,farmName,fieldHistory,activeYear,contractedByCrop)} seedLogs={flSeedLogs} fieldHistory={fieldHistory} activeYear={activeYear} perms={perms}/>)}
       </div>
     </div>
   </div>);
