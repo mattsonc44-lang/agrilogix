@@ -2858,10 +2858,29 @@ acts:results.filter(a=>a.fieldId===fid),
 const print=()=>{
 const style=document.createElement("style");
 style.id="print-style";
-style.textContent=`@media print{body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif;} .no-print{display:none!important;} .print-header{display:block!important;} .print-card{border:1px solid #ccc!important;background:#fff!important;break-inside:avoid;margin-bottom:8px;padding:10px;} h1,h2,h3{color:#000!important;}}`;
+style.textContent=`@media print{
+  @page{margin:15mm 12mm}
+  body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif;}
+  /* Strip all app chrome — sidebar, top nav, sync status, decorative watermark — so only the report prints */
+  .no-print{display:none!important;}
+  .fl-app-shell{background:#fff!important;min-height:0!important;overflow:visible!important;}
+  .fl-main-row{display:block!important;padding:0!important;gap:0!important;}
+  /* Letterhead-style report header */
+  .print-header{display:block!important;border-bottom:2px solid #2a5a20;padding-bottom:10px;margin-bottom:16px;}
+  .print-card{border:1px solid #ccc!important;background:#fff!important;break-inside:avoid;margin-bottom:8px;padding:10px;}
+  /* Force legible black body text throughout; colored left-border accents on print-card and small type badges are left alone since they're borders/backgrounds, not text */
+  h1,h2,h3,p,span,div,strong,td,th,li{color:#000!important;}
+}`;
 document.head.appendChild(style);
+// Safari (WebKit) silently no-ops window.print() when it's called in the
+// same tick as a freshly-injected <style> tag — it hasn't finished applying
+// the stylesheet yet, so nothing happens at all (no dialog, no error).
+// Chrome doesn't have this timing issue. Two animation-frame ticks give
+// Safari a full paint cycle to catch up before we trigger the dialog.
+requestAnimationFrame(()=>requestAnimationFrame(()=>{
 window.print();
 setTimeout(()=>document.getElementById("print-style")?.remove(),1000);
+}));
 };
 
 const renderDetail=(a)=>{
@@ -3551,7 +3570,7 @@ const sorted=[...fields]
 .filter(f=>f.name.toLowerCase().includes(q.toLowerCase()))
 .sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 return(
-<div style={{width:"220px",flexShrink:0,background:T.panel,border:`1px solid ${T.border}`,borderRadius:"10px",display:"flex",flexDirection:"column",position:"sticky",top:"78px",maxHeight:"calc(100vh - 100px)",overflow:"hidden"}}>
+<div className="no-print" style={{width:"220px",flexShrink:0,background:T.panel,border:`1px solid ${T.border}`,borderRadius:"10px",display:"flex",flexDirection:"column",position:"sticky",top:"78px",maxHeight:"calc(100vh - 100px)",overflow:"hidden"}}>
 <div style={{padding:"12px 14px 8px"}}>
 <div style={{fontSize:"10px",fontWeight:700,letterSpacing:"1.2px",textTransform:"uppercase",color:T.muted}}>Fields</div>
 <div style={{fontSize:"11px",color:T.faint,marginTop:"1px"}}>{fields.length} total</div>
@@ -4771,9 +4790,9 @@ if(loading) return(
 );
 
 return(
-<div style={S.app}>
+<div className="fl-app-shell" style={S.app}>
 {/* Header */}
-<div style={{...S.header,position:"sticky",top:0,height:"56px",boxSizing:"border-box"}}>
+<div className="no-print" style={{...S.header,position:"sticky",top:0,height:"56px",boxSizing:"border-box"}}>
 <div style={{position:"absolute",top:0,left:0,right:0,height:"4px",background:`linear-gradient(90deg, ${T.logoGreenSoft}, ${T.logoGold})`}}/>
 <div style={{width:"36px",height:"36px",background:T.gold,borderRadius:"8px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"20px",flexShrink:0}}>🌾</div>
 <div>
@@ -4792,15 +4811,15 @@ return(
 </div>
 
 {sync==="offline"&&(
-<div style={{background:"#FFF3E0",borderBottom:"2px solid #E08030",padding:"10px 20px",display:"flex",alignItems:"center",gap:"10px",fontSize:"12px",color:"#7A4010"}}>
+<div className="no-print" style={{background:"#FFF3E0",borderBottom:"2px solid #E08030",padding:"10px 20px",display:"flex",alignItems:"center",gap:"10px",fontSize:"12px",color:"#7A4010"}}>
 <span style={{fontSize:"16px"}}>📵</span>
 <div><strong>Offline mode</strong> — showing cached data. Any new activities will sync automatically when connection returns.</div>
 </div>
 )}
-<div style={{display:"flex",alignItems:"flex-start",gap:"20px",padding:"20px"}}>
+<div className="fl-main-row" style={{display:"flex",alignItems:"flex-start",gap:"20px",padding:"20px"}}>
 <FieldSidebar fields={fields} activeFieldId={curField?.id} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")}/>
 <div style={{...S.content,flex:1,padding:0,margin:0,maxWidth:"1100px",position:"relative",overflow:"hidden"}}>
-<div aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
+<div className="no-print" aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
 {view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
 {view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId} perms={perms} operatorName={settings.operatorName}/>}
 {view==="rotation" &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
