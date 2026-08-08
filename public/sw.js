@@ -11,7 +11,7 @@
 // to drop its cached shell — normally not needed since network-first
 // keeps the cache fresh automatically on every successful load.
 
-const CACHE_NAME = 'agrilogix-shell-v1';
+const CACHE_NAME = 'agrilogix-shell-v2';
 const CORE_ASSETS = [
   '/',
   '/index.html',
