@@ -2812,6 +2812,200 @@ Analyzing map image…
 );
 }
 
+// ── Report print (separate window) ────────────────────────────────────────────
+// Mirrors AgriPlan's/ServiceLog's openPrint pattern — open a fresh window,
+// write a fully-formed static HTML document (print CSS already embedded from
+// page load, no dynamically-injected stylesheet), and print from a plain
+// onclick="window.print()" inside that document. This sidesteps Safari's
+// window.print() quirks entirely, since AgriPlan/ServiceLog already prove
+// this exact pattern works reliably there. It also gives a clean, dedicated
+// printable page instead of trying to print the live app shell in place.
+const escapeHtml=(s)=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function htmlActivityDetail(a,fields,canCost,showGal){
+const d=a.data||{};
+if(a.type==="spraying"){
+const sprayField=fields.find(f=>f.id===a.fieldId);
+const sprayAcres=parseFloat(sprayField?.acres)||0;
+const {totalWaterGal,items:tmTotals}=calcTankMixTotals(d.tankMix,sprayAcres,d.waterVol,d.spotSpray?d.actualGal:undefined);
+const top=[
+sprayAcres>0?`Acres: ${sprayAcres}`:"",
+d.spotSpray
+?`🎯 Spot-sprayed: ${totalWaterGal!=null?`${Math.round(totalWaterGal).toLocaleString()} gal actual`:"actual gallons not recorded"}`
+:(d.waterVol?`Water: ${d.waterVol} gal/ac${totalWaterGal!=null?` (${Math.round(totalWaterGal).toLocaleString()} gal total)`:""}`:""),
+d.equipment?`Equipment: ${escapeHtml(d.equipment)}`:"",
+d.purpose?`Purpose: ${escapeHtml(d.purpose)}`:"",
+].filter(Boolean).map(s=>`<span>${s}</span>`).join("");
+let tbl="";
+if((d.tankMix||[]).length>0){
+const rows=d.tankMix.map((c,i)=>{
+const tot=tmTotals[i];
+const name=c.chemical==="Other"?(c.chemicalName||"—"):c.chemical;
+const totalTxt=tot?.total!=null?(showGal&&tot.totalGal!=null&&!tot.totalGalAmbiguous?`${Number(tot.totalGal.toFixed(2))} gal`:`${Number(tot.total.toFixed(2))} ${tot.totalUnit}`):"—";
+return `<tr><td>${escapeHtml(name)}</td><td class="r">${escapeHtml(c.oz)} ${escapeHtml(c.unit)}</td><td class="r">${totalTxt}</td></tr>`;
+}).join("");
+tbl=`<table><thead><tr><th>Chemical</th><th class="r">Rate</th><th class="r">Total Applied</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+return `<div class="meta-row">${top}</div>${tbl}`;
+}
+if(a.type==="seeding"){
+const crops=d.crops||(d.crop?[{crop:d.crop,seedRate:d.seedRate,totalSeed:d.totalSeed}]:[]);
+const ferts=d.ferts||(d.fertBlend?[{blend:d.fertBlend,custom:d.fertCustom,rate:d.fertRate,total:d.totalFert,placement:"Seed-placed"}]:[]);
+const inoculants=d.inoculants||(d.inoculantProduct?[{product:d.inoculantProduct,rate:d.inoculantRate}]:[]);
+let out="";
+if(crops.length>0){
+out+=`<table><thead><tr><th>Crop</th><th class="r">Rate (lbs/ac)</th><th class="r">Total (lbs)</th></tr></thead><tbody>${
+crops.map(c=>`<tr><td><strong>${escapeHtml(c.crop||"—")}</strong></td><td class="r">${escapeHtml(c.seedRate||"—")}</td><td class="r">${c.totalSeed?Number(c.totalSeed).toLocaleString():"—"}</td></tr>`).join("")
+}</tbody></table>`;
+}
+if(ferts.length>0){
+out+=`<table><thead><tr><th>Fertilizer</th><th>Placement</th><th class="r">Rate (lbs/ac)</th><th class="r">Total (lbs)</th></tr></thead><tbody>${
+ferts.map(f=>`<tr><td><strong>${escapeHtml(f.blend==="Custom Blend"?f.custom:f.blend||"—")}</strong></td><td>${escapeHtml(f.placement||"—")}</td><td class="r">${escapeHtml(f.rate||"—")}</td><td class="r">${f.total?Number(f.total).toLocaleString():"—"}</td></tr>`).join("")
+}</tbody></table>`;
+}
+if(inoculants.length>0) out+=`<div class="line"><strong>🧪 Inoculants:</strong> ${inoculants.map(n=>`${escapeHtml(n.product)}${n.rate?` @ ${escapeHtml(n.rate)}`:""}`).join(" · ")}</div>`;
+if(d.equipment||d.depth) out+=`<div class="line muted">${[d.equipment&&`Equipment: ${escapeHtml(d.equipment)}`,d.depth&&`Depth: ${escapeHtml(d.depth)}"`].filter(Boolean).join(" · ")}</div>`;
+return out;
+}
+if(a.type==="harvest"){
+const parts=[
+d.crop&&`Crop: ${escapeHtml(d.crop)}`,
+d.yieldPerAc&&`Yield: ${escapeHtml(d.yieldPerAc)} bu/ac`,
+d.totalBushels&&`Total: ${Number(d.totalBushels).toLocaleString()} bu`,
+d.moisture&&`Moisture: ${escapeHtml(d.moisture)}%`,
+d.grade&&`Grade: ${escapeHtml(d.grade)}`,
+d.deliveredTo&&`Delivered: ${escapeHtml(d.deliveredTo==="Other"?d.deliveredToCustom:d.deliveredTo)}`,
+canCost&&d.price&&d.totalBushels&&`<strong>Revenue: $${(parseFloat(d.price)*parseFloat(d.totalBushels)).toLocaleString("en-US",{maximumFractionDigits:0})}</strong>`,
+].filter(Boolean).map(s=>`<span>${s}</span>`).join("");
+return `<div class="meta-row">${parts}</div>`;
+}
+if(a.type==="soilTest"){
+const parts=[
+d.ph&&`pH: ${escapeHtml(d.ph)}`,
+d.organicMatter&&`OM: ${escapeHtml(d.organicMatter)}%`,
+d.phosphorus&&`P: ${escapeHtml(d.phosphorus)} ppm`,
+d.potassium&&`K: ${escapeHtml(d.potassium)} ppm`,
+d.lab&&`Lab: ${escapeHtml(d.lab)}`,
+d.sampleDepth&&`Depth: ${escapeHtml(d.sampleDepth)} in`,
+].filter(Boolean).map(s=>`<span>${s}</span>`).join("");
+return `<div class="meta-row">${parts}</div>`;
+}
+return d.details?`<p class="notes-p">${escapeHtml(d.details)}</p>`:"";
+}
+
+function htmlScoutDetail(d){
+let out=`<div class="meta-row">${[
+d.growthStage&&`Stage: ${escapeHtml(d.growthStage)}`,
+d.cropHealth&&`Health: ${escapeHtml(d.cropHealth)}`,
+d.standDensity&&`Stand: ${escapeHtml(d.standDensity)}`,
+d.yieldPotential&&`Yield Est: ${escapeHtml(d.yieldPotential)}`,
+].filter(Boolean).map(s=>`<span>${s}</span>`).join("")}</div>`;
+if(d.weedPressure||(d.weeds||[]).length>0){
+out+=`<div class="line"><strong style="color:#8A6010">🌿 Weeds:</strong> ${escapeHtml(d.weedPressure||"")}${d.weedThreshold?` — ${escapeHtml(d.weedThreshold)}`:""}${(d.weeds||[]).length>0?" · "+d.weeds.map(w=>`${escapeHtml(w.species==="Other"?(w.speciesName||"?"):w.species)} (${escapeHtml(w.pressure)})`).join(", "):""}</div>`;
+}
+if((d.diseases||[]).length>0){
+out+=`<div class="line"><strong style="color:#8A2010">🦠 Disease:</strong> ${d.diseases.map(x=>`${escapeHtml(x.disease==="Other"?(x.diseaseName||"?"):x.disease)} — ${escapeHtml(x.severity)}${x.affectedArea?` (${escapeHtml(x.affectedArea)})`:""}`).join(", ")}</div>`;
+}
+if((d.insects||[]).length>0){
+out+=`<div class="line"><strong style="color:#5A2080">🐛 Insects:</strong> ${d.insects.map(x=>`${escapeHtml(x.insect==="Other"?(x.insectName||"?"):x.insect)} — ${escapeHtml(x.pressure)}${x.count?` (${escapeHtml(x.count)})`:""}`).join(", ")}</div>`;
+}
+if(d.organicMatter||d.soilMoisture||d.soilPH){
+out+=`<div class="line"><strong style="color:#2A5020">🌍 Soil:</strong> ${[d.organicMatter&&`OM: ${escapeHtml(d.organicMatter)}`,d.soilMoisture&&`Moisture: ${escapeHtml(d.soilMoisture)}`,d.soilPH&&`pH: ${escapeHtml(d.soilPH)}`,d.soilNotes&&escapeHtml(d.soilNotes)].filter(Boolean).join(" · ")}</div>`;
+}
+if(d.recommendedAction){
+const urgent=d.recommendedAction.includes("Apply")||d.recommendedAction.includes("action required");
+out+=`<div class="line" style="font-weight:600;color:${urgent?"#8A2010":"#2A5020"}">→ ${escapeHtml(d.recommendedAction)}</div>`;
+}
+return out;
+}
+
+function openReportPrint({fields,results,groupedByField,sortBy,isFieldReport,filterField,meta,operatorName,canCost,showGal}){
+const title=isFieldReport?`${filterField?.name||"Field"} — Report`:`${meta.label} Report`;
+const generated=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+const fieldCount=new Set(results.map(a=>a.fieldId)).size;
+
+const css=`
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111;background:#fff}
+@page{margin:15mm 12mm}
+.page{max-width:900px;margin:0 auto;padding:24px}
+h1{font-size:22px;color:#1a3a10;margin-bottom:4px}
+.meta{font-size:12px;color:#5a7a4a;margin-bottom:18px;border-bottom:2px solid #2a5a20;padding-bottom:10px}
+h3{font-size:15px;color:#1a3010;margin:20px 0 8px;padding-bottom:6px;border-bottom:1px solid #d8ddd0;display:flex;align-items:center;gap:10px}
+.fcount{font-size:11px;color:#7a9260;font-weight:400}
+.badges{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+.badge{font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid #ccc}
+.card{border:1px solid #ccc;border-left:3px solid #999;border-radius:4px;padding:10px 12px;margin-bottom:8px;break-inside:avoid}
+.card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;font-size:12px}
+.card-type{font-weight:700;font-size:13px}
+.card-date{color:#666;font-size:11px}
+.meta-row{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin-bottom:4px}
+.meta-row span:not(:last-child)::after{content:" ";}
+.line{font-size:12px;margin-bottom:4px}
+.muted{color:#666}
+table{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px}
+th{background:#f0f0ea;text-align:left;padding:4px 8px;font-size:10px;text-transform:uppercase;color:#666}
+th.r,td.r{text-align:right}
+td{padding:4px 8px;border-bottom:1px solid #eee}
+.notes-p{font-size:12px;font-style:italic;color:#555}
+.weather-p{font-size:11px;color:#1e5078;margin-top:6px}
+.notes{font-size:11px;color:#666;font-style:italic;margin-top:6px}
+.empty{text-align:center;padding:40px;color:#999}
+.toolbar{background:#2a5a20;padding:10px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px}
+.btn{border:none;padding:7px 18px;border-radius:3px;font-size:12px;cursor:pointer;font-family:Arial,sans-serif;font-weight:600}
+@media print{.toolbar{display:none}}
+`;
+
+const cardHtml=(a)=>{
+const am=ACTIVITY_META[a.type]||ACTIVITY_META.other;
+const detail=a.type==="scouting"?htmlScoutDetail(a.data||{}):htmlActivityDetail(a,fields,canCost,showGal);
+const weather=fmtWeather(a.data?.weather);
+const fname=fields.find(f=>f.id===a.fieldId)?.name||"Unknown Field";
+return `<div class="card" style="border-left-color:${am.color}">
+<div class="card-head">
+${!isFieldReport&&sortBy!=="field"?`<strong>🌾 ${escapeHtml(fname)}</strong><span class="muted">·</span>`:""}
+<span>${am.icon}</span><span class="card-type" style="color:${am.color}">${escapeHtml(am.label)}</span>
+<span class="muted">·</span><span class="card-date">${fmtDate(a.date)}</span>
+</div>
+${detail}
+${weather?`<p class="weather-p">🌡️ ${escapeHtml(weather)}</p>`:""}
+${a.notes?`<p class="notes">📝 ${escapeHtml(a.notes)}</p>`:""}
+</div>`;
+};
+
+let body;
+if(results.length===0){
+body=`<div class="empty">No ${escapeHtml(meta.label.toLowerCase())} records found.</div>`;
+}else if(!isFieldReport&&sortBy==="field"){
+body=groupedByField.map(({name,acts})=>{
+const typeBadges=Object.entries(ACTIVITY_META).filter(([k])=>acts.some(a=>a.type===k))
+.map(([k,m])=>`<span class="badge" style="color:${m.color};border-color:${m.color}66">${m.icon} ${acts.filter(a=>a.type===k).length}</span>`).join("");
+return `<h3>🌾 ${escapeHtml(name)} <span class="fcount">${acts.length} record${acts.length!==1?"s":""}</span><span class="badges">${typeBadges}</span></h3>
+${acts.map(cardHtml).join("")}`;
+}).join("");
+}else{
+body=results.map(cardHtml).join("");
+}
+
+const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AgriLogix — ${escapeHtml(title)}</title><style>${css}</style></head><body>
+<div class="toolbar">
+<span style="color:#c8e8a0;font-size:16px;font-weight:700">${escapeHtml(title)}</span>
+<button class="btn" style="background:#5cb850;color:#fff" onclick="window.print()">🖨 Print / Save PDF</button>
+<button class="btn" style="background:#3a3a3a;color:#ccc" onclick="window.close()">Close</button>
+</div>
+<div class="page">
+<h1>${escapeHtml(title)}</h1>
+<div class="meta">Generated ${generated} &nbsp;·&nbsp; ${results.length} record${results.length!==1?"s":""}${fieldCount>0&&!isFieldReport?` &nbsp;·&nbsp; ${fieldCount} field${fieldCount!==1?"s":""}`:""}${operatorName?` &nbsp;·&nbsp; Applied by ${escapeHtml(operatorName)}`:""}</div>
+${body}
+</div>
+</body></html>`;
+
+const w=window.open("","_blank");
+if(!w){ alert("Please allow pop-ups for AgriLogix to print reports."); return; }
+w.document.write(html);
+w.document.close();
+}
+
 // ── Reports View ──────────────────────────────────────────────────────
 function ReportsView({fields,activities,onBack,filterFieldId=null,perms,operatorName}){
 const canCost=perms?perms.canViewCosts:true;
@@ -2855,33 +3049,9 @@ fid, name:fieldName(fid),
 acts:results.filter(a=>a.fieldId===fid),
 })).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 
-// The print stylesheet is injected once on mount (not at click time). Safari
-// requires window.print() to run synchronously, in the same tick as the click
-// — any setTimeout/rAF/promise deferral in between makes Safari silently
-// drop it as an untrusted call (no dialog, no error). So there's no room to
-// inject-then-wait-a-tick at print time; the stylesheet has to already be
-// sitting in the document before the button is ever clicked, and the click
-// handler itself just calls window.print() directly with nothing after it.
-useEffect(()=>{
-if(document.getElementById("fl-print-style")) return;
-const style=document.createElement("style");
-style.id="fl-print-style";
-style.textContent=`@media print{
-  @page{margin:15mm 12mm}
-  body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif;}
-  /* Strip all app chrome — sidebar, top nav, sync status, decorative watermark — so only the report prints */
-  .no-print{display:none!important;}
-  .fl-app-shell{background:#fff!important;min-height:0!important;overflow:visible!important;}
-  .fl-main-row{display:block!important;padding:0!important;gap:0!important;}
-  /* Letterhead-style report header */
-  .print-header{display:block!important;border-bottom:2px solid #2a5a20;padding-bottom:10px;margin-bottom:16px;}
-  .print-card{border:1px solid #ccc!important;background:#fff!important;break-inside:avoid;margin-bottom:8px;padding:10px;}
-  /* Force legible black body text throughout; colored left-border accents on print-card and small type badges are left alone since they're borders/backgrounds, not text */
-  h1,h2,h3,p,span,div,strong,td,th,li{color:#000!important;}
-}`;
-document.head.appendChild(style);
-},[]);
-const print=()=>window.print();
+// Opens a dedicated print-ready window instead of printing the live app in
+// place — same proven pattern as AgriPlan's/ServiceLog's print buttons.
+const print=()=>openReportPrint({fields,results,groupedByField,sortBy,isFieldReport,filterField,meta,operatorName,canCost,showGal});
 
 const renderDetail=(a)=>{
 const d=a.data||{};
