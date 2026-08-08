@@ -560,11 +560,14 @@ function getCropProfitability(crop, acres, fieldCommon) {
 
   // ── Revenue calculation ──────────────────────────────────────────────────
   const t = CROP_TYPICAL[crop];
-  const buGuar    = Math.round(aphYield*0.75*10)/10;
-  // Use tenant-configured prices first, fall back to CROP_TYPICAL defaults
-  const tp        = _cropPrices?.[crop];
-  const priceGuar = tp?.priceGuar>0 ? tp.priceGuar : (t?.priceGuar || 0);
-  const soldPrice = tp?.projPrice>0 ? tp.projPrice :
+  // Use tenant-configured prices/coverage first, fall back to CROP_TYPICAL
+  // defaults — coverageLevel is your actual elected APH percentage (set via
+  // the 💲 Prices editor); 75% only applies until you've set a real value.
+  const tp          = _cropPrices?.[crop];
+  const coverageLevel = tp?.coverageLevel>0 ? tp.coverageLevel : 75;
+  const buGuar      = Math.round(aphYield*(coverageLevel/100)*10)/10;
+  const priceGuar   = tp?.priceGuar>0 ? tp.priceGuar : (t?.priceGuar || 0);
+  const soldPrice   = tp?.projPrice>0 ? tp.projPrice :
                     ((typeof CROP_SOLD_PRICES!=="undefined"&&CROP_SOLD_PRICES[crop]) || t?.projPrice || 0);
 
   const guarRevPerAc = buGuar*priceGuar;
@@ -574,7 +577,7 @@ function getCropProfitability(crop, acres, fieldCommon) {
 
   return {
     expRate, expenses,
-    buGuar, priceGuar, aphNote,
+    buGuar, priceGuar, aphNote, coverageLevel,
     guarRevPerAc, guarRev, guarNet:guarRev-expenses, guarNetPerAc:guarRevPerAc-expRate,
     projRevPerAc, projRev, projNet:projRev-expenses, projNetPerAc:projRevPerAc-expRate,
     soldPrice, fieldAph:true,
@@ -3923,6 +3926,10 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
       init[c] = {
         priceGuar: saved.priceGuar ?? t.priceGuar ?? 0,
         projPrice: saved.projPrice ?? t.projPrice ?? 0,
+        // 75% matches the flat assumption getCropProfitability used before this
+        // was editable — same default, just now overridable per crop instead of
+        // hardcoded, so it can match your actual elected coverage level.
+        coverageLevel: saved.coverageLevel ?? 75,
       };
     });
     return init;
@@ -3936,7 +3943,7 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
     const init = {};
     crops.forEach(c => {
       const t = CROP_TYPICAL[c] || {};
-      init[c] = { priceGuar: t.priceGuar || 0, projPrice: t.projPrice || 0 };
+      init[c] = { priceGuar: t.priceGuar || 0, projPrice: t.projPrice || 0, coverageLevel: 75 };
     });
     setPrices(init);
   };
@@ -3948,7 +3955,8 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
       const asArray = Object.entries(prices).map(([crop, vals]) => {
         const pg = parseFloat(vals.priceGuar);
         const pp = parseFloat(vals.projPrice);
-        return { crop, priceGuar: isFinite(pg)?pg:0, projPrice: isFinite(pp)?pp:0 };
+        const cl = parseFloat(vals.coverageLevel);
+        return { crop, priceGuar: isFinite(pg)?pg:0, projPrice: isFinite(pp)?pp:0, coverageLevel: (isFinite(cl)&&cl>0)?cl:75 };
       });
       const res = await fetch(
         `https://agrilogix-1bd06-default-rtdb.firebaseio.com/${apBase(tenantId,farmId)}/cropPrices.json?auth=${token}`,
@@ -3958,9 +3966,9 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
         const errBody = await res.text().catch(()=>"");
         throw new Error(`Save failed: ${res.status} — ${errBody.slice(0,120)}`);
       }
-      // Convert back to {crop: {priceGuar, projPrice}} for local state
+      // Convert back to {crop: {priceGuar, projPrice, coverageLevel}} for local state
       const clean = {};
-      asArray.forEach(({crop,priceGuar,projPrice}) => { clean[crop]={priceGuar,projPrice}; });
+      asArray.forEach(({crop,priceGuar,projPrice,coverageLevel}) => { clean[crop]={priceGuar,projPrice,coverageLevel}; });
       onSave(clean);
       onClose();
     } catch(e) { setErr(e.message); }
@@ -3983,7 +3991,7 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
           <div>
             <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:"#1a3010"}}>💲 Crop Prices</div>
             <div style={{fontSize:12,color:"#7a9260",marginTop:3}}>
-              Set your crop insurance price elections and projected sell prices for budget calculations.
+              Set your crop insurance price elections, projected sell prices, and coverage level for budget calculations.
               These override the built-in defaults for your account.
             </div>
           </div>
@@ -4012,6 +4020,10 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
                 Projected Sell Price<br/>
                 <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>($/bu — your market estimate)</span>
               </th>
+              <th style={{padding:"7px 10px",textAlign:"center",fontSize:10,letterSpacing:0.5,width:120}}>
+                Coverage Level<br/>
+                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>(% — your policy election)</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -4024,6 +4036,9 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
                 <td style={{padding:"4px 8px"}}>
                   {inp(prices[crop]?.projPrice, v=>upd(crop,"projPrice",v))}
                 </td>
+                <td style={{padding:"4px 8px"}}>
+                  {inp(prices[crop]?.coverageLevel, v=>upd(crop,"coverageLevel",v))}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -4032,6 +4047,7 @@ function CropPricesModal({ tenantId, token, farmId, tenantCrops, cropPrices, onS
         <div style={{fontSize:11,color:"#9aaa80",marginBottom:16}}>
           💡 Insurance Price Election is published by RMA each spring — check with your agent for current values.
           Projected Sell Price is your own estimate for planning purposes.
+          Coverage Level is your elected APH percentage (typically 50–85%) — it sets the insurance-guarantee bushels used in Crop Suggestions and the rotation planner. Defaults to 75% until set.
         </div>
 
         <div style={{display:"flex",gap:8,justifyContent:"flex-end",borderTop:"1px solid #e0eccc",paddingTop:16}}>
@@ -5099,8 +5115,8 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
         .then(r=>r.json()).then(d=>{
           if(!d) return;
           if(Array.isArray(d)){
-            // New array format: [{crop, priceGuar, projPrice}]
-            const obj={}; d.forEach(({crop,priceGuar,projPrice})=>{ if(crop) obj[crop]={priceGuar,projPrice}; });
+            // New array format: [{crop, priceGuar, projPrice, coverageLevel}]
+            const obj={}; d.forEach(({crop,priceGuar,projPrice,coverageLevel})=>{ if(crop) obj[crop]={priceGuar,projPrice,coverageLevel}; });
             setCropPrices(obj);
           } else if(typeof d==="object"){
             // Legacy object format
