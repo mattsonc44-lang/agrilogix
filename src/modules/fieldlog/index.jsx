@@ -2855,9 +2855,17 @@ fid, name:fieldName(fid),
 acts:results.filter(a=>a.fieldId===fid),
 })).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));
 
-const print=()=>{
+// The print stylesheet is injected once on mount (not at click time). Safari
+// requires window.print() to run synchronously, in the same tick as the click
+// — any setTimeout/rAF/promise deferral in between makes Safari silently
+// drop it as an untrusted call (no dialog, no error). So there's no room to
+// inject-then-wait-a-tick at print time; the stylesheet has to already be
+// sitting in the document before the button is ever clicked, and the click
+// handler itself just calls window.print() directly with nothing after it.
+useEffect(()=>{
+if(document.getElementById("fl-print-style")) return;
 const style=document.createElement("style");
-style.id="print-style";
+style.id="fl-print-style";
 style.textContent=`@media print{
   @page{margin:15mm 12mm}
   body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif;}
@@ -2872,16 +2880,8 @@ style.textContent=`@media print{
   h1,h2,h3,p,span,div,strong,td,th,li{color:#000!important;}
 }`;
 document.head.appendChild(style);
-// Safari (WebKit) silently no-ops window.print() when it's called in the
-// same tick as a freshly-injected <style> tag — it hasn't finished applying
-// the stylesheet yet, so nothing happens at all (no dialog, no error).
-// Chrome doesn't have this timing issue. Two animation-frame ticks give
-// Safari a full paint cycle to catch up before we trigger the dialog.
-requestAnimationFrame(()=>requestAnimationFrame(()=>{
-window.print();
-setTimeout(()=>document.getElementById("print-style")?.remove(),1000);
-}));
-};
+},[]);
+const print=()=>window.print();
 
 const renderDetail=(a)=>{
 const d=a.data||{};
