@@ -4006,6 +4006,29 @@ const delPresetChem = (pid,cid) => setItems(p=>({...p, tankMixPresets:p.tankMixP
 
 const UNITS_CHEM = ["oz/ac","fl oz/ac","ml/ac","L/ac","lbs/ac","pt/ac","qt/ac","qt/100 gal","gal/100 gal","g/ac"];
 const UNITS_FERT = ["lbs/ac","kg/ac","gal/ac","L/ac","tons/ac"];
+// Bulk container units for on-hand chemical inventory — deliberately separate
+// from UNITS_CHEM (which is per-acre application rate), since what's sitting
+// in the shed is a total quantity, not a rate.
+const UNITS_INV = ["gal","L","lbs","qt","totes"];
+// Converts a calcTankMixTotals() line item (the actual amount applied, in
+// whatever unit the chemical was logged in) into the unit the chemical's
+// on-hand inventory is tracked in. Returns null when there's no reliable
+// conversion (e.g. inventory tracked in "totes" — no fixed size to assume),
+// so the caller can skip decrementing rather than guess.
+function chemAmountInInvUnit(tot, invUnit){
+if(!tot || tot.total==null) return null;
+const totalUnit=(tot.totalUnit||"").toLowerCase();
+const gal=tot.totalGal;
+if(gal!=null && !tot.totalGalAmbiguous){
+if(invUnit==="gal") return gal;
+if(invUnit==="L") return gal*3.78541;
+if(invUnit==="qt") return gal*4;
+}
+const lbsPerUnit = {lbs:1, oz:1/16, g:1/453.592, kg:2.20462};
+if(invUnit==="lbs" && lbsPerUnit[totalUnit]!=null) return tot.total*lbsPerUnit[totalUnit];
+if(invUnit.toLowerCase()===totalUnit) return tot.total;
+return null;
+}
 
 const add = (cat, defaults) => setItems(p => ({ ...p, [cat]: [...p[cat], { id: genId(), ...defaults }] }));
 const upd = (cat, id, k, v) => setItems(p => ({ ...p, [cat]: p[cat].map(x => x.id === id ? { ...x, [k]: v } : x) }));
@@ -4088,6 +4111,18 @@ style={{ ...mkBtn("ghost"),width:"100%",justifyContent:"center",borderColor:"#A8
 {/* ── Chemicals Tab ── */}
 {tab === "chemicals" && (
 <div>
+{(()=>{
+const low=items.chemicals.filter(c=>c.onHand!==""&&c.onHand!=null&&c.reorderPoint!==""&&c.reorderPoint!=null&&Number(c.onHand)<=Number(c.reorderPoint));
+return low.length>0 ? (
+<div style={{ background:"#FDF0EE",border:"1px solid #E0A0A0",borderRadius:"7px",padding:"10px 12px",marginBottom:"12px",display:"flex",gap:"10px",alignItems:"flex-start" }}>
+<span style={{fontSize:"16px"}}>⚠️</span>
+<div>
+<div style={{fontSize:"13px",fontWeight:700,color:"#8A3020"}}>{low.length} chemical{low.length!==1?"s":""} at or below reorder point</div>
+<div style={{fontSize:"11px",color:"#8A5030"}}>{low.map(c=>c.name||"Unnamed").join(" · ")}</div>
+</div>
+</div>
+) : null;
+})()}
 {items.chemicals.length === 0 && (
 <div style={{ textAlign:"center",padding:"20px",color:T.faint,fontSize:"13px",border:`1px dashed ${T.border}`,borderRadius:"6px",marginBottom:"12px" }}>
 No chemicals saved yet. Add your products below.
@@ -4136,6 +4171,32 @@ lookupState[c.id]==="error" ? "✗ Error" :
 {UNITS_CHEM.map(u=><option key={u}>{u}</option>)}
 </select>
 </div>
+</div>
+{/* Row: On-hand inventory */}
+<div style={{ marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #C8D8F0" }}>
+<div style={{ display:"flex",alignItems:"center",gap:"6px",marginBottom:"5px" }}>
+<span style={{ fontSize:"11px",color:"#8A6010",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em" }}>📦 On-hand inventory</span>
+{c.onHand!==""&&c.onHand!=null&&c.reorderPoint!==""&&c.reorderPoint!=null&&Number(c.onHand)<=Number(c.reorderPoint)&&(
+<span style={{ fontSize:"10px",fontWeight:700,padding:"1px 8px",borderRadius:"10px",background:"#FDECEC",color:"#B02020",border:"1px solid #E8A0A0" }}>⚠ Low stock</span>
+)}
+</div>
+<div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 90px",gap:"6px" }}>
+<div>
+<label style={{...S.label,fontSize:"10px",marginBottom:"3px"}}>On hand</label>
+<input style={{...S.input,marginBottom:0}} type="number" step="0.1" min="0" placeholder="e.g. 40" value={c.onHand??""} onChange={e=>upd("chemicals",c.id,"onHand",e.target.value)}/>
+</div>
+<div>
+<label style={{...S.label,fontSize:"10px",marginBottom:"3px"}}>Reorder point</label>
+<input style={{...S.input,marginBottom:0}} type="number" step="0.1" min="0" placeholder="e.g. 20" value={c.reorderPoint??""} onChange={e=>upd("chemicals",c.id,"reorderPoint",e.target.value)}/>
+</div>
+<div>
+<label style={{...S.label,fontSize:"10px",marginBottom:"3px"}}>Unit</label>
+<select style={{...S.input,marginBottom:0}} value={c.invUnit||"gal"} onChange={e=>upd("chemicals",c.id,"invUnit",e.target.value)}>
+{UNITS_INV.map(u=><option key={u}>{u}</option>)}
+</select>
+</div>
+</div>
+<div style={{ fontSize:"10px",color:T.faint,marginTop:"4px" }}>Amount used in a spray log is subtracted automatically once you save the activity.</div>
 </div>
 {/* Row 2: Labeled crops */}
 <div style={{ marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #C8D8F0" }}>
@@ -4518,6 +4579,7 @@ const[showSettings,setShowSettings]=useState(false);
 const[showProducts,setShowProducts]=useState(false);
 const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]});
 
+const lowStockChemCount = (products.chemicals||[]).filter(c=>c.onHand!==""&&c.onHand!=null&&c.reorderPoint!==""&&c.reorderPoint!=null&&Number(c.onHand)<=Number(c.reorderPoint)).length;
 const saveProducts = async (newProds) => {
 const stamped = {...newProds, _v: PRODUCTS_VERSION};
 setProducts(stamped);
@@ -4733,6 +4795,33 @@ await dbWrite(path, merged, token);
 }catch(e){ console.warn("Chem restriction write failed:", e); }
 }, [tenantId, token, fields, products]);
 
+// ── Chemical inventory usage writer ───────────────────────────────────────────
+// Called only when a spraying activity is first created (not on edit, to avoid
+// double-decrementing an already-applied amount) — subtracts the actual
+// amount applied from each chemical's on-hand stock in the Products Library.
+// Only touches chemicals that have on-hand tracking turned on (onHand set);
+// chemicals with no inventory numbers entered are left alone.
+const applyChemInventoryUsage = useCallback((activity) => {
+const d = activity.data||{};
+if(!(d.tankMix||[]).length) return;
+const sprayField = fields.find(f => f.id === activity.fieldId);
+const sprayAcres = parseFloat(sprayField?.acres)||0;
+const { items: tmTotals } = calcTankMixTotals(d.tankMix, sprayAcres, d.waterVol, d.spotSpray ? d.actualGal : undefined);
+let changed = false;
+const updatedChems = (products.chemicals||[]).map(c=>({...c}));
+d.tankMix.forEach((chem, i) => {
+const chemName = chem.chemical === "Other" ? chem.chemicalName : chem.chemical;
+if(!chemName) return;
+const product = updatedChems.find(c=>c.name===chemName);
+if(!product || product.onHand===""||product.onHand==null) return;
+const amt = chemAmountInInvUnit(tmTotals[i], product.invUnit||"gal");
+if(amt==null || amt<=0) return;
+product.onHand = Math.max(0, Number(product.onHand)-amt);
+changed = true;
+});
+if(changed) saveProducts({...products, chemicals: updatedChems});
+}, [fields, products]);
+
 // ── Soil test mirror writer ───────────────────────────────────────────────────
 // Called after any soilTest activity is saved — writes the latest reading to a
 // shared Firebase path that AgriPlan can read for fertility warnings when planning crops
@@ -4796,7 +4885,7 @@ const nf=fields.map(f=>f.id===id?{...f,...u}:f); setFields(nf); persist(nf,activ
 };
 const addActivity=(a)=>{
 const na=[...activities,a]; setActs(na); persist(fields,na);
-if(a.type==="spraying") writeChemRestrictions(a);
+if(a.type==="spraying"){ writeChemRestrictions(a); applyChemInventoryUsage(a); }
 if(a.type==="soilTest") writeSoilTestMirror(a);
 };
 const editActivity=(a)=>{
@@ -4974,7 +5063,10 @@ return(
 {syncDot.label&&<span style={{fontSize:"11px",color:sync==="error"?T.danger:sync==="saved"?T.green:sync==="offline"?"#E08030":T.muted}}>{syncDot.label}</span>}
 <div style={{width:"8px",height:"8px",borderRadius:"50%",background:syncDot.bg,flexShrink:0}}/>
 {sync==="error"&&<span style={{fontSize:"10px",color:"#841A18",background:"#FDF0EE",border:"1px solid #E0A0A0",borderRadius:"4px",padding:"2px 6px"}}>Save error</span>}
-<button style={{...mkBtn("ghost"),padding:"5px 9px",fontSize:"13px",lineHeight:1}} onClick={()=>setShowProducts(true)} title="Products Library">📦</button>
+<button style={{...mkBtn("ghost"),padding:"5px 9px",fontSize:"13px",lineHeight:1,position:"relative"}} onClick={()=>setShowProducts(true)} title={lowStockChemCount>0?`Products Library — ${lowStockChemCount} chemical${lowStockChemCount!==1?"s":""} low on stock`:"Products Library"}>
+📦
+{lowStockChemCount>0&&<span style={{position:"absolute",top:"-3px",right:"-3px",background:"#C02020",color:"#fff",borderRadius:"9px",fontSize:"9px",fontWeight:700,padding:"1px 4px",minWidth:"14px",textAlign:"center",lineHeight:1.4}}>{lowStockChemCount}</span>}
+</button>
 <button style={{...mkBtn("ghost"),padding:"5px 9px",fontSize:"16px",lineHeight:1}} onClick={()=>setShowSettings(true)} title="Settings">⚙️</button>
 </div>
 {view!=="home"&&<button style={{...mkBtn("ghost"),padding:"5px 12px",fontSize:"12px"}} onClick={()=>setView("home")}>Home</button>}
