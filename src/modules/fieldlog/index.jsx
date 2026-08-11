@@ -3602,7 +3602,7 @@ display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"
 }
 
 // ── Redesigned HomeView — card grid ───────────────────────────────────────────
-function HomeView({fields,activities,onSelect,onAdd,onImport,onReport,onRotation,pendingCount,onPendingLoads,onUpdateField}){
+function HomeView({fields,activities,onSelect,onAdd,onImport,onReport,onRotation,pendingCount,onPendingLoads,onUpdateField,lowStockChems=[],onOpenProducts}){
 const [q, setQ] = useState("");
 const filtered = [...fields]
 .filter(f => f.name.toLowerCase().includes(q.toLowerCase()) || (f.legalDesc||"").toLowerCase().includes(q.toLowerCase()))
@@ -3631,6 +3631,18 @@ borderRadius:12, padding:"18px 22px", marginBottom:20, display:"flex", alignItem
 <button style={{...mkBtn("ghost"),padding:"8px 14px",fontSize:13}} onClick={onImport}>⬆ Import</button>
 <button style={{...mkBtn("primary"),padding:"8px 18px",fontSize:13}} onClick={onAdd}>+ Add Field</button>
 </div>
+
+{/* ── Low stock chemicals ── */}
+{lowStockChems.length>0&&(
+<div onClick={onOpenProducts} style={{ background:"#FDF0EE",border:"1px solid #E0A0A0",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12,cursor:"pointer" }}>
+<span style={{fontSize:20}}>⚠️</span>
+<div style={{flex:1}}>
+<div style={{fontSize:13,fontWeight:700,color:"#8A3020"}}>{lowStockChems.length} chemical{lowStockChems.length!==1?"s":""} at or below reorder point</div>
+<div style={{fontSize:11,color:"#8A5030"}}>{lowStockChems.join(" · ")}</div>
+</div>
+<span style={{fontSize:11,color:"#8A3020",fontWeight:600,whiteSpace:"nowrap"}}>📦 Restock →</span>
+</div>
+)}
 
 {/* ── Search ── */}
 {fields.length > 4 && (
@@ -4579,7 +4591,8 @@ const[showSettings,setShowSettings]=useState(false);
 const[showProducts,setShowProducts]=useState(false);
 const[products,setProducts]=useState({seeds:[],chemicals:[],fertilizers:[],tankMixPresets:[]});
 
-const lowStockChemCount = (products.chemicals||[]).filter(c=>c.onHand!==""&&c.onHand!=null&&c.reorderPoint!==""&&c.reorderPoint!=null&&Number(c.onHand)<=Number(c.reorderPoint)).length;
+const lowStockChems = (products.chemicals||[]).filter(c=>c.onHand!==""&&c.onHand!=null&&c.reorderPoint!==""&&c.reorderPoint!=null&&Number(c.onHand)<=Number(c.reorderPoint));
+const lowStockChemCount = lowStockChems.length;
 const saveProducts = async (newProds) => {
 const stamped = {...newProds, _v: PRODUCTS_VERSION};
 setProducts(stamped);
@@ -5082,7 +5095,7 @@ return(
 <FieldSidebar fields={fields} activeFieldId={curField?.id} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")}/>
 <div style={{...S.content,flex:1,padding:0,margin:0,maxWidth:"1100px",position:"relative",overflow:"hidden"}}>
 <div className="no-print" aria-hidden="true" style={{position:"absolute",right:"-80px",bottom:"-80px",width:"360px",height:"360px",backgroundImage:"url(/icons/icon-512.png)",backgroundSize:"contain",backgroundRepeat:"no-repeat",opacity:0.05,pointerEvents:"none"}}/>
-{view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField}/>}
+{view==="home" &&<HomeView fields={fields} activities={activities} onSelect={f=>{setAF(f);setView("fieldDetail");}} onAdd={()=>setView("addField")} onImport={()=>setShowImport(true)} onReport={()=>{setRFId(null);setView("reports");}} onRotation={()=>setView("rotation")} pendingCount={pendingLoads.length} onPendingLoads={()=>setShowPending(true)} onUpdateField={updateField} lowStockChems={lowStockChems.map(c=>c.name||"Unnamed")} onOpenProducts={()=>setShowProducts(true)}/>}
 {view==="reports" &&<ReportsView fields={fields} activities={activities} onBack={()=>setView(reportFieldId?"fieldDetail":"home")} filterFieldId={reportFieldId} perms={perms} operatorName={settings.operatorName}/>}
 {view==="rotation" &&<CropRotationView fields={fields} activities={activities} onBack={()=>setView("home")}/>}
 {view==="addField" &&<AddFieldView onBack={()=>setView("home")} onSave={addField}/>}
