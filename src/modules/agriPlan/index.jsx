@@ -2941,6 +2941,188 @@ function FieldHistoryTab({ field, activeYear, allFields, years, createYear, swit
 }
 
 
+// ── Field Trends (multi-year yield + profitability) ────────────────────────────
+// Yield comes from data already loaded client-side (manual history + imported
+// APH, merged the same way resolveFieldHistoryEntry does) — no extra fetch.
+// Net income needs each historical year's own field snapshot (expense rates
+// and income figures are stored per-year), so this is the one tab in
+// FieldDetail that fetches multiple years of data instead of just the active one.
+function getYieldForYear(field, fieldHistory, year){
+  const manual = fieldHistory?.[field.common]?.[year];
+  if(manual){
+    const y = parseFloat(manual.yieldPerAc ?? manual.yield);
+    if(!isNaN(y) && y>0) return y;
+  }
+  const aphEntry = (_aphData && field.common && _aphData[field.common]) || {};
+  for(const crop of Object.keys(aphEntry)){
+    const yd = aphEntry[crop]?.years?.[year];
+    const y = parseFloat(yd?.yield);
+    if(!isNaN(y) && y>0) return y;
+  }
+  return null;
+}
+
+function loadChartJs(){
+  return new Promise((resolve,reject)=>{
+    if(window.Chart){ resolve(window.Chart); return; }
+    const existing = document.getElementById("chartjs-lib");
+    if(existing){ existing.addEventListener("load", ()=>resolve(window.Chart)); return; }
+    const s = document.createElement("script");
+    s.id = "chartjs-lib";
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js";
+    s.onload = ()=>resolve(window.Chart);
+    s.onerror = ()=>reject(new Error("Could not load charting library — check your connection"));
+    document.head.appendChild(s);
+  });
+}
+
+function FieldTrendsTab({field, years, activeYear, fieldHistory, perms}){
+  const p = perms || PERMS.owner;
+  const yieldCanvasRef = useRef(null);
+  const netCanvasRef = useRef(null);
+  const yieldChartRef = useRef(null);
+  const netChartRef = useRef(null);
+  const [netByYear, setNetByYear] = useState(null); // {year: netPerAc|null} once loaded
+  const [loadingNet, setLoadingNet] = useState(true);
+
+  // Last up to 5 created years, no later than the year currently being viewed.
+  const histYears = useMemo(()=>[...(years||[])].filter(y=>+y<=+activeYear).sort((a,b)=>+a-+b).slice(-5), [years, activeYear]);
+
+  const yieldByYear = useMemo(()=>{
+    const out = {};
+    histYears.forEach(y => { out[y] = getYieldForYear(field, fieldHistory, y); });
+    return out;
+  }, [histYears, field, fieldHistory]);
+
+  const prof = getCropProfitability(field.crop, field.acres, field.common);
+  const guarBu = prof?.buGuar || null;
+
+  // Fetch each historical year's own field snapshot to compute that year's
+  // actual (preferred) or projected net $/ac — expense rates and income
+  // figures live on the per-year field record, not on `field` (which is
+  // always the currently-viewed year's copy).
+  useEffect(()=>{
+    let cancelled = false;
+    if(!p.canViewCosts || histYears.length===0){ setLoadingNet(false); return; }
+    setLoadingNet(true);
+    (async ()=>{
+      const out = {};
+      await Promise.all(histYears.map(async y=>{
+        try{
+          const yFields = await fbLoadFields(y);
+          const match = (yFields||[]).find(f=>f.common===field.common && (!field.fieldNum || f.fieldNum===field.fieldNum))
+            || (yFields||[]).find(f=>f.common===field.common);
+          if(!match){ out[y]=null; return; }
+          const acres = match.acres||0;
+          const a = calcFieldActuals(match, fieldHistory, y);
+          if(a.hasAny && acres>0){ out[y] = a.actualNet/acres; return; }
+          const c = calc(match);
+          out[y] = acres>0 ? c.net/acres : null;
+        }catch(e){ out[y]=null; }
+      }));
+      if(!cancelled){ setNetByYear(out); setLoadingNet(false); }
+    })();
+    return ()=>{ cancelled=true; };
+  }, [histYears.join(","), field.common, field.fieldNum, p.canViewCosts]);
+
+  // Build/rebuild charts once Chart.js is loaded and data is ready.
+  useEffect(()=>{
+    let cancelled = false;
+    loadChartJs().then(Chart=>{
+      if(cancelled) return;
+      if(yieldChartRef.current){ yieldChartRef.current.destroy(); yieldChartRef.current=null; }
+      if(yieldCanvasRef.current && histYears.length>0){
+        yieldChartRef.current = new Chart(yieldCanvasRef.current, {
+          type:"bar",
+          data:{ labels:histYears, datasets:[
+            { label:"Actual bu/ac", data:histYears.map(y=>yieldByYear[y]), backgroundColor:"#2a78d6", borderRadius:4, order:2 },
+            ...(guarBu?[{ label:"Current guarantee bu/ac", data:histYears.map(()=>guarBu), type:"line", borderColor:"#898781", borderWidth:2, pointRadius:0, borderDash:[4,3], order:1 }]:[]),
+          ]},
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+            scales:{ y:{beginAtZero:true, ticks:{font:{size:11}}}, x:{ticks:{font:{size:11}},grid:{display:false}} } }
+        });
+      }
+      if(netChartRef.current){ netChartRef.current.destroy(); netChartRef.current=null; }
+      if(netCanvasRef.current && p.canViewCosts && netByYear && histYears.length>0){
+        const vals = histYears.map(y=>netByYear[y]);
+        netChartRef.current = new Chart(netCanvasRef.current, {
+          type:"bar",
+          data:{ labels:histYears, datasets:[{ label:"Net $/ac", data:vals,
+            backgroundColor:vals.map(v=>v==null?"#c8c8c8":v<0?"#e34948":"#008300"), borderRadius:4 }] },
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+            scales:{ y:{ticks:{font:{size:11}, callback:v=>(v<0?"-$":"$")+Math.abs(v)}}, x:{ticks:{font:{size:11}},grid:{display:false}} } }
+        });
+      }
+    }).catch(()=>{});
+    return ()=>{ cancelled=true; };
+  }, [histYears.join(","), JSON.stringify(yieldByYear), JSON.stringify(netByYear), guarBu, p.canViewCosts]);
+
+  useEffect(()=>()=>{ yieldChartRef.current?.destroy(); netChartRef.current?.destroy(); }, []);
+
+  const yieldVals = histYears.map(y=>yieldByYear[y]).filter(v=>v!=null);
+  const avgYield = yieldVals.length>0 ? Math.round(yieldVals.reduce((s,v)=>s+v,0)/yieldVals.length*10)/10 : null;
+  const netVals = p.canViewCosts && netByYear ? histYears.map(y=>netByYear[y]).filter(v=>v!=null) : [];
+  const avgNet = netVals.length>0 ? Math.round(netVals.reduce((s,v)=>s+v,0)/netVals.length) : null;
+  const trend = (() => {
+    if(yieldVals.length<2) return null;
+    const first = yieldByYear[histYears.find(y=>yieldByYear[y]!=null)];
+    const lastYearWithData = [...histYears].reverse().find(y=>yieldByYear[y]!=null);
+    const last = yieldByYear[lastYearWithData];
+    if(first==null||last==null) return null;
+    if(last>first*1.05) return "up";
+    if(last<first*0.95) return "down";
+    return "flat";
+  })();
+
+  if(histYears.length===0) return (
+    <div style={{padding:24,textAlign:"center",color:"#7a9260",fontSize:13}}>No prior years to chart yet — this shows up once you've created more than one crop year.</div>
+  );
+
+  return (
+    <div style={{padding:"4px 0 20px"}}>
+      <div style={{display:"grid",gridTemplateColumns:p.canViewCosts?"1fr 1fr 1fr":"1fr 1fr",gap:12,marginBottom:20}}>
+        <div style={{background:"#f6f9f0",borderRadius:8,padding:"14px 16px"}}>
+          <div style={{fontSize:11,color:"#7a9260",marginBottom:4}}>{histYears.length}-yr avg yield</div>
+          <div style={{fontSize:22,fontWeight:600,color:"#1a3010"}}>{avgYield!=null?`${avgYield} bu/ac`:"—"}</div>
+        </div>
+        {p.canViewCosts&&(
+          <div style={{background:"#f6f9f0",borderRadius:8,padding:"14px 16px"}}>
+            <div style={{fontSize:11,color:"#7a9260",marginBottom:4}}>{histYears.length}-yr avg net</div>
+            <div style={{fontSize:22,fontWeight:600,color:avgNet!=null&&avgNet<0?"#c02020":"#1a3010"}}>{loadingNet?"…":avgNet!=null?f$(avgNet,true)+"/ac":"—"}</div>
+          </div>
+        )}
+        <div style={{background:"#f6f9f0",borderRadius:8,padding:"14px 16px"}}>
+          <div style={{fontSize:11,color:"#7a9260",marginBottom:4}}>Yield trend</div>
+          <div style={{fontSize:22,fontWeight:600,color:trend==="up"?"#1a7010":trend==="down"?"#c02020":"#6a8a50"}}>
+            {trend==="up"?"↑ Up":trend==="down"?"↓ Down":trend==="flat"?"→ Flat":"—"}
+          </div>
+        </div>
+      </div>
+
+      <div style={{fontSize:12,color:"#6a8a50",marginBottom:8}}>Actual yield vs. current insurance guarantee</div>
+      <div style={{display:"flex",gap:16,marginBottom:6,fontSize:11,color:"#6a8a50"}}>
+        <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:10,borderRadius:2,background:"#2a78d6",display:"inline-block"}}/>Actual bu/ac</span>
+        {guarBu&&<span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:2,background:"#898781",display:"inline-block"}}/>Current guarantee</span>}
+      </div>
+      <div style={{position:"relative",width:"100%",height:180,marginBottom:24}}>
+        <canvas ref={yieldCanvasRef} role="img" aria-label={`Bar chart of actual yield per acre by year for ${field.common}`}/>
+      </div>
+
+      {p.canViewCosts&&(<>
+        <div style={{fontSize:12,color:"#6a8a50",marginBottom:8}}>Net income per acre</div>
+        <div style={{position:"relative",width:"100%",height:180}}>
+          {loadingNet?<div style={{fontSize:12,color:"#7a9260",padding:20,textAlign:"center"}}>Loading prior years…</div>:
+          <canvas ref={netCanvasRef} role="img" aria-label={`Bar chart of net income per acre by year for ${field.common}`}/>}
+        </div>
+      </>)}
+
+      <div style={{fontSize:10,color:"#8a9a70",marginTop:14,fontStyle:"italic"}}>
+        Yield uses your imported APH or manually entered history. Net income is actual where you've entered it (expenses + AgriScale/manual bushels), otherwise that year's projected budget. Guarantee line reflects today's coverage election, not a historical one.
+      </div>
+    </div>
+  );
+}
+
 // ── Field Detail ─────────────────────────────────────────────────────────────
 function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpdateActualExpense,onSaveActualBushels,onUpdate,onDelete,activeYear,allFields,years,createYear,switchYear,fieldRestrictions={},tenantId,token,fieldHistory={},flSeedLogs={},onSaveFieldHistory,perms}){
   // Operators/managers without the right flag never see raw dollar figures —
@@ -3178,7 +3360,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
     <SeedLogSection fieldName={field.common} plannedCrop={field.crop} logs={(flSeedLogs||{})[field.common]||[]} tenantId={tenantId}/>
 
     {/* Tabs */}
-    <div style={{borderBottom:"1px solid #1e3020",marginBottom:20}}>{TB("income","Income")}{TB("expenses","Expenses")}{TB("eligibility","Crop Eligibility")}{TB("history","📋 History & Plan")}</div>
+    <div style={{borderBottom:"1px solid #1e3020",marginBottom:20}}>{TB("income","Income")}{TB("expenses","Expenses")}{TB("eligibility","Crop Eligibility")}{TB("history","📋 History & Plan")}{TB("trends","📈 Trends")}</div>
 
     {/* Income Tab */}
     {tab==="income"&&(<div>
@@ -3365,6 +3547,7 @@ function FieldDetail({field,onUpdateIncome,onUpdateExpense,onResetExpense,onUpda
 
     </div>)}
     {tab==="history"&&(<FieldHistoryTab field={field} activeYear={activeYear||"2026"} allFields={allFields} years={years} createYear={createYear} switchYear={switchYear} onUpdate={onUpdate} tenantId={tenantId} manualHistory={fieldHistory[field.common]||{}} fieldRestrictions={fieldRestrictions} onSaveHistory={hist=>onSaveFieldHistory&&onSaveFieldHistory(field.common,hist)}/>)}
+    {tab==="trends"&&(<FieldTrendsTab field={field} years={years} activeYear={activeYear||"2026"} fieldHistory={fieldHistory} perms={perms}/>)}
   </div>);
 }
 
