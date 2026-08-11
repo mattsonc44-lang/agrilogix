@@ -92,6 +92,13 @@ export function computeFarmStats(d, year, farmId) {
   });
   const actualNet = (fieldsWithActuals > 0 && fieldsWithActualExpenses > 0) ? (actualRevenue - actualExpensesTotal) : null;
 
+  // Chemicals at or below their reorder point (set in FieldLog's Products
+  // Library, decremented automatically as spray activities get logged) —
+  // read straight off the same flData snapshot fetched above, since
+  // products lives under FieldLog's own module base, no separate mirror needed.
+  const lowStockChems = obj2arr(d.flData?.products?.chemicals)
+    .filter(c => c.onHand !== "" && c.onHand != null && c.reorderPoint !== "" && c.reorderPoint != null && Number(c.onHand) <= Number(c.reorderPoint));
+
   const flFields = obj2arr(d.flData?.fields);
   const flActivities = obj2arr(d.flData?.activities).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   const recentActs = flActivities.slice(0, 6);
@@ -198,6 +205,10 @@ export function computeFarmStats(d, year, farmId) {
       title: `${r.chemName} applied ${r.fieldName ? `on ${r.fieldName}` : ""} — ${r.crop} restricted ${r.daysRemaining}d more`,
       sub: "FieldLog · Plantback", severity: "warning", module: "fieldlog", tab: null,
     })),
+    ...lowStockChems.map(c => ({
+      id: `chem-stock-${c.id}`, icon: "🧪", title: `${c.name || "Chemical"} — low stock (${c.onHand}${c.invUnit ? ` ${c.invUnit}` : ""} left)`,
+      sub: "FieldLog · Products", severity: "danger", module: "fieldlog", tab: null,
+    })),
     ...(budgetAlerts && budgetAlerts.count > 0 ? [{
       id: "budget-overrun", icon: "📊",
       title: `${budgetAlerts.count} field${budgetAlerts.count !== 1 ? "s" : ""} over budget${budgetAlerts.top?.[0]?.common ? ` — ${budgetAlerts.top[0].common}${budgetAlerts.count > 1 ? " + more" : ""}` : ""}`,
@@ -210,7 +221,7 @@ export function computeFarmStats(d, year, farmId) {
     actualExpensesTotal, fieldsWithActualExpenses, actualNet, budgetAlerts,
     flFields, flActivities, recentActs, activitiesThisWeek, flAcres,
     asFieldsArr, asBinsArr, asContractsArr, seasonBushels, loadsThisWeek, guaranteeProgress, binsNearFull, contractsDue, activePlantback,
-    slVehicles, openTodos, partsNeeded, lowStockItems, dueMaintenance, needsAttention,
+    slVehicles, openTodos, partsNeeded, lowStockItems, lowStockChems, dueMaintenance, needsAttention,
     acres: apAcres || flAcres,
     fieldCount: apFieldsArr.length || flFields.length,
   };
