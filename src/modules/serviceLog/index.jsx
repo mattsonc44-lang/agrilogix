@@ -256,6 +256,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const [editTarget,setEdit]    = useState(null);
   const [selRecIds,setSelRecs]  = useState(new Set());
   const [selPoIds, setSelPoIds] = useState(new Set());
+  const [selInvIds,setSelInvIds]= useState(new Set());
   const [gsQuery,  setGsQ]      = useState("");
   const [highlightRecId, setHighlightRecId] = useState(null);
   const [poFilters,setPOF]      = useState({q:"",vendor:"",num:"",vehicle:"",status:"",invPartId:""});
@@ -528,6 +529,19 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     }
   };
   const deleteInvItem=id=>save({partsInventory:D.partsInventory.filter(p=>p.id!==id)});
+  // Combine 2+ Parts Inventory items (e.g. duplicate "Air Filter" entries)
+  // into one. Keeps the chosen item's id so any Order Parts entries already
+  // linked via invPartId stay valid; other merged-away ids get re-pointed
+  // at the survivor rather than silently orphaned.
+  const mergeInvItems=(ids,f)=>{
+    const removedIds=ids.filter(id=>id!==f.keepId);
+    const ni=D.partsInventory
+      .filter(i=>!removedIds.includes(i.id))
+      .map(i=>i.id===f.keepId?{...i,name:f.name,qty:f.qty,minQty:f.minQty,location:f.location,notes:f.notes,partNumbers:f.partNumbers}:i);
+    const np=D.partsToOrder.map(p=>removedIds.includes(p.invPartId)?{...p,invPartId:f.keepId}:p);
+    save({partsInventory:ni,partsToOrder:np});
+    setModal(null);setEdit(null);setSelInvIds(new Set());
+  };
   // Follow-up after a new inventory item is created: "stock it?" then, if yes,
   // "notify me when it's low?" — applies whatever the user chose to the item.
   const finishStockPrompt=(patch)=>{
@@ -657,7 +671,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
               {tab==="costs"&&perms.canViewCosts&&<CostView D={D} custName={custName}/>}
               {tab==="invoices"&&perms.canViewCosts&&<InvoicesView D={D} updateInvStatus={updateInvStatus} deleteInvoice={deleteInvoice} custName={custName}/>}
               {tab==="order"&&<OrderView D={D} filteredPO={filteredPO} poFilters={poFilters} setPOF={setPOF} poNew={poNew} setPoNew={setPoNew} quickAddPart={quickAddPart} toggleOrdered={toggleOrdered} toggleReceived={toggleReceived} deletePart={deletePart} archiveReceived={archiveReceived} consolidateDupes={consolidateDupes} selPoIds={selPoIds} setSelPoIds={setSelPoIds} setEdit={setEdit} setModal={setModal} vehName={vehName} perms={perms}/>}
-              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj} perms={perms} lowStockAlerts={lowStockAlerts}/>}
+              {tab==="parts"&&<PartsView D={D} invFilters={invFilters} setInvF={setInvF} deleteInvItem={deleteInvItem} setEdit={setEdit} setModal={setModal} invQtyAdj={invQtyAdj} perms={perms} lowStockAlerts={lowStockAlerts} selInvIds={selInvIds} setSelInvIds={setSelInvIds}/>}
               {tab==="vendors"&&<VendorsView D={D} deleteVendor={deleteVendor} setEdit={setEdit} setModal={setModal}/>}
               {tab==="orderhistory"&&<HistoryView D={D} vehName={vehName} perms={perms}/>}
               {tab==="todos"&&<TodosView D={D} toggleTodo={toggleTodo} deleteTodo={deleteTodo} setEdit={setEdit} setModal={setModal} setTab={setTab} setSelVeh={setSelVeh} setSelCust={setSelCust}/>}
@@ -677,6 +691,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
       {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} partsInventory={D.partsInventory} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invItem"  &&<InvItemMo   initial={editTarget} vehicles={D.vehicles} onSave={saveInvItem} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="mergeInv" &&<MergeInvMo  items={(editTarget||[]).map(id=>D.partsInventory.find(i=>i.id===id)).filter(Boolean)} onSave={f=>mergeInvItems(editTarget,f)} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="addToService"&&<AddToServiceMo parts={(editTarget||[]).map(id=>D.partsToOrder.find(p=>p.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={addPartsToService} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="receive"  &&<ReceiveMo   part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
@@ -1131,14 +1146,25 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
 }
 
 // ── Parts Inventory ────────────────────────────────────────────────
-function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj,perms,lowStockAlerts=[]}){
+function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAdj,perms,lowStockAlerts=[],selInvIds=new Set(),setSelInvIds=()=>{}}){
   const canCost=perms?perms.canViewCosts:true;
   const inv=D.partsInventory||[];
   const filtered=inv.filter(p=>{if(invFilters.q&&!(p.name+(p.notes||"")+(p.partNumbers||[]).map(n=>n.num+(n.vendor||"")).join("")).toLowerCase().includes(invFilters.q.toLowerCase()))return false;if(invFilters.location&&(p.location||"").toLowerCase()!==invFilters.location.toLowerCase())return false;return true;}).sort((a,b)=>a.name.localeCompare(b.name));
   const lowStock=inv.filter(p=>p.qty!==""&&p.minQty!==""&&Number(p.qty)<=Number(p.minQty));
   return(<div>
-    <div className="overview-title">Parts Inventory</div>
-    <div className="overview-sub">{inv.length} item{inv.length!==1?"s":""}{lowStock.length>0&&<span style={{color:"var(--red)",fontWeight:600}}> · {lowStock.length} low stock</span>}</div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"8px"}}>
+      <div>
+        <div className="overview-title">Parts Inventory</div>
+        <div className="overview-sub">{inv.length} item{inv.length!==1?"s":""}{lowStock.length>0&&<span style={{color:"var(--red)",fontWeight:600}}> · {lowStock.length} low stock</span>}</div>
+      </div>
+      {selInvIds.size>0&&(
+        <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+          <span style={{fontSize:"13px",color:"var(--text-dim)"}}>{selInvIds.size} selected</span>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setSelInvIds(new Set())}>Clear</button>
+          {selInvIds.size>=2&&<button className="btn btn-primary btn-sm" onClick={()=>{setEdit([...selInvIds]);setModal("mergeInv");}}>⇄ Merge Selected</button>}
+        </div>
+      )}
+    </div>
     {lowStockAlerts.length>0&&(
       <div style={{background:"rgba(220,38,38,.08)",border:"1px solid rgba(220,38,38,.25)",borderRadius:"6px",padding:"10px 14px",marginBottom:"12px"}}>
         <div style={{fontFamily:"'Rajdhani',sans-serif",fontWeight:700,fontSize:"14px",color:"var(--red)",marginBottom:"2px"}}>🔔 {lowStockAlerts.length} item{lowStockAlerts.length!==1?"s":""} below your alert level</div>
@@ -1153,6 +1179,7 @@ function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAd
     {filtered.length===0&&<div className="empty"><div className="empty-icon">📦</div><div className="empty-title">No Items</div></div>}
     {filtered.map(p=>{const isLow=p.qty!==""&&p.minQty!==""&&Number(p.qty)<=Number(p.minQty);return(<div key={p.id} className="inv-row">
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"10px"}}>
+        <input type="checkbox" checked={selInvIds.has(p.id)} onChange={()=>setSelInvIds(s=>{const n=new Set(s);s.has(p.id)?n.delete(p.id):n.add(p.id);return n;})} style={{accentColor:"var(--amber)",cursor:"pointer",width:"15px",height:"15px",marginTop:"3px"}}/>
         <div style={{flex:1}}>
           <div className="inv-name">{p.name}{isLow&&<span className="inv-low" style={{marginLeft:"8px"}}>⚠ Low</span>}{p.notifyLowStock&&<span title="Notifies when low" style={{marginLeft:"6px",fontSize:"12px"}}>🔔</span>}</div>
           <div className="inv-meta">{p.qty!==""&&<span style={{display:"flex",alignItems:"center",gap:"4px"}}>Qty: <button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,-1)}>−</button><strong>{p.qty}</strong><button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,1)}>+</button></span>}{p.minQty!==""&&<span>Min: {p.minQty}</span>}{p.location&&<span>📍 {p.location}</span>}</div>
@@ -1531,8 +1558,44 @@ function InvItemMo({initial,vehicles,onSave,onClose}){
       </label>
     )}
     <div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Part Numbers / Vendors</label><button className="btn btn-ghost btn-xs" onClick={addPN}>+ Add</button></div>
-    {f.partNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi placeholder="Part #" value={n.num} onChange={e=>updPN(i,"num",e.target.value)}/><Fi placeholder="Vendor" value={n.vendor} onChange={e=>updPN(i,"vendor",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updPN(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remPN(i)}>✕</button></div>))}</div>
+    {f.partNumbers.length>0&&(
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"3px"}}>
+        <label className="form-lbl" style={{margin:0}}>Vendor</label>
+        <label className="form-lbl" style={{margin:0}}>Vendor Part #</label>
+        <label className="form-lbl" style={{margin:0}}>Cost</label>
+        <span/>
+      </div>
+    )}
+    {f.partNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi placeholder="Vendor" value={n.vendor} onChange={e=>updPN(i,"vendor",e.target.value)}/><Fi placeholder="Vendor Part #" value={n.num} onChange={e=>updPN(i,"num",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updPN(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remPN(i)}>✕</button></div>))}</div>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
+  </Mo>);
+}
+
+// Combine 2+ duplicate Parts Inventory items (e.g. "Air Filter" logged
+// separately for several Mattson Bros vehicles) into one. Quantities add
+// together; part #/vendor combos from every selected item are unioned
+// (deduped) rather than one side winning — nothing gets dropped.
+function MergeInvMo({items,onSave,onClose}){
+  const[keepId,setKeepId]=useState(items[0]?.id||"");
+  const[name,setName]=useState(items[0]?.name||"");
+  const[qty,setQty]=useState(String(items.reduce((s,i)=>s+(parseInt(i.qty)||0),0)));
+  const[minQty,setMinQty]=useState(items[0]?.minQty||"");
+  const[location,setLocation]=useState(items.find(i=>i.location)?.location||"");
+  const[notes,setNotes]=useState([...new Set(items.map(i=>i.notes).filter(Boolean))].join("\n"));
+  useEffect(()=>{const it=items.find(i=>i.id===keepId);if(it)setName(it.name);},[keepId]);
+  const combinedPNs=(()=>{const out=[];const seen=new Set();items.forEach(it=>(it.partNumbers||[]).forEach(pn=>{if(!pn.num)return;const key=(pn.vendor||"").trim().toLowerCase()+"__"+(pn.num||"").trim().toLowerCase();if(!seen.has(key)){seen.add(key);out.push(pn);}}));return out;})();
+  if(items.length<2) return null;
+  return(<Mo title={`Merge ${items.length} Items`} onClose={onClose} onSave={()=>{if(!name.trim())return alert("Name required.");onSave({keepId,name,qty,minQty,location,notes,partNumbers:combinedPNs});}} saveLabel="Merge" large>
+    <p style={{fontSize:"13px",color:"var(--text-dim)",margin:"0 0 10px"}}>Merging <strong>{items.map(i=>i.name).join(", ")}</strong> into one item. Quantities add together; part #s and vendors from all of them are kept.</p>
+    <Fg label="Keep name from" full><Fs value={keepId} onChange={e=>setKeepId(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}{i.qty!==""?` (qty ${i.qty})`:""}</option>)}</Fs></Fg>
+    <Fg label="Final Name *" full><Fi value={name} onChange={e=>setName(e.target.value)}/></Fg>
+    <Fr><Fg label="Combined Qty"><Fi type="number" value={qty} onChange={e=>setQty(e.target.value)}/></Fg><Fg label="Min Qty"><Fi type="number" value={minQty} onChange={e=>setMinQty(e.target.value)}/></Fg><Fg label="Storage Location"><Fi value={location} onChange={e=>setLocation(e.target.value)}/></Fg></Fr>
+    <div>
+      <label className="form-lbl">Combined Part #s / Vendors ({combinedPNs.length})</label>
+      {combinedPNs.length===0&&<div style={{fontSize:"12px",color:"var(--text-dim)"}}>None</div>}
+      {combinedPNs.map((n,i)=><div key={n.id||i} style={{fontSize:"12px",color:"var(--text-dim)",padding:"2px 0"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{n.unitCost&&` · $${n.unitCost}`}</div>)}
+    </div>
+    <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={notes} onChange={e=>setNotes(e.target.value)}/></Fg>
   </Mo>);
 }
 
