@@ -215,6 +215,23 @@ const PRI_COLOR = {high:"#dc2626",medium:"#d97706",low:"#16a34a"};
 const sumCost = a=>(a||[]).reduce((s,r)=>s+(parseFloat(r.cost)||0),0);
 const fmtDate = iso=>{const d=new Date(iso+"T00:00:00");return{day:d.getDate().toString().padStart(2,"0"),mon:d.toLocaleString("en",{month:"short"}).toUpperCase(),yr:d.getFullYear()};};
 const pStatus = p=>p.received?"received":p.ordered?"ordered":"needed";
+// "Your Part #" on the Order Parts screen is always a pick from the existing
+// Parts Inventory list (by id) — never a free-typed new item. This just
+// appends a new vendor + vendor-part# pair to that item's partNumbers[] when
+// one is entered on the Order Parts screen and isn't already saved there, so
+// it's available to reuse next time (from either screen).
+const linkVendorPartNumber = (itemId, vendor, num, unitCost, partsInventory) => {
+  if (!itemId) return partsInventory;
+  const v = (vendor || "").trim(), n = (num || "").trim();
+  if (!n) return partsInventory;
+  const inv = partsInventory || [];
+  const item = inv.find(i => i.id === itemId);
+  if (!item) return partsInventory;
+  const exists = (item.partNumbers || []).some(pn => (pn.num || "").trim().toLowerCase() === n.toLowerCase() && (pn.vendor || "").trim().toLowerCase() === v.toLowerCase());
+  if (exists) return partsInventory;
+  const newPN = { id: genId(), num: n, vendor: v, unitCost: unitCost || "" };
+  return inv.map(i => i.id === itemId ? { ...i, partNumbers: [...(i.partNumbers || []), newPN] } : i);
+};
 const today = ()=>new Date().toISOString().slice(0,10);
 const nextInvNum = invs=>{const ns=invs.map(i=>parseInt((i.num||"").replace("INV-",""))||0);return"INV-"+String((ns.length?Math.max(...ns):0)+1).padStart(3,"0");};
 const safeLoads = f=>(f&&f.loads)||[];
@@ -241,9 +258,9 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const [selPoIds, setSelPoIds] = useState(new Set());
   const [gsQuery,  setGsQ]      = useState("");
   const [highlightRecId, setHighlightRecId] = useState(null);
-  const [poFilters,setPOF]      = useState({q:"",vendor:"",num:"",vehicle:"",status:""});
+  const [poFilters,setPOF]      = useState({q:"",vendor:"",num:"",vehicle:"",status:"",invPartId:""});
   const [invFilters,setInvF]    = useState({q:"",vendor:"",location:""});
-  const [poNew,    setPoNew]    = useState({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});
+  const [poNew,    setPoNew]    = useState({invPartId:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:""});
   const [reportFil,setRepFil]   = useState({dateFrom:"",dateTo:"",type:"",custId:""});
   // Guided "stock it? notify me?" follow-up shown right after a brand-new
   // Parts Inventory item is created (see saveInvItem / confirmReceive).
@@ -414,8 +431,19 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     setModal(null);setEdit(null);
   };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
-  const savePart=f=>{let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...f}];}save({partsToOrder:np});setModal(null);setEdit(null);};
-  const quickAddPart=()=>{if(!poNew.desc.trim())return;const np=[{id:genId(),ordered:false,received:false,addedAt:Date.now(),...poNew},...D.partsToOrder];save({partsToOrder:np});setPoNew({desc:"",num:"",vendor:"",qty:"1",vehicleId:""});};
+  const savePart=f=>{
+    const ni=linkVendorPartNumber(f.invPartId,f.vendor,f.num,f.unitCost,D.partsInventory);
+    let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...f}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...f}];}
+    const payload={partsToOrder:np};if(ni!==D.partsInventory)payload.partsInventory=ni;
+    save(payload);setModal(null);setEdit(null);
+  };
+  const quickAddPart=()=>{
+    if(!poNew.desc.trim())return;
+    const ni=linkVendorPartNumber(poNew.invPartId,poNew.vendor,poNew.num,"",D.partsInventory);
+    const np=[{id:genId(),ordered:false,received:false,addedAt:Date.now(),...poNew},...D.partsToOrder];
+    const payload={partsToOrder:np};if(ni!==D.partsInventory)payload.partsInventory=ni;
+    save(payload);setPoNew({invPartId:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:""});
+  };
   const toggleOrdered=id=>{const np=D.partsToOrder.map(p=>p.id===id?{...p,ordered:!p.ordered||p.received,orderedDate:!p.ordered?today():p.orderedDate}:p);save({partsToOrder:np});};
   const toggleReceived=id=>{const p=D.partsToOrder.find(pp=>pp.id===id);if(!p)return;if(p.received){save({partsToOrder:D.partsToOrder.map(pp=>pp.id===id?{...pp,received:false}:pp)});return;}setEdit(p);setModal("receive");};
   const confirmReceive=(partId,f)=>{
@@ -529,6 +557,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     if(poFilters.q&&!(p.desc+p.num+(p.vendor||"")).toLowerCase().includes(poFilters.q.toLowerCase()))return false;
     if(poFilters.vendor&&(p.vendor||"").toLowerCase()!==poFilters.vendor.toLowerCase())return false;
     if(poFilters.num&&(p.num||"").toLowerCase()!==poFilters.num.toLowerCase())return false;
+    if(poFilters.invPartId&&p.invPartId!==poFilters.invPartId)return false;
     if(poFilters.vehicle&&p.vehicleId!==poFilters.vehicle)return false;
     if(poFilters.status==="needed"&&(p.ordered||p.received))return false;
     if(poFilters.status==="ordered"&&(!p.ordered||p.received))return false;
@@ -646,7 +675,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
       {modal==="record"   &&<RecordMo    initial={editTarget} vehicleId={selVehId} partsToOrder={D.partsToOrder} onSave={saveRecord}   onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="customer" &&<CustomerMo  initial={editTarget} onSave={saveCustomer} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} partsInventory={D.partsInventory} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invItem"  &&<InvItemMo   initial={editTarget} vehicles={D.vehicles} onSave={saveInvItem} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="addToService"&&<AddToServiceMo parts={(editTarget||[]).map(id=>D.partsToOrder.find(p=>p.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={addPartsToService} onClose={()=>{setModal(null);setEdit(null);}}/>}
@@ -1004,8 +1033,11 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
   const allVendors=[...new Set(D.partsToOrder.map(p=>p.vendor).filter(Boolean))].sort();
   const allNums=[...new Set(D.partsToOrder.map(p=>p.num).filter(Boolean))].sort();
   const usedVehs=D.vehicles.filter(v=>D.partsToOrder.some(p=>p.vehicleId===v.id)).sort((a,b)=>a.name.localeCompare(b.name));
+  const invItems=[...(D.partsInventory||[])].sort((a,b)=>a.name.localeCompare(b.name));
+  const invName=id=>D.partsInventory.find(i=>i.id===id)?.name||"";
   const f=(k,v)=>setPOF(p=>({...p,[k]:v}));
   const pn=(k,v)=>setPoNew(p=>({...p,[k]:v}));
+  const selectedInvItem=D.partsInventory.find(i=>i.id===poNew.invPartId);
 
   const allSelected=filteredPO.length>0&&filteredPO.every(p=>selPoIds.has(p.id));
   const toggleAll=()=>{if(allSelected){const n=new Set(selPoIds);filteredPO.forEach(p=>n.delete(p.id));setSelPoIds(n);}else{const n=new Set(selPoIds);filteredPO.forEach(p=>n.add(p.id));setSelPoIds(n);}};
@@ -1032,9 +1064,13 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
 
     {/* Quick-add bar */}
     <div className="po-add-bar">
+      <div className="form-group" style={{flex:2,minWidth:"140px"}}><label className="form-lbl">Your Part #</label><select className="form-select" style={{padding:"6px 8px"}} value={poNew.invPartId} onChange={e=>{const id=e.target.value;const item=D.partsInventory.find(i=>i.id===id);pn("invPartId",id);if(item&&!poNew.desc.trim())pn("desc",item.name);}}><option value="">— Not linked —</option>{invItems.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
+      {selectedInvItem&&(selectedInvItem.partNumbers||[]).length>0&&(
+        <div className="form-group" style={{flex:1,minWidth:"140px"}}><label className="form-lbl">Saved Vendor #s</label><select className="form-select" style={{padding:"6px 8px"}} value="" onChange={e=>{const x=selectedInvItem.partNumbers.find(n=>n.id===e.target.value);if(x){pn("vendor",x.vendor||"");pn("num",x.num||"");}}}><option value="">Pick saved #…</option>{selectedInvItem.partNumbers.map(x=><option key={x.id} value={x.id}>{x.vendor?`${x.vendor} — `:""}{x.num}</option>)}</select></div>
+      )}
       <div className="form-group" style={{flex:3,minWidth:"140px"}}><label className="form-lbl">Description</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Part description..." value={poNew.desc} onChange={e=>pn("desc",e.target.value)} onKeyDown={e=>e.key==="Enter"&&quickAddPart()}/></div>
-      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Part #</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Part #" value={poNew.num} onChange={e=>pn("num",e.target.value)}/></div>
       <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor</label><input className="form-input" style={{padding:"6px 8px"}} list="vendor-list-po" placeholder="Vendor" value={poNew.vendor} onChange={e=>pn("vendor",e.target.value)}/><datalist id="vendor-list-po">{[...D.vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
+      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor Part #</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Vendor Part #" value={poNew.num} onChange={e=>pn("num",e.target.value)}/></div>
       <div className="form-group" style={{minWidth:"55px"}}><label className="form-lbl">Qty</label><input type="number" className="form-input" style={{padding:"6px 8px"}} min="1" value={poNew.qty} onChange={e=>pn("qty",e.target.value)}/></div>
       <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Vehicle</label><select className="form-select" style={{padding:"6px 8px"}} value={poNew.vehicleId} onChange={e=>pn("vehicleId",e.target.value)}><option value="">For Stock</option><option value="__stock__">📦 For Stock</option>{[...D.vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
       <button className="btn btn-primary" style={{alignSelf:"flex-end",padding:"6px 14px"}} onClick={quickAddPart}>+ Add</button>
@@ -1043,11 +1079,12 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
     {/* Filters */}
     <div className="po-filters">
       <div className="form-group" style={{flex:2,minWidth:"140px"}}><label className="form-lbl">Keyword</label><input className="form-input" style={{padding:"5px 8px"}} placeholder="Search parts..." value={poFilters.q} onChange={e=>f("q",e.target.value)}/></div>
+      <div className="form-group" style={{flex:1,minWidth:"110px"}}><label className="form-lbl">Your Part #</label><select className="form-select" style={{padding:"5px 8px"}} value={poFilters.invPartId} onChange={e=>f("invPartId",e.target.value)}><option value="">All Items</option>{invItems.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
       <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Vendor</label><select className="form-select" style={{padding:"5px 8px"}} value={poFilters.vendor} onChange={e=>f("vendor",e.target.value)}><option value="">All Vendors</option>{allVendors.map(v=><option key={v}>{v}</option>)}</select></div>
-      <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Part #</label><select className="form-select" style={{padding:"5px 8px"}} value={poFilters.num} onChange={e=>f("num",e.target.value)}><option value="">All Part #s</option>{allNums.map(n=><option key={n}>{n}</option>)}</select></div>
+      <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Vendor Part #</label><select className="form-select" style={{padding:"5px 8px"}} value={poFilters.num} onChange={e=>f("num",e.target.value)}><option value="">All Vendor Part #s</option>{allNums.map(n=><option key={n}>{n}</option>)}</select></div>
       <div className="form-group" style={{flex:1,minWidth:"110px"}}><label className="form-lbl">Vehicle</label><select className="form-select" style={{padding:"5px 8px"}} value={poFilters.vehicle} onChange={e=>f("vehicle",e.target.value)}><option value="">All Vehicles</option>{usedVehs.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
       <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Status</label><select className="form-select" style={{padding:"5px 8px"}} value={poFilters.status} onChange={e=>f("status",e.target.value)}><option value="">All Status</option><option value="needed">Needed</option><option value="ordered">Ordered</option><option value="received">Received</option></select></div>
-      {(poFilters.q||poFilters.vendor||poFilters.num||poFilters.vehicle||poFilters.status)&&<button className="btn btn-ghost btn-sm" style={{alignSelf:"flex-end"}} onClick={()=>setPOF({q:"",vendor:"",num:"",vehicle:"",status:""})}>✕ Clear</button>}
+      {(poFilters.q||poFilters.vendor||poFilters.num||poFilters.invPartId||poFilters.vehicle||poFilters.status)&&<button className="btn btn-ghost btn-sm" style={{alignSelf:"flex-end"}} onClick={()=>setPOF({q:"",vendor:"",num:"",vehicle:"",status:"",invPartId:""})}>✕ Clear</button>}
     </div>
 
     {filteredPO.length===0&&<div className="empty"><div className="empty-icon">🔩</div><div className="empty-title">No Parts</div></div>}
@@ -1059,7 +1096,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
           <thead><tr>
             <th style={{width:24}}></th>
             <th style={{width:32}}><input type="checkbox" checked={allSelected} onChange={toggleAll} style={{accentColor:"var(--amber)",cursor:"pointer"}}/></th>
-            <th>Description</th><th>Part #</th><th>Vendor</th><th>Qty</th>{canCost&&<th>Unit Cost</th>}<th>Vehicle</th><th>Status</th><th></th>
+            <th>Your Part #</th><th>Description</th><th>Vendor</th><th>Vendor Part #</th><th>Qty</th>{canCost&&<th>Unit Cost</th>}<th>Vehicle</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>{filteredPO.map(p=>{
             const status=pStatus(p);
@@ -1067,9 +1104,10 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
             return(<tr key={p.id} className={`po-row-${status}`}>
               <td><span className={`po-status-dot ${status}`}/></td>
               <td><input type="checkbox" checked={selPoIds.has(p.id)} onChange={()=>setSelPoIds(s=>{const n=new Set(s);s.has(p.id)?n.delete(p.id):n.add(p.id);return n;})} style={{accentColor:"var(--amber)",cursor:"pointer",width:"15px",height:"15px"}}/></td>
+              <td className="po-partnum">{p.invPartId?(invName(p.invPartId)||"—"):"—"}</td>
               <td style={{fontWeight:600}}>{p.desc||""}</td>
-              <td className="po-partnum">{p.num||""}</td>
               <td>{p.vendor||""}</td>
+              <td className="po-partnum">{p.num||""}</td>
               <td>{p.qty||"1"}</td>
               {canCost&&<td>{p.unitCost?`$${Number(p.unitCost).toFixed(2)}`:""}</td>}
               <td style={{fontSize:"12px"}}>{vn}</td>
@@ -1459,12 +1497,19 @@ function TodoMo({vehicleId,initial,onSave,onClose}){
   </Mo>);
 }
 
-function PartMo({initial,vehicles,vendors,onSave,onClose}){
-  const[f,setF]=useState({desc:initial?.desc||"",num:initial?.num||"",vendor:initial?.vendor||"",qty:initial?.qty||"1",unitCost:initial?.unitCost||"",vehicleId:initial?.vehicleId||"",notes:initial?.notes||""});
+function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
+  const[f,setF]=useState({invPartId:initial?.invPartId||"",desc:initial?.desc||"",num:initial?.num||"",vendor:initial?.vendor||"",qty:initial?.qty||"1",unitCost:initial?.unitCost||"",vehicleId:initial?.vehicleId||"",notes:initial?.notes||""});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const inv=partsInventory||[];
+  const invItems=[...inv].sort((a,b)=>a.name.localeCompare(b.name));
+  const selectedItem=inv.find(i=>i.id===f.invPartId);
   return(<Mo title={initial?"Edit Part":"Add Part to Order"} onClose={onClose} onSave={()=>{if(!f.desc.trim())return alert("Description required.");onSave(f);}} saveLabel={initial?"Save":"Add Part"}>
+    <Fg label="Your Part #" full><Fs value={f.invPartId} onChange={e=>{const id=e.target.value;const item=inv.find(i=>i.id===id);s("invPartId",id);if(item&&!f.desc.trim())s("desc",item.name);}}><option value="">— Not linked —</option>{invItems.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</Fs></Fg>
+    {selectedItem&&(selectedItem.partNumbers||[]).length>0&&(
+      <Fg label="Saved Vendor #s" full><Fs value="" onChange={e=>{const x=selectedItem.partNumbers.find(n=>n.id===e.target.value);if(x){s("vendor",x.vendor||"");s("num",x.num||"");}}}><option value="">Pick saved #…</option>{selectedItem.partNumbers.map(x=><option key={x.id} value={x.id}>{x.vendor?`${x.vendor} — `:""}{x.num}</option>)}</Fs></Fg>
+    )}
     <Fg label="Description *" full><Fi value={f.desc} onChange={e=>s("desc",e.target.value)} placeholder="e.g. Oil Filter, Air Filter…"/></Fg>
-    <Fr><Fg label="Part Number"><Fi value={f.num} onChange={e=>s("num",e.target.value)}/></Fg><Fg label="Vendor"><Fi list="vend-list-po" value={f.vendor} onChange={e=>s("vendor",e.target.value)}/><datalist id="vend-list-po">{[...vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></Fg><Fg label="Quantity"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Unit Cost ($)"><Fi type="number" step="0.01" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg></Fr>
+    <Fr><Fg label="Vendor"><Fi list="vend-list-po" value={f.vendor} onChange={e=>s("vendor",e.target.value)}/><datalist id="vend-list-po">{[...vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></Fg><Fg label="Vendor Part #"><Fi value={f.num} onChange={e=>s("num",e.target.value)}/></Fg><Fg label="Quantity"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Unit Cost ($)"><Fi type="number" step="0.01" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg></Fr>
     <Fg label="For Vehicle" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— For Stock —</option><option value="__stock__">📦 For Stock</option>{[...vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
