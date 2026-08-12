@@ -25370,6 +25370,7 @@ ${body}
     const [editTarget, setEdit] = (0, import_react9.useState)(null);
     const [selRecIds, setSelRecs] = (0, import_react9.useState)(/* @__PURE__ */ new Set());
     const [selPoIds, setSelPoIds] = (0, import_react9.useState)(/* @__PURE__ */ new Set());
+    const [selInvIds, setSelInvIds] = (0, import_react9.useState)(/* @__PURE__ */ new Set());
     const [gsQuery, setGsQ] = (0, import_react9.useState)("");
     const [highlightRecId, setHighlightRecId] = (0, import_react9.useState)(null);
     const [poFilters, setPOF] = (0, import_react9.useState)({ q: "", vendor: "", num: "", vehicle: "", status: "", invPartId: "" });
@@ -25783,6 +25784,15 @@ ${body}
       }
     };
     const deleteInvItem = (id) => save({ partsInventory: D.partsInventory.filter((p) => p.id !== id) });
+    const mergeInvItems = (ids, f) => {
+      const removedIds = ids.filter((id) => id !== f.keepId);
+      const ni = D.partsInventory.filter((i) => !removedIds.includes(i.id)).map((i) => i.id === f.keepId ? { ...i, name: f.name, qty: f.qty, minQty: f.minQty, location: f.location, notes: f.notes, partNumbers: f.partNumbers } : i);
+      const np = D.partsToOrder.map((p) => removedIds.includes(p.invPartId) ? { ...p, invPartId: f.keepId } : p);
+      save({ partsInventory: ni, partsToOrder: np });
+      setModal(null);
+      setEdit(null);
+      setSelInvIds(/* @__PURE__ */ new Set());
+    };
     const finishStockPrompt = (patch) => {
       if (stockPromptItem && patch && Object.keys(patch).length) save({ partsInventory: D.partsInventory.map((p) => p.id === stockPromptItem.id ? { ...p, ...patch } : p) });
       setModal(null);
@@ -25963,7 +25973,7 @@ ${body}
             tab === "costs" && perms.canViewCosts && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(CostView, { D, custName }),
             tab === "invoices" && perms.canViewCosts && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(InvoicesView, { D, updateInvStatus, deleteInvoice, custName }),
             tab === "order" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(OrderView, { D, filteredPO, poFilters, setPOF, poNew, setPoNew, quickAddPart, toggleOrdered, toggleReceived, deletePart, archiveReceived, consolidateDupes, selPoIds, setSelPoIds, setEdit, setModal, vehName, perms }),
-            tab === "parts" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(PartsView, { D, invFilters, setInvF, deleteInvItem, setEdit, setModal, invQtyAdj, perms, lowStockAlerts }),
+            tab === "parts" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(PartsView, { D, invFilters, setInvF, deleteInvItem, setEdit, setModal, invQtyAdj, perms, lowStockAlerts, selInvIds, setSelInvIds }),
             tab === "vendors" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(VendorsView, { D, deleteVendor, setEdit, setModal }),
             tab === "orderhistory" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(HistoryView2, { D, vehName, perms }),
             tab === "todos" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(TodosView, { D, toggleTodo, deleteTodo, setEdit, setModal, setTab, setSelVeh, setSelCust }),
@@ -25999,6 +26009,10 @@ ${body}
         setEdit(null);
       } }),
       modal === "invItem" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(InvItemMo, { initial: editTarget, vehicles: D.vehicles, onSave: saveInvItem, onClose: () => {
+        setModal(null);
+        setEdit(null);
+      } }),
+      modal === "mergeInv" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MergeInvMo, { items: (editTarget || []).map((id) => D.partsInventory.find((i) => i.id === id)).filter(Boolean), onSave: (f) => mergeInvItems(editTarget, f), onClose: () => {
         setModal(null);
         setEdit(null);
       } }),
@@ -26901,7 +26915,8 @@ ${body}
       ] }) })
     ] });
   }
-  function PartsView({ D, invFilters, setInvF, deleteInvItem, setEdit, setModal, invQtyAdj, perms, lowStockAlerts = [] }) {
+  function PartsView({ D, invFilters, setInvF, deleteInvItem, setEdit, setModal, invQtyAdj, perms, lowStockAlerts = [], selInvIds = /* @__PURE__ */ new Set(), setSelInvIds = () => {
+  } }) {
     const canCost = perms ? perms.canViewCosts : true;
     const inv = D.partsInventory || [];
     const filtered = inv.filter((p) => {
@@ -26911,15 +26926,30 @@ ${body}
     }).sort((a, b) => a.name.localeCompare(b.name));
     const lowStock = inv.filter((p) => p.qty !== "" && p.minQty !== "" && Number(p.qty) <= Number(p.minQty));
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "overview-title", children: "Parts Inventory" }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "overview-sub", children: [
-        inv.length,
-        " item",
-        inv.length !== 1 ? "s" : "",
-        lowStock.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { color: "var(--red)", fontWeight: 600 }, children: [
-          " \xB7 ",
-          lowStock.length,
-          " low stock"
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "overview-title", children: "Parts Inventory" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "overview-sub", children: [
+            inv.length,
+            " item",
+            inv.length !== 1 ? "s" : "",
+            lowStock.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { color: "var(--red)", fontWeight: 600 }, children: [
+              " \xB7 ",
+              lowStock.length,
+              " low stock"
+            ] })
+          ] })
+        ] }),
+        selInvIds.size > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", gap: "6px", alignItems: "center" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { fontSize: "13px", color: "var(--text-dim)" }, children: [
+            selInvIds.size,
+            " selected"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-sm", onClick: () => setSelInvIds(/* @__PURE__ */ new Set()), children: "Clear" }),
+          selInvIds.size >= 2 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-primary btn-sm", onClick: () => {
+            setEdit([...selInvIds]);
+            setModal("mergeInv");
+          }, children: "\u21C4 Merge Selected" })
         ] })
       ] }),
       lowStockAlerts.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { background: "rgba(220,38,38,.08)", border: "1px solid rgba(220,38,38,.25)", borderRadius: "6px", padding: "10px 14px", marginBottom: "12px" }, children: [
@@ -26947,6 +26977,11 @@ ${body}
       filtered.map((p) => {
         const isLow = p.qty !== "" && p.minQty !== "" && Number(p.qty) <= Number(p.minQty);
         return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "inv-row", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { type: "checkbox", checked: selInvIds.has(p.id), onChange: () => setSelInvIds((s) => {
+            const n = new Set(s);
+            s.has(p.id) ? n.delete(p.id) : n.add(p.id);
+            return n;
+          }), style: { accentColor: "var(--amber)", cursor: "pointer", width: "15px", height: "15px", marginTop: "3px" } }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { flex: 1 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "inv-name", children: [
               p.name,
@@ -27550,14 +27585,83 @@ ${body}
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Part Numbers / Vendors" }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-xs", onClick: addPN, children: "+ Add" })
         ] }),
+        f.partNumbers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 80px auto", gap: "5px", marginBottom: "3px" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", style: { margin: 0 }, children: "Vendor" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", style: { margin: 0 }, children: "Vendor Part #" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", style: { margin: 0 }, children: "Cost" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", {})
+        ] }),
         f.partNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 80px auto", gap: "5px", marginBottom: "5px", alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Part #", value: n.num, onChange: (e) => updPN(i, "num", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor", value: n.vendor, onChange: (e) => updPN(i, "vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor Part #", value: n.num, onChange: (e) => updPN(i, "num", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", placeholder: "Cost", value: n.unitCost, onChange: (e) => updPN(i, "unitCost", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remPN(i), children: "\u2715" })
         ] }, n.id || i))
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Notes", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("textarea", { className: "form-textarea", style: { minHeight: "55px" }, value: f.notes, onChange: (e) => s("notes", e.target.value) }) })
+    ] });
+  }
+  function MergeInvMo({ items, onSave, onClose }) {
+    const [keepId, setKeepId] = (0, import_react9.useState)(items[0]?.id || "");
+    const [name, setName] = (0, import_react9.useState)(items[0]?.name || "");
+    const [qty, setQty] = (0, import_react9.useState)(String(items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)));
+    const [minQty, setMinQty] = (0, import_react9.useState)(items[0]?.minQty || "");
+    const [location, setLocation] = (0, import_react9.useState)(items.find((i) => i.location)?.location || "");
+    const [notes, setNotes] = (0, import_react9.useState)([...new Set(items.map((i) => i.notes).filter(Boolean))].join("\n"));
+    (0, import_react9.useEffect)(() => {
+      const it = items.find((i) => i.id === keepId);
+      if (it) setName(it.name);
+    }, [keepId]);
+    const combinedPNs = (() => {
+      const out = [];
+      const seen = /* @__PURE__ */ new Set();
+      items.forEach((it) => (it.partNumbers || []).forEach((pn) => {
+        if (!pn.num) return;
+        const key = (pn.vendor || "").trim().toLowerCase() + "__" + (pn.num || "").trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          out.push(pn);
+        }
+      }));
+      return out;
+    })();
+    if (items.length < 2) return null;
+    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Mo, { title: `Merge ${items.length} Items`, onClose, onSave: () => {
+      if (!name.trim()) return alert("Name required.");
+      onSave({ keepId, name, qty, minQty, location, notes, partNumbers: combinedPNs });
+    }, saveLabel: "Merge", large: true, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { style: { fontSize: "13px", color: "var(--text-dim)", margin: "0 0 10px" }, children: [
+        "Merging ",
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("strong", { children: items.map((i) => i.name).join(", ") }),
+        " into one item. Quantities add together; part #s and vendors from all of them are kept."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Keep name from", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fs, { value: keepId, onChange: (e) => setKeepId(e.target.value), children: items.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("option", { value: i.id, children: [
+        i.name,
+        i.qty !== "" ? ` (qty ${i.qty})` : ""
+      ] }, i.id)) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Final Name *", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { value: name, onChange: (e) => setName(e.target.value) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fr, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Combined Qty", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", value: qty, onChange: (e) => setQty(e.target.value) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Min Qty", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", value: minQty, onChange: (e) => setMinQty(e.target.value) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Storage Location", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { value: location, onChange: (e) => setLocation(e.target.value) }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { className: "form-lbl", children: [
+          "Combined Part #s / Vendors (",
+          combinedPNs.length,
+          ")"
+        ] }),
+        combinedPNs.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "12px", color: "var(--text-dim)" }, children: "None" }),
+        combinedPNs.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { fontSize: "12px", color: "var(--text-dim)", padding: "2px 0" }, children: [
+          n.vendor && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { fontWeight: 600 }, children: [
+            n.vendor,
+            ": "
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: { fontFamily: "'Share Tech Mono',monospace", color: "var(--amber-dim)" }, children: n.num }),
+          n.unitCost && ` \xB7 $${n.unitCost}`
+        ] }, n.id || i))
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Notes", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("textarea", { className: "form-textarea", style: { minHeight: "55px" }, value: notes, onChange: (e) => setNotes(e.target.value) }) })
     ] });
   }
   function StockPromptMo({ item, skipAsk, onDone }) {
