@@ -537,7 +537,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     const removedIds=ids.filter(id=>id!==f.keepId);
     const ni=D.partsInventory
       .filter(i=>!removedIds.includes(i.id))
-      .map(i=>i.id===f.keepId?{...i,name:f.name,qty:f.qty,minQty:f.minQty,location:f.location,notes:f.notes,partNumbers:f.partNumbers}:i);
+      .map(i=>i.id===f.keepId?{...i,name:f.name,qty:f.qty,minQty:f.minQty,location:f.location,notes:f.notes,partNumbers:f.partNumbers,fitsVehicleIds:f.fitsVehicleIds}:i);
     const np=D.partsToOrder.map(p=>removedIds.includes(p.invPartId)?{...p,invPartId:f.keepId}:p);
     save({partsInventory:ni,partsToOrder:np});
     setModal(null);setEdit(null);setSelInvIds(new Set());
@@ -691,7 +691,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
       {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} partsInventory={D.partsInventory} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="invItem"  &&<InvItemMo   initial={editTarget} vehicles={D.vehicles} onSave={saveInvItem} onClose={()=>{setModal(null);setEdit(null);}}/>}
-      {modal==="mergeInv" &&<MergeInvMo  items={(editTarget||[]).map(id=>D.partsInventory.find(i=>i.id===id)).filter(Boolean)} onSave={f=>mergeInvItems(editTarget,f)} onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="mergeInv" &&<MergeInvMo  items={(editTarget||[]).map(id=>D.partsInventory.find(i=>i.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={f=>mergeInvItems(editTarget,f)} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="vendor"   &&<VendorMo    initial={editTarget} onSave={saveVendor}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="addToService"&&<AddToServiceMo parts={(editTarget||[]).map(id=>D.partsToOrder.find(p=>p.id===id)).filter(Boolean)} vehicles={D.vehicles} onSave={addPartsToService} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="receive"  &&<ReceiveMo   part={editTarget} partsInventory={D.partsInventory} onSave={confirmReceive} onClose={()=>{setModal(null);setEdit(null);}}/>}
@@ -1184,6 +1184,7 @@ function PartsView({D,invFilters,setInvF,deleteInvItem,setEdit,setModal,invQtyAd
           <div className="inv-name">{p.name}{isLow&&<span className="inv-low" style={{marginLeft:"8px"}}>⚠ Low</span>}{p.notifyLowStock&&<span title="Notifies when low" style={{marginLeft:"6px",fontSize:"12px"}}>🔔</span>}</div>
           <div className="inv-meta">{p.qty!==""&&<span style={{display:"flex",alignItems:"center",gap:"4px"}}>Qty: <button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,-1)}>−</button><strong>{p.qty}</strong><button className="btn btn-ghost btn-xs" style={{padding:"1px 6px",lineHeight:1,fontSize:"14px"}} onClick={()=>invQtyAdj(p.id,1)}>+</button></span>}{p.minQty!==""&&<span>Min: {p.minQty}</span>}{p.location&&<span>📍 {p.location}</span>}</div>
           {(p.partNumbers||[]).map((n,i)=><div key={i} style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"2px"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{canCost&&n.unitCost&&` · $${n.unitCost}`}</div>)}
+          {(p.fitsVehicleIds||[]).length>0&&<div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"4px"}}>🚜 Fits: {p.fitsVehicleIds.map(id=>D.vehicles.find(v=>v.id===id)?.name).filter(Boolean).join(", ")}</div>}
           {p.notes&&<div style={{fontSize:"12px",color:"var(--text-dim)",fontStyle:"italic",marginTop:"4px"}}>{p.notes}</div>}
         </div>
         <div style={{display:"flex",gap:"5px"}}>
@@ -1543,11 +1544,13 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
 }
 
 function InvItemMo({initial,vehicles,onSave,onClose}){
-  const[f,setF]=useState({name:initial?.name||"",qty:initial?.qty||"",minQty:initial?.minQty||"",notifyLowStock:initial?.notifyLowStock||false,location:initial?.location||"",notes:initial?.notes||"",partNumbers:initial?.partNumbers||[]});
+  const[f,setF]=useState({name:initial?.name||"",qty:initial?.qty||"",minQty:initial?.minQty||"",notifyLowStock:initial?.notifyLowStock||false,location:initial?.location||"",notes:initial?.notes||"",partNumbers:initial?.partNumbers||[],fitsVehicleIds:initial?.fitsVehicleIds||[]});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const addPN=()=>setF(p=>({...p,partNumbers:[...p.partNumbers,{id:genId(),num:"",vendor:"",unitCost:""}]}));
   const updPN=(i,k,v)=>setF(p=>({...p,partNumbers:p.partNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
   const remPN=i=>setF(p=>({...p,partNumbers:p.partNumbers.filter((_,ii)=>ii!==i)}));
+  const addFit=id=>{if(!id)return;setF(p=>p.fitsVehicleIds.includes(id)?p:{...p,fitsVehicleIds:[...p.fitsVehicleIds,id]});};
+  const remFit=id=>setF(p=>({...p,fitsVehicleIds:p.fitsVehicleIds.filter(x=>x!==id)}));
   return(<Mo title={initial?"Edit Inventory Item":"Add Inventory Item"} onClose={onClose} onSave={()=>{if(!f.name.trim())return alert("Name required.");onSave(f);}} saveLabel={initial?"Save":"Add"} large>
     <Fg label="Part Name *" full><Fi value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. Oil Filter 15W-40"/></Fg>
     <Fr><Fg label="Qty on Hand"><Fi type="number" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Min Qty"><Fi type="number" value={f.minQty} onChange={e=>s("minQty",e.target.value)}/></Fg><Fg label="Storage Location"><Fi value={f.location} onChange={e=>s("location",e.target.value)} placeholder="Shop Shelf A"/></Fg></Fr>
@@ -1567,6 +1570,19 @@ function InvItemMo({initial,vehicles,onSave,onClose}){
       </div>
     )}
     {f.partNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi placeholder="Vendor" value={n.vendor} onChange={e=>updPN(i,"vendor",e.target.value)}/><Fi placeholder="Vendor Part #" value={n.num} onChange={e=>updPN(i,"num",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updPN(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remPN(i)}>✕</button></div>))}</div>
+    <div>
+      <label className="form-lbl">Fits Vehicles / Equipment</label>
+      <div style={{fontSize:"11px",color:"var(--text-dim)",margin:"-2px 0 6px"}}>Same part, multiple machines — e.g. one air filter that fits both the R75 and the R62.</div>
+      <Fs value="" onChange={e=>{addFit(e.target.value);}}>
+        <option value="">+ Add a vehicle this part fits…</option>
+        {[...vehicles].sort((a,b)=>a.name.localeCompare(b.name)).filter(v=>!f.fitsVehicleIds.includes(v.id)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
+      </Fs>
+      {f.fitsVehicleIds.length>0&&(
+        <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginTop:"8px"}}>
+          {f.fitsVehicleIds.map(id=>{const v=vehicles.find(x=>x.id===id);return(<span key={id} style={{display:"inline-flex",alignItems:"center",gap:"5px",background:"rgba(217,119,6,.12)",border:"1px solid rgba(217,119,6,.3)",borderRadius:"12px",padding:"3px 8px 3px 10px",fontSize:"12px"}}>{v?.name||"Unknown"}<button type="button" onClick={()=>remFit(id)} style={{background:"none",border:"none",color:"var(--text-dim)",cursor:"pointer",fontSize:"13px",lineHeight:1,padding:0}}>✕</button></span>);})}
+        </div>
+      )}
+    </div>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={f.notes} onChange={e=>s("notes",e.target.value)}/></Fg>
   </Mo>);
 }
@@ -1575,7 +1591,7 @@ function InvItemMo({initial,vehicles,onSave,onClose}){
 // separately for several Mattson Bros vehicles) into one. Quantities add
 // together; part #/vendor combos from every selected item are unioned
 // (deduped) rather than one side winning — nothing gets dropped.
-function MergeInvMo({items,onSave,onClose}){
+function MergeInvMo({items,vehicles=[],onSave,onClose}){
   const[keepId,setKeepId]=useState(items[0]?.id||"");
   const[name,setName]=useState(items[0]?.name||"");
   const[qty,setQty]=useState(String(items.reduce((s,i)=>s+(parseInt(i.qty)||0),0)));
@@ -1584,9 +1600,10 @@ function MergeInvMo({items,onSave,onClose}){
   const[notes,setNotes]=useState([...new Set(items.map(i=>i.notes).filter(Boolean))].join("\n"));
   useEffect(()=>{const it=items.find(i=>i.id===keepId);if(it)setName(it.name);},[keepId]);
   const combinedPNs=(()=>{const out=[];const seen=new Set();items.forEach(it=>(it.partNumbers||[]).forEach(pn=>{if(!pn.num)return;const key=(pn.vendor||"").trim().toLowerCase()+"__"+(pn.num||"").trim().toLowerCase();if(!seen.has(key)){seen.add(key);out.push(pn);}}));return out;})();
+  const combinedFits=[...new Set(items.flatMap(it=>it.fitsVehicleIds||[]))];
   if(items.length<2) return null;
-  return(<Mo title={`Merge ${items.length} Items`} onClose={onClose} onSave={()=>{if(!name.trim())return alert("Name required.");onSave({keepId,name,qty,minQty,location,notes,partNumbers:combinedPNs});}} saveLabel="Merge" large>
-    <p style={{fontSize:"13px",color:"var(--text-dim)",margin:"0 0 10px"}}>Merging <strong>{items.map(i=>i.name).join(", ")}</strong> into one item. Quantities add together; part #s and vendors from all of them are kept.</p>
+  return(<Mo title={`Merge ${items.length} Items`} onClose={onClose} onSave={()=>{if(!name.trim())return alert("Name required.");onSave({keepId,name,qty,minQty,location,notes,partNumbers:combinedPNs,fitsVehicleIds:combinedFits});}} saveLabel="Merge" large>
+    <p style={{fontSize:"13px",color:"var(--text-dim)",margin:"0 0 10px"}}>Merging <strong>{items.map(i=>i.name).join(", ")}</strong> into one item. Quantities add together; part #s, vendors, and fits-vehicles from all of them are kept.</p>
     <Fg label="Keep name from" full><Fs value={keepId} onChange={e=>setKeepId(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}{i.qty!==""?` (qty ${i.qty})`:""}</option>)}</Fs></Fg>
     <Fg label="Final Name *" full><Fi value={name} onChange={e=>setName(e.target.value)}/></Fg>
     <Fr><Fg label="Combined Qty"><Fi type="number" value={qty} onChange={e=>setQty(e.target.value)}/></Fg><Fg label="Min Qty"><Fi type="number" value={minQty} onChange={e=>setMinQty(e.target.value)}/></Fg><Fg label="Storage Location"><Fi value={location} onChange={e=>setLocation(e.target.value)}/></Fg></Fr>
@@ -1594,6 +1611,11 @@ function MergeInvMo({items,onSave,onClose}){
       <label className="form-lbl">Combined Part #s / Vendors ({combinedPNs.length})</label>
       {combinedPNs.length===0&&<div style={{fontSize:"12px",color:"var(--text-dim)"}}>None</div>}
       {combinedPNs.map((n,i)=><div key={n.id||i} style={{fontSize:"12px",color:"var(--text-dim)",padding:"2px 0"}}>{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}<span style={{fontFamily:"'Share Tech Mono',monospace",color:"var(--amber-dim)"}}>{n.num}</span>{n.unitCost&&` · $${n.unitCost}`}</div>)}
+    </div>
+    <div>
+      <label className="form-lbl">Combined Fits Vehicles ({combinedFits.length})</label>
+      {combinedFits.length===0&&<div style={{fontSize:"12px",color:"var(--text-dim)"}}>None</div>}
+      {combinedFits.length>0&&<div style={{fontSize:"12px",color:"var(--text-dim)"}}>{combinedFits.map(id=>vehicles.find(v=>v.id===id)?.name).filter(Boolean).join(", ")}</div>}
     </div>
     <Fg label="Notes" full><textarea className="form-textarea" style={{minHeight:"55px"}} value={notes} onChange={e=>setNotes(e.target.value)}/></Fg>
   </Mo>);
