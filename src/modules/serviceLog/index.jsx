@@ -586,11 +586,15 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const vehName=id=>id==="__stock__"?"📦 For Stock":(D.vehicles.find(v=>v.id===id)?.name||"");
   const featOn=k=>D.settings.features?.[k]!==false;
   const filteredPO=[...D.partsToOrder].filter(p=>{
-    // Keyword search also reaches into the linked Parts Inventory item's
-    // name and its full list of vendor/part# combos — including any
-    // "Other Vendors for This Part" entries added from the Order Parts
-    // screen — not just this order line's own single vendor/part#.
-    const linkedItem=p.invPartId?D.partsInventory.find(i=>i.id===p.invPartId):null;
+    // Keyword search also reaches into the Parts Inventory side: the linked
+    // item's name and its full list of saved vendor/part# combos — every
+    // vendor/part# entered for that item from either the Parts screen or
+    // the Order Parts screen's "Other Vendors" rows, not just this order
+    // line's own single vendor/part#. Falls back to a name match on
+    // description for older order lines that predate the invPartId link.
+    const linkedItem=p.invPartId
+      ? D.partsInventory.find(i=>i.id===p.invPartId)
+      : D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===(p.desc||"").trim().toLowerCase());
     const extraHaystack=linkedItem?(linkedItem.name+" "+(linkedItem.partNumbers||[]).map(n=>(n.vendor||"")+" "+(n.num||"")).join(" ")):"";
     if(poFilters.q&&!(p.desc+p.num+(p.vendor||"")+" "+extraHaystack).toLowerCase().includes(poFilters.q.toLowerCase()))return false;
     if(poFilters.vendor&&(p.vendor||"").toLowerCase()!==poFilters.vendor.toLowerCase())return false;
