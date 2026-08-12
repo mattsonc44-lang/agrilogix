@@ -26906,6 +26906,7 @@ ${body}
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("tbody", { children: filteredPO.map((p) => {
           const status = pStatus(p);
           const vn = p.vehicleId === "__stock__" ? "\u{1F4E6} For Stock" : vehName(p.vehicleId);
+          const linkedItem = p.invPartId ? D.partsInventory.find((i) => i.id === p.invPartId) : null;
           return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("tr", { className: `po-row-${status}`, children: [
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `po-status-dot ${status}` }) }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { type: "checkbox", checked: selPoIds.has(p.id), onChange: () => setSelPoIds((s) => {
@@ -26913,7 +26914,17 @@ ${body}
               s.has(p.id) ? n.delete(p.id) : n.add(p.id);
               return n;
             }), style: { accentColor: "var(--amber)", cursor: "pointer", width: "15px", height: "15px" } }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { className: "po-partnum", children: p.invPartId ? invName(p.invPartId) || "\u2014" : "\u2014" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { className: "po-partnum", children: [
+              linkedItem ? linkedItem.name : "\u2014",
+              linkedItem && (linkedItem.partNumbers || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "10px", color: "var(--text-dim)", fontFamily: "'Barlow',sans-serif", marginTop: "2px", fontWeight: 400 }, children: linkedItem.partNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { children: [
+                i > 0 && " \xB7 ",
+                n.vendor && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { fontWeight: 600 }, children: [
+                  n.vendor,
+                  ": "
+                ] }),
+                n.num
+              ] }, n.id || i)) })
+            ] }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { style: { fontWeight: 600 }, children: p.desc || "" }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: p.vendor || "" }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { className: "po-partnum", children: p.num || "" }),
