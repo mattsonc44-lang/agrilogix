@@ -25339,17 +25339,28 @@ ${body}
     return { day: d.getDate().toString().padStart(2, "0"), mon: d.toLocaleString("en", { month: "short" }).toUpperCase(), yr: d.getFullYear() };
   };
   var pStatus = (p) => p.received ? "received" : p.ordered ? "ordered" : "needed";
-  var linkVendorPartNumber = (itemId, vendor, num, unitCost, partsInventory) => {
-    if (!itemId) return partsInventory;
-    const v = (vendor || "").trim(), n = (num || "").trim();
-    if (!n) return partsInventory;
-    const inv = partsInventory || [];
-    const item = inv.find((i) => i.id === itemId);
-    if (!item) return partsInventory;
-    const exists = (item.partNumbers || []).some((pn) => (pn.num || "").trim().toLowerCase() === n.toLowerCase() && (pn.vendor || "").trim().toLowerCase() === v.toLowerCase());
-    if (exists) return partsInventory;
-    const newPN = { id: genId(), num: n, vendor: v, unitCost: unitCost || "" };
-    return inv.map((i) => i.id === itemId ? { ...i, partNumbers: [...i.partNumbers || [], newPN] } : i);
+  var resolveInvLink = (itemName, pairs, partsInventory) => {
+    const name = (itemName || "").trim();
+    if (!name) return { invPartId: null, partsInventory };
+    let inv = partsInventory || [];
+    let item = inv.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase());
+    let changed = false;
+    if (!item) {
+      item = { id: genId(), name, qty: "", minQty: "", notifyLowStock: false, location: "", notes: "", partNumbers: [], fitsVehicleIds: [] };
+      inv = [...inv, item];
+      changed = true;
+    }
+    (pairs || []).forEach((pair) => {
+      const v = (pair?.vendor || "").trim(), n = (pair?.num || "").trim();
+      if (!n) return;
+      const exists = (item.partNumbers || []).some((pn) => (pn.num || "").trim().toLowerCase() === n.toLowerCase() && (pn.vendor || "").trim().toLowerCase() === v.toLowerCase());
+      if (exists) return;
+      const newPN = { id: genId(), num: n, vendor: v, unitCost: pair.unitCost || "" };
+      item = { ...item, partNumbers: [...item.partNumbers || [], newPN] };
+      inv = inv.map((i) => i.id === item.id ? item : i);
+      changed = true;
+    });
+    return { invPartId: item.id, partsInventory: changed ? inv : partsInventory };
   };
   var today = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   var nextInvNum = (invs) => {
@@ -25375,7 +25386,7 @@ ${body}
     const [highlightRecId, setHighlightRecId] = (0, import_react9.useState)(null);
     const [poFilters, setPOF] = (0, import_react9.useState)({ q: "", vendor: "", num: "", vehicle: "", status: "", invPartId: "" });
     const [invFilters, setInvF] = (0, import_react9.useState)({ q: "", vendor: "", location: "" });
-    const [poNew, setPoNew] = (0, import_react9.useState)({ invPartId: "", desc: "", num: "", vendor: "", qty: "1", vehicleId: "" });
+    const [poNew, setPoNew] = (0, import_react9.useState)({ itemName: "", desc: "", num: "", vendor: "", qty: "1", vehicleId: "", extraPartNumbers: [] });
     const [reportFil, setRepFil] = (0, import_react9.useState)({ dateFrom: "", dateTo: "", type: "", custId: "" });
     const [stockPromptItem, setStockPromptItem] = (0, import_react9.useState)(null);
     const [stockPromptSkipAsk, setStockPromptSkipAsk] = (0, import_react9.useState)(false);
@@ -25623,27 +25634,32 @@ ${body}
     };
     const deleteTodo = (vid, tid) => save({ vehicles: D.vehicles.map((v) => v.id === vid ? { ...v, todos: (v.todos || []).filter((t) => t.id !== tid) } : v) });
     const savePart = (f) => {
-      const ni = linkVendorPartNumber(f.invPartId, f.vendor, f.num, f.unitCost, D.partsInventory);
+      const { itemName, extraPartNumbers, ...rest } = f;
+      const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: rest.unitCost }, ...extraPartNumbers || []];
+      const link = resolveInvLink(itemName, pairs, D.partsInventory);
+      const entry = { ...rest, invPartId: link.invPartId };
       let np;
       if (editTarget) {
-        np = D.partsToOrder.map((p) => p.id === editTarget.id ? { ...editTarget, ...f } : p);
+        np = D.partsToOrder.map((p) => p.id === editTarget.id ? { ...editTarget, ...entry } : p);
       } else {
-        np = [...D.partsToOrder, { id: genId(), ordered: false, received: false, ...f }];
+        np = [...D.partsToOrder, { id: genId(), ordered: false, received: false, ...entry }];
       }
       const payload = { partsToOrder: np };
-      if (ni !== D.partsInventory) payload.partsInventory = ni;
+      if (link.partsInventory !== D.partsInventory) payload.partsInventory = link.partsInventory;
       save(payload);
       setModal(null);
       setEdit(null);
     };
     const quickAddPart = () => {
       if (!poNew.desc.trim()) return;
-      const ni = linkVendorPartNumber(poNew.invPartId, poNew.vendor, poNew.num, "", D.partsInventory);
-      const np = [{ id: genId(), ordered: false, received: false, addedAt: Date.now(), ...poNew }, ...D.partsToOrder];
+      const { itemName, extraPartNumbers, ...rest } = poNew;
+      const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: "" }, ...extraPartNumbers || []];
+      const link = resolveInvLink(itemName, pairs, D.partsInventory);
+      const np = [{ id: genId(), ordered: false, received: false, addedAt: Date.now(), ...rest, invPartId: link.invPartId }, ...D.partsToOrder];
       const payload = { partsToOrder: np };
-      if (ni !== D.partsInventory) payload.partsInventory = ni;
+      if (link.partsInventory !== D.partsInventory) payload.partsInventory = link.partsInventory;
       save(payload);
-      setPoNew({ invPartId: "", desc: "", num: "", vendor: "", qty: "1", vehicleId: "" });
+      setPoNew({ itemName: "", desc: "", num: "", vendor: "", qty: "1", vehicleId: "", extraPartNumbers: [] });
     };
     const toggleOrdered = (id) => {
       const np = D.partsToOrder.map((p) => p.id === id ? { ...p, ordered: !p.ordered || p.received, orderedDate: !p.ordered ? today() : p.orderedDate } : p);
@@ -26697,7 +26713,10 @@ ${body}
     const invName = (id) => D.partsInventory.find((i) => i.id === id)?.name || "";
     const f = (k, v) => setPOF((p) => ({ ...p, [k]: v }));
     const pn = (k, v) => setPoNew((p) => ({ ...p, [k]: v }));
-    const selectedInvItem = D.partsInventory.find((i) => i.id === poNew.invPartId);
+    const selectedInvItem = D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === poNew.itemName.trim().toLowerCase());
+    const addPoExtra = () => setPoNew((p) => ({ ...p, extraPartNumbers: [...p.extraPartNumbers || [], { id: genId(), vendor: "", num: "", unitCost: "" }] }));
+    const updPoExtra = (i, k, v) => setPoNew((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.map((n, ii) => ii === i ? { ...n, [k]: v } : n) }));
+    const remPoExtra = (i) => setPoNew((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.filter((_, ii) => ii !== i) }));
     const allSelected = filteredPO.length > 0 && filteredPO.every((p) => selPoIds.has(p.id));
     const toggleAll = () => {
       if (allSelected) {
@@ -26761,15 +26780,13 @@ ${body}
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "po-add-bar", children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 2, minWidth: "140px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Your Part #" }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("select", { className: "form-select", style: { padding: "6px 8px" }, value: poNew.invPartId, onChange: (e) => {
-            const id = e.target.value;
-            const item = D.partsInventory.find((i) => i.id === id);
-            pn("invPartId", id);
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { padding: "6px 8px" }, list: "inv-item-list-po", placeholder: "Pick or type a new part\u2026", value: poNew.itemName, onChange: (e) => {
+            const val = e.target.value;
+            pn("itemName", val);
+            const item = D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === val.trim().toLowerCase());
             if (item && !poNew.desc.trim()) pn("desc", item.name);
-          }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: "", children: "\u2014 Not linked \u2014" }),
-            invItems.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: i.id, children: i.name }, i.id))
-          ] })
+          } }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "inv-item-list-po", children: invItems.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: i.name }, i.id)) })
         ] }),
         selectedInvItem && (selectedInvItem.partNumbers || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 1, minWidth: "140px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Saved Vendor #s" }),
@@ -26813,6 +26830,14 @@ ${body}
           ] })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-primary", style: { alignSelf: "flex-end", padding: "6px 14px" }, onClick: quickAddPart, children: "+ Add" })
+      ] }),
+      poNew.itemName.trim() && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { marginTop: "-6px", marginBottom: "12px" }, children: [
+        poNew.extraPartNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", gap: "6px", marginBottom: "5px", flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { flex: 1, minWidth: "110px", padding: "6px 8px" }, placeholder: "Additional vendor", value: n.vendor, onChange: (e) => updPoExtra(i, "vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { flex: 1, minWidth: "110px", padding: "6px 8px" }, placeholder: "Additional vendor part #", value: n.num, onChange: (e) => updPoExtra(i, "num", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remPoExtra(i), children: "\u2715" })
+        ] }, n.id || i)),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-xs", onClick: addPoExtra, children: "+ Add another vendor / part # for this item" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "po-filters", children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 2, minWidth: "140px" }, children: [
@@ -27515,24 +27540,28 @@ ${body}
     ] });
   }
   function PartMo({ initial, vehicles, vendors, partsInventory, onSave, onClose }) {
-    const [f, setF] = (0, import_react9.useState)({ invPartId: initial?.invPartId || "", desc: initial?.desc || "", num: initial?.num || "", vendor: initial?.vendor || "", qty: initial?.qty || "1", unitCost: initial?.unitCost || "", vehicleId: initial?.vehicleId || "", notes: initial?.notes || "" });
-    const s = (k, v) => setF((p) => ({ ...p, [k]: v }));
     const inv = partsInventory || [];
+    const linkedItem = initial?.invPartId ? inv.find((i) => i.id === initial.invPartId) : null;
+    const [f, setF] = (0, import_react9.useState)({ itemName: linkedItem?.name || "", desc: initial?.desc || "", num: initial?.num || "", vendor: initial?.vendor || "", qty: initial?.qty || "1", unitCost: initial?.unitCost || "", vehicleId: initial?.vehicleId || "", notes: initial?.notes || "", extraPartNumbers: [] });
+    const s = (k, v) => setF((p) => ({ ...p, [k]: v }));
     const invItems = [...inv].sort((a, b) => a.name.localeCompare(b.name));
-    const selectedItem = inv.find((i) => i.id === f.invPartId);
+    const selectedItem = inv.find((i) => (i.name || "").trim().toLowerCase() === f.itemName.trim().toLowerCase());
+    const addExtra = () => setF((p) => ({ ...p, extraPartNumbers: [...p.extraPartNumbers, { id: genId(), vendor: "", num: "", unitCost: "" }] }));
+    const updExtra = (i, k, v) => setF((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.map((n, ii) => ii === i ? { ...n, [k]: v } : n) }));
+    const remExtra = (i) => setF((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.filter((_, ii) => ii !== i) }));
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Mo, { title: initial ? "Edit Part" : "Add Part to Order", onClose, onSave: () => {
       if (!f.desc.trim()) return alert("Description required.");
       onSave(f);
     }, saveLabel: initial ? "Save" : "Add Part", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Your Part #", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fs, { value: f.invPartId, onChange: (e) => {
-        const id = e.target.value;
-        const item = inv.find((i) => i.id === id);
-        s("invPartId", id);
-        if (item && !f.desc.trim()) s("desc", item.name);
-      }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: "", children: "\u2014 Not linked \u2014" }),
-        invItems.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: i.id, children: i.name }, i.id))
-      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fg, { label: "Your Part #", full: true, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { list: "inv-item-list-partmo", value: f.itemName, onChange: (e) => {
+          const val = e.target.value;
+          s("itemName", val);
+          const item = inv.find((i) => (i.name || "").trim().toLowerCase() === val.trim().toLowerCase());
+          if (item && !f.desc.trim()) s("desc", item.name);
+        }, placeholder: "Pick or type a new part\u2026" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "inv-item-list-partmo", children: invItems.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: i.name }, i.id)) })
+      ] }),
       selectedItem && (selectedItem.partNumbers || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Saved Vendor #s", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fs, { value: "", onChange: (e) => {
         const x = selectedItem.partNumbers.find((n) => n.id === e.target.value);
         if (x) {
@@ -27555,6 +27584,23 @@ ${body}
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Vendor Part #", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { value: f.num, onChange: (e) => s("num", e.target.value) }) }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Quantity", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", min: "1", value: f.qty, onChange: (e) => s("qty", e.target.value) }) }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Unit Cost ($)", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", step: "0.01", value: f.unitCost, onChange: (e) => s("unitCost", e.target.value) }) })
+      ] }),
+      f.itemName.trim() && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Other Vendors for This Part" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-xs", onClick: addExtra, children: "+ Add" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { fontSize: "11px", color: "var(--text-dim)", margin: "-2px 0 6px" }, children: [
+          'Log more vendor/part # combos for "',
+          f.itemName,
+          '" \u2014 not necessarily who this order is going to.'
+        ] }),
+        f.extraPartNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 80px auto", gap: "5px", marginBottom: "5px", alignItems: "center" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor", value: n.vendor, onChange: (e) => updExtra(i, "vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor Part #", value: n.num, onChange: (e) => updExtra(i, "num", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", placeholder: "Cost", value: n.unitCost, onChange: (e) => updExtra(i, "unitCost", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remExtra(i), children: "\u2715" })
+        ] }, n.id || i))
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "For Vehicle", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fs, { value: f.vehicleId, onChange: (e) => s("vehicleId", e.target.value), children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: "", children: "\u2014 For Stock \u2014" }),
