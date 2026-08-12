@@ -586,7 +586,13 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const vehName=id=>id==="__stock__"?"📦 For Stock":(D.vehicles.find(v=>v.id===id)?.name||"");
   const featOn=k=>D.settings.features?.[k]!==false;
   const filteredPO=[...D.partsToOrder].filter(p=>{
-    if(poFilters.q&&!(p.desc+p.num+(p.vendor||"")).toLowerCase().includes(poFilters.q.toLowerCase()))return false;
+    // Keyword search also reaches into the linked Parts Inventory item's
+    // name and its full list of vendor/part# combos — including any
+    // "Other Vendors for This Part" entries added from the Order Parts
+    // screen — not just this order line's own single vendor/part#.
+    const linkedItem=p.invPartId?D.partsInventory.find(i=>i.id===p.invPartId):null;
+    const extraHaystack=linkedItem?(linkedItem.name+" "+(linkedItem.partNumbers||[]).map(n=>(n.vendor||"")+" "+(n.num||"")).join(" ")):"";
+    if(poFilters.q&&!(p.desc+p.num+(p.vendor||"")+" "+extraHaystack).toLowerCase().includes(poFilters.q.toLowerCase()))return false;
     if(poFilters.vendor&&(p.vendor||"").toLowerCase()!==poFilters.vendor.toLowerCase())return false;
     if(poFilters.num&&(p.num||"").toLowerCase()!==poFilters.num.toLowerCase())return false;
     if(poFilters.invPartId&&p.invPartId!==poFilters.invPartId)return false;
