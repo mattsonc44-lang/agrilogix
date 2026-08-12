@@ -25786,7 +25786,7 @@ ${body}
     const deleteInvItem = (id) => save({ partsInventory: D.partsInventory.filter((p) => p.id !== id) });
     const mergeInvItems = (ids, f) => {
       const removedIds = ids.filter((id) => id !== f.keepId);
-      const ni = D.partsInventory.filter((i) => !removedIds.includes(i.id)).map((i) => i.id === f.keepId ? { ...i, name: f.name, qty: f.qty, minQty: f.minQty, location: f.location, notes: f.notes, partNumbers: f.partNumbers } : i);
+      const ni = D.partsInventory.filter((i) => !removedIds.includes(i.id)).map((i) => i.id === f.keepId ? { ...i, name: f.name, qty: f.qty, minQty: f.minQty, location: f.location, notes: f.notes, partNumbers: f.partNumbers, fitsVehicleIds: f.fitsVehicleIds } : i);
       const np = D.partsToOrder.map((p) => removedIds.includes(p.invPartId) ? { ...p, invPartId: f.keepId } : p);
       save({ partsInventory: ni, partsToOrder: np });
       setModal(null);
@@ -26012,7 +26012,7 @@ ${body}
         setModal(null);
         setEdit(null);
       } }),
-      modal === "mergeInv" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MergeInvMo, { items: (editTarget || []).map((id) => D.partsInventory.find((i) => i.id === id)).filter(Boolean), onSave: (f) => mergeInvItems(editTarget, f), onClose: () => {
+      modal === "mergeInv" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MergeInvMo, { items: (editTarget || []).map((id) => D.partsInventory.find((i) => i.id === id)).filter(Boolean), vehicles: D.vehicles, onSave: (f) => mergeInvItems(editTarget, f), onClose: () => {
         setModal(null);
         setEdit(null);
       } }),
@@ -27012,6 +27012,10 @@ ${body}
               /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: { fontFamily: "'Share Tech Mono',monospace", color: "var(--amber-dim)" }, children: n.num }),
               canCost && n.unitCost && ` \xB7 $${n.unitCost}`
             ] }, i)),
+            (p.fitsVehicleIds || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }, children: [
+              "\u{1F69C} Fits: ",
+              p.fitsVehicleIds.map((id) => D.vehicles.find((v) => v.id === id)?.name).filter(Boolean).join(", ")
+            ] }),
             p.notes && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "12px", color: "var(--text-dim)", fontStyle: "italic", marginTop: "4px" }, children: p.notes })
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", gap: "5px" }, children: [
@@ -27561,11 +27565,16 @@ ${body}
     ] });
   }
   function InvItemMo({ initial, vehicles, onSave, onClose }) {
-    const [f, setF] = (0, import_react9.useState)({ name: initial?.name || "", qty: initial?.qty || "", minQty: initial?.minQty || "", notifyLowStock: initial?.notifyLowStock || false, location: initial?.location || "", notes: initial?.notes || "", partNumbers: initial?.partNumbers || [] });
+    const [f, setF] = (0, import_react9.useState)({ name: initial?.name || "", qty: initial?.qty || "", minQty: initial?.minQty || "", notifyLowStock: initial?.notifyLowStock || false, location: initial?.location || "", notes: initial?.notes || "", partNumbers: initial?.partNumbers || [], fitsVehicleIds: initial?.fitsVehicleIds || [] });
     const s = (k, v) => setF((p) => ({ ...p, [k]: v }));
     const addPN = () => setF((p) => ({ ...p, partNumbers: [...p.partNumbers, { id: genId(), num: "", vendor: "", unitCost: "" }] }));
     const updPN = (i, k, v) => setF((p) => ({ ...p, partNumbers: p.partNumbers.map((n, ii) => ii === i ? { ...n, [k]: v } : n) }));
     const remPN = (i) => setF((p) => ({ ...p, partNumbers: p.partNumbers.filter((_, ii) => ii !== i) }));
+    const addFit = (id) => {
+      if (!id) return;
+      setF((p) => p.fitsVehicleIds.includes(id) ? p : { ...p, fitsVehicleIds: [...p.fitsVehicleIds, id] });
+    };
+    const remFit = (id) => setF((p) => ({ ...p, fitsVehicleIds: p.fitsVehicleIds.filter((x) => x !== id) }));
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Mo, { title: initial ? "Edit Inventory Item" : "Add Inventory Item", onClose, onSave: () => {
       if (!f.name.trim()) return alert("Name required.");
       onSave(f);
@@ -27598,10 +27607,27 @@ ${body}
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remPN(i), children: "\u2715" })
         ] }, n.id || i))
       ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Fits Vehicles / Equipment" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "11px", color: "var(--text-dim)", margin: "-2px 0 6px" }, children: "Same part, multiple machines \u2014 e.g. one air filter that fits both the R75 and the R62." }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fs, { value: "", onChange: (e) => {
+          addFit(e.target.value);
+        }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: "", children: "+ Add a vehicle this part fits\u2026" }),
+          [...vehicles].sort((a, b) => a.name.localeCompare(b.name)).filter((v) => !f.fitsVehicleIds.includes(v.id)).map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: v.id, children: v.name }, v.id))
+        ] }),
+        f.fitsVehicleIds.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }, children: f.fitsVehicleIds.map((id) => {
+          const v = vehicles.find((x) => x.id === id);
+          return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { display: "inline-flex", alignItems: "center", gap: "5px", background: "rgba(217,119,6,.12)", border: "1px solid rgba(217,119,6,.3)", borderRadius: "12px", padding: "3px 8px 3px 10px", fontSize: "12px" }, children: [
+            v?.name || "Unknown",
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { type: "button", onClick: () => remFit(id), style: { background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: "13px", lineHeight: 1, padding: 0 }, children: "\u2715" })
+          ] }, id);
+        }) })
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Notes", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("textarea", { className: "form-textarea", style: { minHeight: "55px" }, value: f.notes, onChange: (e) => s("notes", e.target.value) }) })
     ] });
   }
-  function MergeInvMo({ items, onSave, onClose }) {
+  function MergeInvMo({ items, vehicles = [], onSave, onClose }) {
     const [keepId, setKeepId] = (0, import_react9.useState)(items[0]?.id || "");
     const [name, setName] = (0, import_react9.useState)(items[0]?.name || "");
     const [qty, setQty] = (0, import_react9.useState)(String(items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)));
@@ -27625,15 +27651,16 @@ ${body}
       }));
       return out;
     })();
+    const combinedFits = [...new Set(items.flatMap((it) => it.fitsVehicleIds || []))];
     if (items.length < 2) return null;
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Mo, { title: `Merge ${items.length} Items`, onClose, onSave: () => {
       if (!name.trim()) return alert("Name required.");
-      onSave({ keepId, name, qty, minQty, location, notes, partNumbers: combinedPNs });
+      onSave({ keepId, name, qty, minQty, location, notes, partNumbers: combinedPNs, fitsVehicleIds: combinedFits });
     }, saveLabel: "Merge", large: true, children: [
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { style: { fontSize: "13px", color: "var(--text-dim)", margin: "0 0 10px" }, children: [
         "Merging ",
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("strong", { children: items.map((i) => i.name).join(", ") }),
-        " into one item. Quantities add together; part #s and vendors from all of them are kept."
+        " into one item. Quantities add together; part #s, vendors, and fits-vehicles from all of them are kept."
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Keep name from", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fs, { value: keepId, onChange: (e) => setKeepId(e.target.value), children: items.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("option", { value: i.id, children: [
         i.name,
@@ -27660,6 +27687,15 @@ ${body}
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: { fontFamily: "'Share Tech Mono',monospace", color: "var(--amber-dim)" }, children: n.num }),
           n.unitCost && ` \xB7 $${n.unitCost}`
         ] }, n.id || i))
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { className: "form-lbl", children: [
+          "Combined Fits Vehicles (",
+          combinedFits.length,
+          ")"
+        ] }),
+        combinedFits.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "12px", color: "var(--text-dim)" }, children: "None" }),
+        combinedFits.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "12px", color: "var(--text-dim)" }, children: combinedFits.map((id) => vehicles.find((v) => v.id === id)?.name).filter(Boolean).join(", ") })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Notes", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("textarea", { className: "form-textarea", style: { minHeight: "55px" }, value: notes, onChange: (e) => setNotes(e.target.value) }) })
     ] });
