@@ -26914,8 +26914,11 @@ ${body}
               s.has(p.id) ? n.delete(p.id) : n.add(p.id);
               return n;
             }), style: { accentColor: "var(--amber)", cursor: "pointer", width: "15px", height: "15px" } }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { className: "po-partnum", children: linkedItem ? linkedItem.name : "\u2014" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { style: { fontWeight: 600 }, children: p.desc || "" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: p.vendor || "" }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { className: "po-partnum", children: [
-              linkedItem ? linkedItem.name : "\u2014",
+              p.num || "",
               linkedItem && (linkedItem.partNumbers || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { fontSize: "10px", color: "var(--text-dim)", fontFamily: "'Barlow',sans-serif", marginTop: "2px", fontWeight: 400 }, children: linkedItem.partNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { children: [
                 i > 0 && " \xB7 ",
                 n.vendor && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { fontWeight: 600 }, children: [
@@ -26925,9 +26928,6 @@ ${body}
                 n.num
               ] }, n.id || i)) })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { style: { fontWeight: 600 }, children: p.desc || "" }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: p.vendor || "" }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { className: "po-partnum", children: p.num || "" }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: p.qty || "1" }),
             canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: p.unitCost ? `$${Number(p.unitCost).toFixed(2)}` : "" }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { style: { fontSize: "12px" }, children: vn }),
