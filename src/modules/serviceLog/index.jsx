@@ -1161,17 +1161,17 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
             return(<tr key={p.id} className={`po-row-${status}`}>
               <td><span className={`po-status-dot ${status}`}/></td>
               <td><input type="checkbox" checked={selPoIds.has(p.id)} onChange={()=>setSelPoIds(s=>{const n=new Set(s);s.has(p.id)?n.delete(p.id):n.add(p.id);return n;})} style={{accentColor:"var(--amber)",cursor:"pointer",width:"15px",height:"15px"}}/></td>
+              <td className="po-partnum">{linkedItem?linkedItem.name:"—"}</td>
+              <td style={{fontWeight:600}}>{p.desc||""}</td>
+              <td>{p.vendor||""}</td>
               <td className="po-partnum">
-                {linkedItem?linkedItem.name:"—"}
+                {p.num||""}
                 {linkedItem&&(linkedItem.partNumbers||[]).length>0&&(
                   <div style={{fontSize:"10px",color:"var(--text-dim)",fontFamily:"'Barlow',sans-serif",marginTop:"2px",fontWeight:400}}>
                     {linkedItem.partNumbers.map((n,i)=>(<span key={n.id||i}>{i>0&&" · "}{n.vendor&&<span style={{fontWeight:600}}>{n.vendor}: </span>}{n.num}</span>))}
                   </div>
                 )}
               </td>
-              <td style={{fontWeight:600}}>{p.desc||""}</td>
-              <td>{p.vendor||""}</td>
-              <td className="po-partnum">{p.num||""}</td>
               <td>{p.qty||"1"}</td>
               {canCost&&<td>{p.unitCost?`$${Number(p.unitCost).toFixed(2)}`:""}</td>}
               <td style={{fontSize:"12px"}}>{vn}</td>
