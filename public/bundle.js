@@ -25858,7 +25858,9 @@ ${body}
     const vehName = (id) => id === "__stock__" ? "\u{1F4E6} For Stock" : D.vehicles.find((v) => v.id === id)?.name || "";
     const featOn = (k) => D.settings.features?.[k] !== false;
     const filteredPO = [...D.partsToOrder].filter((p) => {
-      if (poFilters.q && !(p.desc + p.num + (p.vendor || "")).toLowerCase().includes(poFilters.q.toLowerCase())) return false;
+      const linkedItem = p.invPartId ? D.partsInventory.find((i) => i.id === p.invPartId) : null;
+      const extraHaystack = linkedItem ? linkedItem.name + " " + (linkedItem.partNumbers || []).map((n) => (n.vendor || "") + " " + (n.num || "")).join(" ") : "";
+      if (poFilters.q && !(p.desc + p.num + (p.vendor || "") + " " + extraHaystack).toLowerCase().includes(poFilters.q.toLowerCase())) return false;
       if (poFilters.vendor && (p.vendor || "").toLowerCase() !== poFilters.vendor.toLowerCase()) return false;
       if (poFilters.num && (p.num || "").toLowerCase() !== poFilters.num.toLowerCase()) return false;
       if (poFilters.invPartId && p.invPartId !== poFilters.invPartId) return false;
