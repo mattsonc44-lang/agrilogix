@@ -274,7 +274,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   const [highlightRecId, setHighlightRecId] = useState(null);
   const [poFilters,setPOF]      = useState({q:"",vendor:"",num:"",vehicle:"",status:"",invPartId:""});
   const [invFilters,setInvF]    = useState({q:"",vendor:"",location:""});
-  const [poNew,    setPoNew]    = useState({itemName:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:"",extraPartNumbers:[]});
+  const [poNew,    setPoNew]    = useState({itemName:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:"",extraPartNumbers:[],createIfNew:false});
   const [reportFil,setRepFil]   = useState({dateFrom:"",dateTo:"",type:"",custId:""});
   // Guided "stock it? notify me?" follow-up shown right after a brand-new
   // Parts Inventory item is created (see saveInvItem / confirmReceive).
@@ -445,10 +445,20 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     setModal(null);setEdit(null);
   };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
+  // Ordering a part never creates a Parts Inventory item on its own — that
+  // would clutter the catalog with one-off orders. It only links to (or
+  // creates) an inventory item when "Your Part #" matches something that
+  // already exists, or the person explicitly opted in via the "Also save
+  // as a new stocked item" checkbox (createIfNew).
   const savePart=f=>{
-    const {itemName,extraPartNumbers,...rest}=f;
-    const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:rest.unitCost},...(extraPartNumbers||[])];
-    const link=resolveInvLink(itemName,pairs,D.partsInventory);
+    const {itemName,extraPartNumbers,createIfNew,...rest}=f;
+    const name=(itemName||"").trim();
+    const matched=name?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
+    if(name&&(matched||createIfNew)){
+      const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:rest.unitCost},...(extraPartNumbers||[])];
+      link=resolveInvLink(itemName,pairs,D.partsInventory);
+    }
     const entry={...rest,invPartId:link.invPartId};
     let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...entry}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...entry}];}
     const payload={partsToOrder:np};if(link.partsInventory!==D.partsInventory)payload.partsInventory=link.partsInventory;
@@ -456,12 +466,17 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   };
   const quickAddPart=()=>{
     if(!poNew.desc.trim())return;
-    const {itemName,extraPartNumbers,...rest}=poNew;
-    const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:""},...(extraPartNumbers||[])];
-    const link=resolveInvLink(itemName,pairs,D.partsInventory);
+    const {itemName,extraPartNumbers,createIfNew,...rest}=poNew;
+    const name=(itemName||"").trim();
+    const matched=name?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
+    if(name&&(matched||createIfNew)){
+      const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:""},...(extraPartNumbers||[])];
+      link=resolveInvLink(itemName,pairs,D.partsInventory);
+    }
     const np=[{id:genId(),ordered:false,received:false,addedAt:Date.now(),...rest,invPartId:link.invPartId},...D.partsToOrder];
     const payload={partsToOrder:np};if(link.partsInventory!==D.partsInventory)payload.partsInventory=link.partsInventory;
-    save(payload);setPoNew({itemName:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:"",extraPartNumbers:[]});
+    save(payload);setPoNew({itemName:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:"",extraPartNumbers:[],createIfNew:false});
   };
   const toggleOrdered=id=>{const np=D.partsToOrder.map(p=>p.id===id?{...p,ordered:!p.ordered||p.received,orderedDate:!p.ordered?today():p.orderedDate}:p);save({partsToOrder:np});};
   const toggleReceived=id=>{const p=D.partsToOrder.find(pp=>pp.id===id);if(!p)return;if(p.received){save({partsToOrder:D.partsToOrder.map(pp=>pp.id===id?{...pp,received:false}:pp)});return;}setEdit(p);setModal("receive");};
@@ -1081,7 +1096,17 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
   const f=(k,v)=>setPOF(p=>({...p,[k]:v}));
   const pn=(k,v)=>setPoNew(p=>({...p,[k]:v}));
   const selectedInvItem=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===poNew.itemName.trim().toLowerCase());
-  const addPoExtra=()=>setPoNew(p=>({...p,extraPartNumbers:[...(p.extraPartNumbers||[]),{id:genId(),vendor:"",num:"",unitCost:""}]}));
+  const isNewItemName=poNew.itemName.trim()&&!selectedInvItem;
+  // Adding a second vendor/part# for the same "Your Part #" only makes sense
+  // if they're tied together under one item — e.g. Napa NAPA-123 and
+  // Carquest CARQ-123 both being the same bearing — so using this control
+  // implies the intent to link/create, without making them find the
+  // checkbox first.
+  const addPoExtra=()=>setPoNew(p=>{
+    const matched=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===p.itemName.trim().toLowerCase());
+    const isNew=p.itemName.trim()&&!matched;
+    return {...p,createIfNew:isNew?true:p.createIfNew,extraPartNumbers:[...(p.extraPartNumbers||[]),{id:genId(),vendor:"",num:"",unitCost:""}]};
+  });
   const updPoExtra=(i,k,v)=>setPoNew(p=>({...p,extraPartNumbers:p.extraPartNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
   const remPoExtra=i=>setPoNew(p=>({...p,extraPartNumbers:p.extraPartNumbers.filter((_,ii)=>ii!==i)}));
 
@@ -1110,7 +1135,17 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
 
     {/* Quick-add bar */}
     <div className="po-add-bar">
-      <div className="form-group" style={{flex:2,minWidth:"140px"}}><label className="form-lbl">Your Part #</label><input className="form-input" style={{padding:"6px 8px"}} list="inv-item-list-po" placeholder="Pick or type a new part…" value={poNew.itemName} onChange={e=>{const val=e.target.value;pn("itemName",val);const item=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!poNew.desc.trim())pn("desc",item.name);}}/><datalist id="inv-item-list-po">{invItems.map(i=><option key={i.id} value={i.name}/>)}</datalist></div>
+      <div className="form-group" style={{flex:2,minWidth:"140px"}}>
+        <label className="form-lbl">Your Part # <span style={{fontWeight:400,color:"var(--text-dim)"}}>(optional)</span></label>
+        <input className="form-input" style={{padding:"6px 8px"}} list="inv-item-list-po" placeholder="Leave blank for a one-off order…" value={poNew.itemName} onChange={e=>{const val=e.target.value;pn("itemName",val);const item=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!poNew.desc.trim())pn("desc",item.name);}}/>
+        <datalist id="inv-item-list-po">{invItems.map(i=><option key={i.id} value={i.name}/>)}</datalist>
+        {isNewItemName&&(
+          <label style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"11px",color:"var(--text-dim)",marginTop:"4px",cursor:"pointer"}}>
+            <input type="checkbox" checked={poNew.createIfNew} onChange={e=>pn("createIfNew",e.target.checked)} style={{accentColor:"var(--amber)",width:"13px",height:"13px"}}/>
+            📦 Also save "{poNew.itemName.trim()}" as a new stocked item
+          </label>
+        )}
+      </div>
       {selectedInvItem&&(selectedInvItem.partNumbers||[]).length>0&&(
         <div className="form-group" style={{flex:1,minWidth:"140px"}}><label className="form-lbl">Saved Vendor #s</label><select className="form-select" style={{padding:"6px 8px"}} value="" onChange={e=>{const x=selectedInvItem.partNumbers.find(n=>n.id===e.target.value);if(x){pn("vendor",x.vendor||"");pn("num",x.num||"");}}}><option value="">Pick saved #…</option>{selectedInvItem.partNumbers.map(x=><option key={x.id} value={x.id}>{x.vendor?`${x.vendor} — `:""}{x.num}</option>)}</select></div>
       )}
@@ -1128,7 +1163,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
           <input className="form-input" style={{flex:1,minWidth:"110px",padding:"6px 8px"}} placeholder="Additional vendor part #" value={n.num} onChange={e=>updPoExtra(i,"num",e.target.value)}/>
           <button className="btn btn-danger btn-xs" onClick={()=>remPoExtra(i)}>✕</button>
         </div>))}
-        <button className="btn btn-ghost btn-xs" onClick={addPoExtra}>+ Add another vendor / part # for this item</button>
+        <button className="btn btn-ghost btn-xs" onClick={addPoExtra}>+ Add another vendor / part # for "{poNew.itemName.trim()}"{isNewItemName?" (ties them together)":""}</button>
       </div>
     )}
 
@@ -1577,15 +1612,32 @@ function TodoMo({vehicleId,initial,onSave,onClose}){
 function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
   const inv=partsInventory||[];
   const linkedItem=initial?.invPartId?inv.find(i=>i.id===initial.invPartId):null;
-  const[f,setF]=useState({itemName:linkedItem?.name||"",desc:initial?.desc||"",num:initial?.num||"",vendor:initial?.vendor||"",qty:initial?.qty||"1",unitCost:initial?.unitCost||"",vehicleId:initial?.vehicleId||"",notes:initial?.notes||"",extraPartNumbers:[]});
+  const[f,setF]=useState({itemName:linkedItem?.name||"",desc:initial?.desc||"",num:initial?.num||"",vendor:initial?.vendor||"",qty:initial?.qty||"1",unitCost:initial?.unitCost||"",vehicleId:initial?.vehicleId||"",notes:initial?.notes||"",extraPartNumbers:[],createIfNew:false});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const invItems=[...inv].sort((a,b)=>a.name.localeCompare(b.name));
   const selectedItem=inv.find(i=>(i.name||"").trim().toLowerCase()===f.itemName.trim().toLowerCase());
-  const addExtra=()=>setF(p=>({...p,extraPartNumbers:[...p.extraPartNumbers,{id:genId(),vendor:"",num:"",unitCost:""}]}));
+  const isNewItemName=f.itemName.trim()&&!selectedItem;
+  // Adding a second vendor/part# only makes sense if they're tied together
+  // under one item — e.g. Napa NAPA-123 and Carquest CARQ-123 both being the
+  // same bearing — so using this control implies the intent to link/create.
+  const addExtra=()=>setF(p=>{
+    const matched=inv.find(i=>(i.name||"").trim().toLowerCase()===p.itemName.trim().toLowerCase());
+    const isNew=p.itemName.trim()&&!matched;
+    return {...p,createIfNew:isNew?true:p.createIfNew,extraPartNumbers:[...p.extraPartNumbers,{id:genId(),vendor:"",num:"",unitCost:""}]};
+  });
   const updExtra=(i,k,v)=>setF(p=>({...p,extraPartNumbers:p.extraPartNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
   const remExtra=i=>setF(p=>({...p,extraPartNumbers:p.extraPartNumbers.filter((_,ii)=>ii!==i)}));
   return(<Mo title={initial?"Edit Part":"Add Part to Order"} onClose={onClose} onSave={()=>{if(!f.desc.trim())return alert("Description required.");onSave(f);}} saveLabel={initial?"Save":"Add Part"}>
-    <Fg label="Your Part #" full><Fi list="inv-item-list-partmo" value={f.itemName} onChange={e=>{const val=e.target.value;s("itemName",val);const item=inv.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!f.desc.trim())s("desc",item.name);}} placeholder="Pick or type a new part…"/><datalist id="inv-item-list-partmo">{invItems.map(i=><option key={i.id} value={i.name}/>)}</datalist></Fg>
+    <Fg label="Your Part # (optional)" full>
+      <Fi list="inv-item-list-partmo" value={f.itemName} onChange={e=>{const val=e.target.value;s("itemName",val);const item=inv.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!f.desc.trim())s("desc",item.name);}} placeholder="Leave blank for a one-off order…"/>
+      <datalist id="inv-item-list-partmo">{invItems.map(i=><option key={i.id} value={i.name}/>)}</datalist>
+      {isNewItemName&&(
+        <label style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"11px",color:"var(--text-dim)",marginTop:"5px",cursor:"pointer"}}>
+          <input type="checkbox" checked={f.createIfNew} onChange={e=>s("createIfNew",e.target.checked)} style={{accentColor:"var(--amber)",width:"13px",height:"13px"}}/>
+          📦 Also save "{f.itemName.trim()}" as a new stocked item
+        </label>
+      )}
+    </Fg>
     {selectedItem&&(selectedItem.partNumbers||[]).length>0&&(
       <Fg label="Saved Vendor #s" full><Fs value="" onChange={e=>{const x=selectedItem.partNumbers.find(n=>n.id===e.target.value);if(x){s("vendor",x.vendor||"");s("num",x.num||"");}}}><option value="">Pick saved #…</option>{selectedItem.partNumbers.map(x=><option key={x.id} value={x.id}>{x.vendor?`${x.vendor} — `:""}{x.num}</option>)}</Fs></Fg>
     )}
@@ -1594,7 +1646,7 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
     {f.itemName.trim()&&(
       <div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Other Vendors for This Part</label><button className="btn btn-ghost btn-xs" onClick={addExtra}>+ Add</button></div>
-        <div style={{fontSize:"11px",color:"var(--text-dim)",margin:"-2px 0 6px"}}>Log more vendor/part # combos for "{f.itemName}" — not necessarily who this order is going to.</div>
+        <div style={{fontSize:"11px",color:"var(--text-dim)",margin:"-2px 0 6px"}}>Log more vendor/part # combos for "{f.itemName}" — e.g. Napa vs. Carquest for the same part — so searching either one finds it.</div>
         {f.extraPartNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi placeholder="Vendor" value={n.vendor} onChange={e=>updExtra(i,"vendor",e.target.value)}/><Fi placeholder="Vendor Part #" value={n.num} onChange={e=>updExtra(i,"num",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updExtra(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remExtra(i)}>✕</button></div>))}
       </div>
     )}
