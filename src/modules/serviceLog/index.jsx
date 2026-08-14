@@ -457,21 +457,22 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
   };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
   // Ordering a part never creates a Parts Inventory item just by itself —
-  // that would clutter the catalog with one-off orders. What ties two
-  // orders together is a shared vendor + vendor-part# (Napa NAPA-123 =
-  // O'Reilly OREILLY-321), checked FIRST regardless of any typed name; a
-  // typed "Your Part #" name is only a fallback/cosmetic match, and only
-  // creates something new when there's real intent to link — either two+
-  // part numbers were entered together, or the person explicitly opted in
-  // via "Also save as a new stocked item" (createIfNew).
+  // that would clutter the catalog with one-off orders. The ONLY thing that
+  // auto-links two orders is a shared vendor + vendor-part# (Napa NAPA-123
+  // = O'Reilly OREILLY-321). A typed "Your Part #" name never matches an
+  // existing item on its own — two different real parts can share the same
+  // generic name (e.g. "Air Filter" on a pickup vs. a truck) without ever
+  // getting tied together. A name only creates/links something when the
+  // person explicitly checks the box, or when two+ part numbers were
+  // entered together (clear, deliberate linking intent).
   const savePart=f=>{
     const {itemName,extraPartNumbers,createIfNew,...rest}=f;
     const name=(itemName||"").trim();
     const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:rest.unitCost},...(extraPartNumbers||[])].filter(p=>(p.num||"").trim());
     const byNumber=findInvItemByPairs(pairs,D.partsInventory);
-    const byName=(!byNumber&&name)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const byName=(!byNumber&&name&&createIfNew)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
     const matched=byNumber||byName;
-    const shouldLink=!!matched||pairs.length>=2||(!!name&&createIfNew);
+    const shouldLink=!!byNumber||pairs.length>=2||(!!name&&createIfNew);
     let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
     if(shouldLink){
       link=resolveInvLink(matched,name||rest.desc||pairs[0]?.num,pairs,D.partsInventory);
@@ -487,9 +488,9 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     const name=(itemName||"").trim();
     const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:""},...(extraPartNumbers||[])].filter(p=>(p.num||"").trim());
     const byNumber=findInvItemByPairs(pairs,D.partsInventory);
-    const byName=(!byNumber&&name)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const byName=(!byNumber&&name&&createIfNew)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
     const matched=byNumber||byName;
-    const shouldLink=!!matched||pairs.length>=2||(!!name&&createIfNew);
+    const shouldLink=!!byNumber||pairs.length>=2||(!!name&&createIfNew);
     let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
     if(shouldLink){
       link=resolveInvLink(matched,name||rest.desc||pairs[0]?.num,pairs,D.partsInventory);
@@ -1127,18 +1128,12 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
     }
     return next;
   });
+  // Purely a display suggestion (e.g. offering the "Saved Vendor #s"
+  // quick-pick) — matching text here never links anything on its own.
+  // Only a shared vendor + vendor-part# links automatically; the checkbox
+  // below is the only way a typed name causes a link/create.
   const selectedInvItem=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===poNew.itemName.trim().toLowerCase());
-  const isNewItemName=poNew.itemName.trim()&&!selectedInvItem;
-  // Adding a second vendor/part# for the same "Your Part #" only makes sense
-  // if they're tied together under one item — e.g. Napa NAPA-123 and
-  // Carquest CARQ-123 both being the same bearing — so using this control
-  // implies the intent to link/create, without making them find the
-  // checkbox first.
-  const addPoExtra=()=>setPoNew(p=>{
-    const matched=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===p.itemName.trim().toLowerCase());
-    const isNew=p.itemName.trim()&&!matched;
-    return {...p,createIfNew:isNew?true:p.createIfNew,extraPartNumbers:[...(p.extraPartNumbers||[]),{id:genId(),vendor:"",num:"",unitCost:""}]};
-  });
+  const addPoExtra=()=>setPoNew(p=>({...p,extraPartNumbers:[...(p.extraPartNumbers||[]),{id:genId(),vendor:"",num:"",unitCost:""}]}));
   const updPoExtra=(i,k,v)=>setPoNew(p=>({...p,extraPartNumbers:p.extraPartNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
   const remPoExtra=i=>setPoNew(p=>({...p,extraPartNumbers:p.extraPartNumbers.filter((_,ii)=>ii!==i)}));
 
@@ -1171,10 +1166,10 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
         <label className="form-lbl">Your Part # <span style={{fontWeight:400,color:"var(--text-dim)"}}>(optional)</span></label>
         <input className="form-input" style={{padding:"6px 8px"}} list="inv-item-list-po" placeholder="Leave blank for a one-off order…" value={poNew.itemName} onChange={e=>{const val=e.target.value;pn("itemName",val);const item=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!poNew.desc.trim())pn("desc",item.name);}}/>
         <datalist id="inv-item-list-po">{invItems.map(i=><option key={i.id} value={i.name}/>)}</datalist>
-        {isNewItemName&&(
+        {poNew.itemName.trim()&&(
           <label style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"11px",color:"var(--text-dim)",marginTop:"4px",cursor:"pointer"}}>
             <input type="checkbox" checked={poNew.createIfNew} onChange={e=>pn("createIfNew",e.target.checked)} style={{accentColor:"var(--amber)",width:"13px",height:"13px"}}/>
-            📦 Also save "{poNew.itemName.trim()}" as a new stocked item
+            {selectedInvItem?<>🔗 Also link to existing "{poNew.itemName.trim()}" catalog item</>:<>📦 Also save "{poNew.itemName.trim()}" as a new stocked item</>}
           </label>
         )}
       </div>
@@ -1195,7 +1190,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
           <input className="form-input" style={{flex:1,minWidth:"110px",padding:"6px 8px"}} placeholder="Additional vendor part #" value={n.num} onChange={e=>updPoExtra(i,"num",e.target.value)}/>
           <button className="btn btn-danger btn-xs" onClick={()=>remPoExtra(i)}>✕</button>
         </div>))}
-        <button className="btn btn-ghost btn-xs" onClick={addPoExtra}>+ Add another vendor / part # for "{poNew.itemName.trim()}"{isNewItemName?" (ties them together)":""}</button>
+        <button className="btn btn-ghost btn-xs" onClick={addPoExtra}>+ Add another vendor / part # (ties them together)</button>
       </div>
     )}
 
@@ -1647,16 +1642,12 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
   const[f,setF]=useState({itemName:linkedItem?.name||"",desc:initial?.desc||"",num:initial?.num||"",vendor:initial?.vendor||"",qty:initial?.qty||"1",unitCost:initial?.unitCost||"",vehicleId:initial?.vehicleId||"",notes:initial?.notes||"",extraPartNumbers:[],createIfNew:false});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
   const invItems=[...inv].sort((a,b)=>a.name.localeCompare(b.name));
+  // Purely a display suggestion (e.g. offering the "Saved Vendor #s"
+  // quick-pick) — matching text here never links anything on its own.
+  // Only a shared vendor + vendor-part# links automatically; the checkbox
+  // below is the only way a typed name causes a link/create.
   const selectedItem=inv.find(i=>(i.name||"").trim().toLowerCase()===f.itemName.trim().toLowerCase());
-  const isNewItemName=f.itemName.trim()&&!selectedItem;
-  // Adding a second vendor/part# only makes sense if they're tied together
-  // under one item — e.g. Napa NAPA-123 and Carquest CARQ-123 both being the
-  // same bearing — so using this control implies the intent to link/create.
-  const addExtra=()=>setF(p=>{
-    const matched=inv.find(i=>(i.name||"").trim().toLowerCase()===p.itemName.trim().toLowerCase());
-    const isNew=p.itemName.trim()&&!matched;
-    return {...p,createIfNew:isNew?true:p.createIfNew,extraPartNumbers:[...p.extraPartNumbers,{id:genId(),vendor:"",num:"",unitCost:""}]};
-  });
+  const addExtra=()=>setF(p=>({...p,extraPartNumbers:[...p.extraPartNumbers,{id:genId(),vendor:"",num:"",unitCost:""}]}));
   const updExtra=(i,k,v)=>setF(p=>({...p,extraPartNumbers:p.extraPartNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
   const remExtra=i=>setF(p=>({...p,extraPartNumbers:p.extraPartNumbers.filter((_,ii)=>ii!==i)}));
   // Typing a vendor/part# that's already linked to something recognizes it
@@ -1674,10 +1665,10 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
     <Fg label="Your Part # (optional)" full>
       <Fi list="inv-item-list-partmo" value={f.itemName} onChange={e=>{const val=e.target.value;s("itemName",val);const item=inv.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!f.desc.trim())s("desc",item.name);}} placeholder="Leave blank for a one-off order…"/>
       <datalist id="inv-item-list-partmo">{invItems.map(i=><option key={i.id} value={i.name}/>)}</datalist>
-      {isNewItemName&&(
+      {f.itemName.trim()&&(
         <label style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"11px",color:"var(--text-dim)",marginTop:"5px",cursor:"pointer"}}>
           <input type="checkbox" checked={f.createIfNew} onChange={e=>s("createIfNew",e.target.checked)} style={{accentColor:"var(--amber)",width:"13px",height:"13px"}}/>
-          📦 Also save "{f.itemName.trim()}" as a new stocked item
+          {selectedItem?<>🔗 Also link to existing "{f.itemName.trim()}" catalog item</>:<>📦 Also save "{f.itemName.trim()}" as a new stocked item</>}
         </label>
       )}
     </Fg>
