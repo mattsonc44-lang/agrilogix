@@ -25645,9 +25645,9 @@ ${body}
       const name = (itemName || "").trim();
       const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: rest.unitCost }, ...extraPartNumbers || []].filter((p) => (p.num || "").trim());
       const byNumber = findInvItemByPairs(pairs, D.partsInventory);
-      const byName = !byNumber && name ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const byName = !byNumber && name && createIfNew ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
       const matched = byNumber || byName;
-      const shouldLink = !!matched || pairs.length >= 2 || !!name && createIfNew;
+      const shouldLink = !!byNumber || pairs.length >= 2 || !!name && createIfNew;
       let link = { invPartId: matched ? matched.id : null, partsInventory: D.partsInventory };
       if (shouldLink) {
         link = resolveInvLink(matched, name || rest.desc || pairs[0]?.num, pairs, D.partsInventory);
@@ -25671,9 +25671,9 @@ ${body}
       const name = (itemName || "").trim();
       const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: "" }, ...extraPartNumbers || []].filter((p) => (p.num || "").trim());
       const byNumber = findInvItemByPairs(pairs, D.partsInventory);
-      const byName = !byNumber && name ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const byName = !byNumber && name && createIfNew ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
       const matched = byNumber || byName;
-      const shouldLink = !!matched || pairs.length >= 2 || !!name && createIfNew;
+      const shouldLink = !!byNumber || pairs.length >= 2 || !!name && createIfNew;
       let link = { invPartId: matched ? matched.id : null, partsInventory: D.partsInventory };
       if (shouldLink) {
         link = resolveInvLink(matched, name || rest.desc || pairs[0]?.num, pairs, D.partsInventory);
@@ -26750,12 +26750,7 @@ ${body}
       return next;
     });
     const selectedInvItem = D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === poNew.itemName.trim().toLowerCase());
-    const isNewItemName = poNew.itemName.trim() && !selectedInvItem;
-    const addPoExtra = () => setPoNew((p) => {
-      const matched = D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === p.itemName.trim().toLowerCase());
-      const isNew = p.itemName.trim() && !matched;
-      return { ...p, createIfNew: isNew ? true : p.createIfNew, extraPartNumbers: [...p.extraPartNumbers || [], { id: genId(), vendor: "", num: "", unitCost: "" }] };
-    });
+    const addPoExtra = () => setPoNew((p) => ({ ...p, extraPartNumbers: [...p.extraPartNumbers || [], { id: genId(), vendor: "", num: "", unitCost: "" }] }));
     const updPoExtra = (i, k, v) => setPoNew((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.map((n, ii) => ii === i ? { ...n, [k]: v } : n) }));
     const remPoExtra = (i) => setPoNew((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.filter((_, ii) => ii !== i) }));
     const allSelected = filteredPO.length > 0 && filteredPO.every((p) => selPoIds.has(p.id));
@@ -26831,11 +26826,17 @@ ${body}
             if (item && !poNew.desc.trim()) pn("desc", item.name);
           } }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "inv-item-list-po", children: invItems.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: i.name }, i.id)) }),
-          isNewItemName && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-dim)", marginTop: "4px", cursor: "pointer" }, children: [
+          poNew.itemName.trim() && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-dim)", marginTop: "4px", cursor: "pointer" }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { type: "checkbox", checked: poNew.createIfNew, onChange: (e) => pn("createIfNew", e.target.checked), style: { accentColor: "var(--amber)", width: "13px", height: "13px" } }),
-            '\u{1F4E6} Also save "',
-            poNew.itemName.trim(),
-            '" as a new stocked item'
+            selectedInvItem ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+              '\u{1F517} Also link to existing "',
+              poNew.itemName.trim(),
+              '" catalog item'
+            ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+              '\u{1F4E6} Also save "',
+              poNew.itemName.trim(),
+              '" as a new stocked item'
+            ] })
           ] })
         ] }),
         selectedInvItem && (selectedInvItem.partNumbers || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 1, minWidth: "140px" }, children: [
@@ -26887,12 +26888,7 @@ ${body}
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { flex: 1, minWidth: "110px", padding: "6px 8px" }, placeholder: "Additional vendor part #", value: n.num, onChange: (e) => updPoExtra(i, "num", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remPoExtra(i), children: "\u2715" })
         ] }, n.id || i)),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("button", { className: "btn btn-ghost btn-xs", onClick: addPoExtra, children: [
-          '+ Add another vendor / part # for "',
-          poNew.itemName.trim(),
-          '"',
-          isNewItemName ? " (ties them together)" : ""
-        ] })
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-xs", onClick: addPoExtra, children: "+ Add another vendor / part # (ties them together)" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "po-filters", children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 2, minWidth: "140px" }, children: [
@@ -27612,12 +27608,7 @@ ${body}
     const s = (k, v) => setF((p) => ({ ...p, [k]: v }));
     const invItems = [...inv].sort((a, b) => a.name.localeCompare(b.name));
     const selectedItem = inv.find((i) => (i.name || "").trim().toLowerCase() === f.itemName.trim().toLowerCase());
-    const isNewItemName = f.itemName.trim() && !selectedItem;
-    const addExtra = () => setF((p) => {
-      const matched = inv.find((i) => (i.name || "").trim().toLowerCase() === p.itemName.trim().toLowerCase());
-      const isNew = p.itemName.trim() && !matched;
-      return { ...p, createIfNew: isNew ? true : p.createIfNew, extraPartNumbers: [...p.extraPartNumbers, { id: genId(), vendor: "", num: "", unitCost: "" }] };
-    });
+    const addExtra = () => setF((p) => ({ ...p, extraPartNumbers: [...p.extraPartNumbers, { id: genId(), vendor: "", num: "", unitCost: "" }] }));
     const updExtra = (i, k, v) => setF((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.map((n, ii) => ii === i ? { ...n, [k]: v } : n) }));
     const remExtra = (i) => setF((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.filter((_, ii) => ii !== i) }));
     const sVendorNum = (k, v) => setF((p) => {
@@ -27643,11 +27634,17 @@ ${body}
           if (item && !f.desc.trim()) s("desc", item.name);
         }, placeholder: "Leave blank for a one-off order\u2026" }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "inv-item-list-partmo", children: invItems.map((i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: i.name }, i.id)) }),
-        isNewItemName && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-dim)", marginTop: "5px", cursor: "pointer" }, children: [
+        f.itemName.trim() && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("label", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-dim)", marginTop: "5px", cursor: "pointer" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { type: "checkbox", checked: f.createIfNew, onChange: (e) => s("createIfNew", e.target.checked), style: { accentColor: "var(--amber)", width: "13px", height: "13px" } }),
-          '\u{1F4E6} Also save "',
-          f.itemName.trim(),
-          '" as a new stocked item'
+          selectedItem ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+            '\u{1F517} Also link to existing "',
+            f.itemName.trim(),
+            '" catalog item'
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+            '\u{1F4E6} Also save "',
+            f.itemName.trim(),
+            '" as a new stocked item'
+          ] })
         ] })
       ] }),
       selectedItem && (selectedItem.partNumbers || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Saved Vendor #s", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fs, { value: "", onChange: (e) => {
