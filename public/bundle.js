@@ -26884,7 +26884,7 @@ ${body}
       ] }),
       poNew.itemName.trim() && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { marginTop: "-6px", marginBottom: "12px" }, children: [
         poNew.extraPartNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", gap: "6px", marginBottom: "5px", flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { flex: 1, minWidth: "110px", padding: "6px 8px" }, placeholder: "Additional vendor", value: n.vendor, onChange: (e) => updPoExtra(i, "vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { flex: 1, minWidth: "110px", padding: "6px 8px" }, list: "vendor-list-po", placeholder: "Additional vendor", value: n.vendor, onChange: (e) => updPoExtra(i, "vendor", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { flex: 1, minWidth: "110px", padding: "6px 8px" }, placeholder: "Additional vendor part #", value: n.num, onChange: (e) => updPoExtra(i, "num", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remPoExtra(i), children: "\u2715" })
         ] }, n.id || i)),
@@ -27681,7 +27681,7 @@ ${body}
           '" \u2014 e.g. Napa vs. Carquest for the same part \u2014 so searching either one finds it.'
         ] }),
         f.extraPartNumbers.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 80px auto", gap: "5px", marginBottom: "5px", alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor", value: n.vendor, onChange: (e) => updExtra(i, "vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { list: "vend-list-po", placeholder: "Vendor", value: n.vendor, onChange: (e) => updExtra(i, "vendor", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor Part #", value: n.num, onChange: (e) => updExtra(i, "num", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", placeholder: "Cost", value: n.unitCost, onChange: (e) => updExtra(i, "unitCost", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remExtra(i), children: "\u2715" })
