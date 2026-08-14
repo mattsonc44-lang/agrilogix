@@ -215,21 +215,32 @@ const PRI_COLOR = {high:"#dc2626",medium:"#d97706",low:"#16a34a"};
 const sumCost = a=>(a||[]).reduce((s,r)=>s+(parseFloat(r.cost)||0),0);
 const fmtDate = iso=>{const d=new Date(iso+"T00:00:00");return{day:d.getDate().toString().padStart(2,"0"),mon:d.toLocaleString("en",{month:"short"}).toUpperCase(),yr:d.getFullYear()};};
 const pStatus = p=>p.received?"received":p.ordered?"ordered":"needed";
-// "Your Part #" on the Order Parts screen can be picked from the existing
-// Parts Inventory list OR freshly typed — if the typed name has no exact
-// (case-insensitive) match, a new bare inventory item is created for it.
-// `pairs` is every vendor + vendor-part# combo entered for this part on the
-// Order Parts screen (the order's own vendor, plus any additional ones); any
-// pair not already saved on the item gets appended to its partNumbers[], so
-// nothing typed gets dropped — not just the first vendor entered.
-const resolveInvLink = (itemName, pairs, partsInventory) => {
-  const name = (itemName || "").trim();
-  if (!name) return { invPartId: null, partsInventory };
+// The thing that ties two orders together is a shared vendor + vendor-part#
+// — e.g. Napa NAPA-123 is the same physical part as O'Reilly OREILLY-321 —
+// not a typed name. This finds an existing Parts Inventory item that already
+// has ANY of the given pairs saved on it, regardless of what it's named.
+const findInvItemByPairs = (pairs, partsInventory) => {
+  for (const pair of pairs || []) {
+    const v = (pair?.vendor || "").trim().toLowerCase(), n = (pair?.num || "").trim().toLowerCase();
+    if (!n) continue;
+    const item = (partsInventory || []).find(i => (i.partNumbers || []).some(pn => (pn.num || "").trim().toLowerCase() === n && (pn.vendor || "").trim().toLowerCase() === v));
+    if (item) return item;
+  }
+  return null;
+};
+// Links (or creates) the Parts Inventory item that holds every vendor +
+// vendor-part# combo entered for this part on the Order Parts screen — the
+// order's own vendor, plus any additional ones. `matchedItem` (if already
+// found, by number or by name) is reused as-is; otherwise a new item is
+// created using `nameForNew` as a purely cosmetic label. Any pair not
+// already saved on the item gets appended to its partNumbers[], so nothing
+// typed gets dropped — not just the first vendor entered.
+const resolveInvLink = (matchedItem, nameForNew, pairs, partsInventory) => {
   let inv = partsInventory || [];
-  let item = inv.find(i => (i.name || "").trim().toLowerCase() === name.toLowerCase());
+  let item = matchedItem;
   let changed = false;
   if (!item) {
-    item = { id: genId(), name, qty: "", minQty: "", notifyLowStock: false, location: "", notes: "", partNumbers: [], fitsVehicleIds: [] };
+    item = { id: genId(), name: (nameForNew || "").trim() || "Part", qty: "", minQty: "", notifyLowStock: false, location: "", notes: "", partNumbers: [], fitsVehicleIds: [] };
     inv = [...inv, item];
     changed = true;
   }
@@ -445,19 +456,25 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     setModal(null);setEdit(null);
   };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
-  // Ordering a part never creates a Parts Inventory item on its own — that
-  // would clutter the catalog with one-off orders. It only links to (or
-  // creates) an inventory item when "Your Part #" matches something that
-  // already exists, or the person explicitly opted in via the "Also save
-  // as a new stocked item" checkbox (createIfNew).
+  // Ordering a part never creates a Parts Inventory item just by itself —
+  // that would clutter the catalog with one-off orders. What ties two
+  // orders together is a shared vendor + vendor-part# (Napa NAPA-123 =
+  // O'Reilly OREILLY-321), checked FIRST regardless of any typed name; a
+  // typed "Your Part #" name is only a fallback/cosmetic match, and only
+  // creates something new when there's real intent to link — either two+
+  // part numbers were entered together, or the person explicitly opted in
+  // via "Also save as a new stocked item" (createIfNew).
   const savePart=f=>{
     const {itemName,extraPartNumbers,createIfNew,...rest}=f;
     const name=(itemName||"").trim();
-    const matched=name?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:rest.unitCost},...(extraPartNumbers||[])].filter(p=>(p.num||"").trim());
+    const byNumber=findInvItemByPairs(pairs,D.partsInventory);
+    const byName=(!byNumber&&name)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const matched=byNumber||byName;
+    const shouldLink=!!matched||pairs.length>=2||(!!name&&createIfNew);
     let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
-    if(name&&(matched||createIfNew)){
-      const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:rest.unitCost},...(extraPartNumbers||[])];
-      link=resolveInvLink(itemName,pairs,D.partsInventory);
+    if(shouldLink){
+      link=resolveInvLink(matched,name||rest.desc||pairs[0]?.num,pairs,D.partsInventory);
     }
     const entry={...rest,invPartId:link.invPartId};
     let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...entry}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...entry}];}
@@ -468,11 +485,14 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     if(!poNew.desc.trim())return;
     const {itemName,extraPartNumbers,createIfNew,...rest}=poNew;
     const name=(itemName||"").trim();
-    const matched=name?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:""},...(extraPartNumbers||[])].filter(p=>(p.num||"").trim());
+    const byNumber=findInvItemByPairs(pairs,D.partsInventory);
+    const byName=(!byNumber&&name)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const matched=byNumber||byName;
+    const shouldLink=!!matched||pairs.length>=2||(!!name&&createIfNew);
     let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
-    if(name&&(matched||createIfNew)){
-      const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:""},...(extraPartNumbers||[])];
-      link=resolveInvLink(itemName,pairs,D.partsInventory);
+    if(shouldLink){
+      link=resolveInvLink(matched,name||rest.desc||pairs[0]?.num,pairs,D.partsInventory);
     }
     const np=[{id:genId(),ordered:false,received:false,addedAt:Date.now(),...rest,invPartId:link.invPartId},...D.partsToOrder];
     const payload={partsToOrder:np};if(link.partsInventory!==D.partsInventory)payload.partsInventory=link.partsInventory;
@@ -1095,6 +1115,18 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
   const invName=id=>D.partsInventory.find(i=>i.id===id)?.name||"";
   const f=(k,v)=>setPOF(p=>({...p,[k]:v}));
   const pn=(k,v)=>setPoNew(p=>({...p,[k]:v}));
+  // Typing a vendor/part# that's already linked to something (e.g. this
+  // Napa # is known to equal an O'Reilly #) recognizes it immediately and
+  // fills in "Your Part #" so it's obvious before saving — no need to
+  // remember or retype a name to find the existing link.
+  const pnVendorNum=(k,v)=>setPoNew(p=>{
+    const next={...p,[k]:v};
+    if(!p.itemName.trim()){
+      const match=findInvItemByPairs([{vendor:next.vendor,num:next.num}],D.partsInventory);
+      if(match){next.itemName=match.name;if(!next.desc.trim())next.desc=match.name;}
+    }
+    return next;
+  });
   const selectedInvItem=D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===poNew.itemName.trim().toLowerCase());
   const isNewItemName=poNew.itemName.trim()&&!selectedInvItem;
   // Adding a second vendor/part# for the same "Your Part #" only makes sense
@@ -1150,8 +1182,8 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
         <div className="form-group" style={{flex:1,minWidth:"140px"}}><label className="form-lbl">Saved Vendor #s</label><select className="form-select" style={{padding:"6px 8px"}} value="" onChange={e=>{const x=selectedInvItem.partNumbers.find(n=>n.id===e.target.value);if(x){pn("vendor",x.vendor||"");pn("num",x.num||"");}}}><option value="">Pick saved #…</option>{selectedInvItem.partNumbers.map(x=><option key={x.id} value={x.id}>{x.vendor?`${x.vendor} — `:""}{x.num}</option>)}</select></div>
       )}
       <div className="form-group" style={{flex:3,minWidth:"140px"}}><label className="form-lbl">Description</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Part description..." value={poNew.desc} onChange={e=>pn("desc",e.target.value)} onKeyDown={e=>e.key==="Enter"&&quickAddPart()}/></div>
-      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor</label><input className="form-input" style={{padding:"6px 8px"}} list="vendor-list-po" placeholder="Vendor" value={poNew.vendor} onChange={e=>pn("vendor",e.target.value)}/><datalist id="vendor-list-po">{[...D.vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
-      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor Part #</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Vendor Part #" value={poNew.num} onChange={e=>pn("num",e.target.value)}/></div>
+      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor</label><input className="form-input" style={{padding:"6px 8px"}} list="vendor-list-po" placeholder="Vendor" value={poNew.vendor} onChange={e=>pnVendorNum("vendor",e.target.value)}/><datalist id="vendor-list-po">{[...D.vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
+      <div className="form-group" style={{flex:1,minWidth:"90px"}}><label className="form-lbl">Vendor Part #</label><input className="form-input" style={{padding:"6px 8px"}} placeholder="Vendor Part #" value={poNew.num} onChange={e=>pnVendorNum("num",e.target.value)}/></div>
       <div className="form-group" style={{minWidth:"55px"}}><label className="form-lbl">Qty</label><input type="number" className="form-input" style={{padding:"6px 8px"}} min="1" value={poNew.qty} onChange={e=>pn("qty",e.target.value)}/></div>
       <div className="form-group" style={{flex:1,minWidth:"100px"}}><label className="form-lbl">Vehicle</label><select className="form-select" style={{padding:"6px 8px"}} value={poNew.vehicleId} onChange={e=>pn("vehicleId",e.target.value)}><option value="">For Stock</option><option value="__stock__">📦 For Stock</option>{[...D.vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
       <button className="btn btn-primary" style={{alignSelf:"flex-end",padding:"6px 14px"}} onClick={quickAddPart}>+ Add</button>
@@ -1627,6 +1659,17 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
   });
   const updExtra=(i,k,v)=>setF(p=>({...p,extraPartNumbers:p.extraPartNumbers.map((n,ii)=>ii===i?{...n,[k]:v}:n)}));
   const remExtra=i=>setF(p=>({...p,extraPartNumbers:p.extraPartNumbers.filter((_,ii)=>ii!==i)}));
+  // Typing a vendor/part# that's already linked to something recognizes it
+  // immediately and fills in "Your Part #" — no need to remember or retype
+  // a name to find the existing link.
+  const sVendorNum=(k,v)=>setF(p=>{
+    const next={...p,[k]:v};
+    if(!p.itemName.trim()){
+      const match=findInvItemByPairs([{vendor:next.vendor,num:next.num}],inv);
+      if(match){next.itemName=match.name;if(!next.desc.trim())next.desc=match.name;}
+    }
+    return next;
+  });
   return(<Mo title={initial?"Edit Part":"Add Part to Order"} onClose={onClose} onSave={()=>{if(!f.desc.trim())return alert("Description required.");onSave(f);}} saveLabel={initial?"Save":"Add Part"}>
     <Fg label="Your Part # (optional)" full>
       <Fi list="inv-item-list-partmo" value={f.itemName} onChange={e=>{const val=e.target.value;s("itemName",val);const item=inv.find(i=>(i.name||"").trim().toLowerCase()===val.trim().toLowerCase());if(item&&!f.desc.trim())s("desc",item.name);}} placeholder="Leave blank for a one-off order…"/>
@@ -1642,7 +1685,7 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
       <Fg label="Saved Vendor #s" full><Fs value="" onChange={e=>{const x=selectedItem.partNumbers.find(n=>n.id===e.target.value);if(x){s("vendor",x.vendor||"");s("num",x.num||"");}}}><option value="">Pick saved #…</option>{selectedItem.partNumbers.map(x=><option key={x.id} value={x.id}>{x.vendor?`${x.vendor} — `:""}{x.num}</option>)}</Fs></Fg>
     )}
     <Fg label="Description *" full><Fi value={f.desc} onChange={e=>s("desc",e.target.value)} placeholder="e.g. Oil Filter, Air Filter…"/></Fg>
-    <Fr><Fg label="Vendor"><Fi list="vend-list-po" value={f.vendor} onChange={e=>s("vendor",e.target.value)}/><datalist id="vend-list-po">{[...vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></Fg><Fg label="Vendor Part #"><Fi value={f.num} onChange={e=>s("num",e.target.value)}/></Fg><Fg label="Quantity"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Unit Cost ($)"><Fi type="number" step="0.01" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg></Fr>
+    <Fr><Fg label="Vendor"><Fi list="vend-list-po" value={f.vendor} onChange={e=>sVendorNum("vendor",e.target.value)}/><datalist id="vend-list-po">{[...vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist></Fg><Fg label="Vendor Part #"><Fi value={f.num} onChange={e=>sVendorNum("num",e.target.value)}/></Fg><Fg label="Quantity"><Fi type="number" min="1" value={f.qty} onChange={e=>s("qty",e.target.value)}/></Fg><Fg label="Unit Cost ($)"><Fi type="number" step="0.01" value={f.unitCost} onChange={e=>s("unitCost",e.target.value)}/></Fg></Fr>
     {f.itemName.trim()&&(
       <div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Other Vendors for This Part</label><button className="btn btn-ghost btn-xs" onClick={addExtra}>+ Add</button></div>
