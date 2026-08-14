@@ -1186,7 +1186,7 @@ function OrderView({D,filteredPO,poFilters,setPOF,poNew,setPoNew,quickAddPart,to
     {poNew.itemName.trim()&&(
       <div style={{marginTop:"-6px",marginBottom:"12px"}}>
         {poNew.extraPartNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"flex",gap:"6px",marginBottom:"5px",flexWrap:"wrap"}}>
-          <input className="form-input" style={{flex:1,minWidth:"110px",padding:"6px 8px"}} placeholder="Additional vendor" value={n.vendor} onChange={e=>updPoExtra(i,"vendor",e.target.value)}/>
+          <input className="form-input" style={{flex:1,minWidth:"110px",padding:"6px 8px"}} list="vendor-list-po" placeholder="Additional vendor" value={n.vendor} onChange={e=>updPoExtra(i,"vendor",e.target.value)}/>
           <input className="form-input" style={{flex:1,minWidth:"110px",padding:"6px 8px"}} placeholder="Additional vendor part #" value={n.num} onChange={e=>updPoExtra(i,"num",e.target.value)}/>
           <button className="btn btn-danger btn-xs" onClick={()=>remPoExtra(i)}>✕</button>
         </div>))}
@@ -1681,7 +1681,7 @@ function PartMo({initial,vehicles,vendors,partsInventory,onSave,onClose}){
       <div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Other Vendors for This Part</label><button className="btn btn-ghost btn-xs" onClick={addExtra}>+ Add</button></div>
         <div style={{fontSize:"11px",color:"var(--text-dim)",margin:"-2px 0 6px"}}>Log more vendor/part # combos for "{f.itemName}" — e.g. Napa vs. Carquest for the same part — so searching either one finds it.</div>
-        {f.extraPartNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi placeholder="Vendor" value={n.vendor} onChange={e=>updExtra(i,"vendor",e.target.value)}/><Fi placeholder="Vendor Part #" value={n.num} onChange={e=>updExtra(i,"num",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updExtra(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remExtra(i)}>✕</button></div>))}
+        {f.extraPartNumbers.map((n,i)=>(<div key={n.id||i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 80px auto",gap:"5px",marginBottom:"5px",alignItems:"center"}}><Fi list="vend-list-po" placeholder="Vendor" value={n.vendor} onChange={e=>updExtra(i,"vendor",e.target.value)}/><Fi placeholder="Vendor Part #" value={n.num} onChange={e=>updExtra(i,"num",e.target.value)}/><Fi type="number" placeholder="Cost" value={n.unitCost} onChange={e=>updExtra(i,"unitCost",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remExtra(i)}>✕</button></div>))}
       </div>
     )}
     <Fg label="For Vehicle" full><Fs value={f.vehicleId} onChange={e=>s("vehicleId",e.target.value)}><option value="">— For Stock —</option><option value="__stock__">📦 For Stock</option>{[...vehicles].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</Fs></Fg>
