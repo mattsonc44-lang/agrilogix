@@ -25339,14 +25339,21 @@ ${body}
     return { day: d.getDate().toString().padStart(2, "0"), mon: d.toLocaleString("en", { month: "short" }).toUpperCase(), yr: d.getFullYear() };
   };
   var pStatus = (p) => p.received ? "received" : p.ordered ? "ordered" : "needed";
-  var resolveInvLink = (itemName, pairs, partsInventory) => {
-    const name = (itemName || "").trim();
-    if (!name) return { invPartId: null, partsInventory };
+  var findInvItemByPairs = (pairs, partsInventory) => {
+    for (const pair of pairs || []) {
+      const v = (pair?.vendor || "").trim().toLowerCase(), n = (pair?.num || "").trim().toLowerCase();
+      if (!n) continue;
+      const item = (partsInventory || []).find((i) => (i.partNumbers || []).some((pn) => (pn.num || "").trim().toLowerCase() === n && (pn.vendor || "").trim().toLowerCase() === v));
+      if (item) return item;
+    }
+    return null;
+  };
+  var resolveInvLink = (matchedItem, nameForNew, pairs, partsInventory) => {
     let inv = partsInventory || [];
-    let item = inv.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase());
+    let item = matchedItem;
     let changed = false;
     if (!item) {
-      item = { id: genId(), name, qty: "", minQty: "", notifyLowStock: false, location: "", notes: "", partNumbers: [], fitsVehicleIds: [] };
+      item = { id: genId(), name: (nameForNew || "").trim() || "Part", qty: "", minQty: "", notifyLowStock: false, location: "", notes: "", partNumbers: [], fitsVehicleIds: [] };
       inv = [...inv, item];
       changed = true;
     }
@@ -25636,11 +25643,14 @@ ${body}
     const savePart = (f) => {
       const { itemName, extraPartNumbers, createIfNew, ...rest } = f;
       const name = (itemName || "").trim();
-      const matched = name ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: rest.unitCost }, ...extraPartNumbers || []].filter((p) => (p.num || "").trim());
+      const byNumber = findInvItemByPairs(pairs, D.partsInventory);
+      const byName = !byNumber && name ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const matched = byNumber || byName;
+      const shouldLink = !!matched || pairs.length >= 2 || !!name && createIfNew;
       let link = { invPartId: matched ? matched.id : null, partsInventory: D.partsInventory };
-      if (name && (matched || createIfNew)) {
-        const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: rest.unitCost }, ...extraPartNumbers || []];
-        link = resolveInvLink(itemName, pairs, D.partsInventory);
+      if (shouldLink) {
+        link = resolveInvLink(matched, name || rest.desc || pairs[0]?.num, pairs, D.partsInventory);
       }
       const entry = { ...rest, invPartId: link.invPartId };
       let np;
@@ -25659,11 +25669,14 @@ ${body}
       if (!poNew.desc.trim()) return;
       const { itemName, extraPartNumbers, createIfNew, ...rest } = poNew;
       const name = (itemName || "").trim();
-      const matched = name ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: "" }, ...extraPartNumbers || []].filter((p) => (p.num || "").trim());
+      const byNumber = findInvItemByPairs(pairs, D.partsInventory);
+      const byName = !byNumber && name ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const matched = byNumber || byName;
+      const shouldLink = !!matched || pairs.length >= 2 || !!name && createIfNew;
       let link = { invPartId: matched ? matched.id : null, partsInventory: D.partsInventory };
-      if (name && (matched || createIfNew)) {
-        const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: "" }, ...extraPartNumbers || []];
-        link = resolveInvLink(itemName, pairs, D.partsInventory);
+      if (shouldLink) {
+        link = resolveInvLink(matched, name || rest.desc || pairs[0]?.num, pairs, D.partsInventory);
       }
       const np = [{ id: genId(), ordered: false, received: false, addedAt: Date.now(), ...rest, invPartId: link.invPartId }, ...D.partsToOrder];
       const payload = { partsToOrder: np };
@@ -26725,6 +26738,17 @@ ${body}
     const invName = (id) => D.partsInventory.find((i) => i.id === id)?.name || "";
     const f = (k, v) => setPOF((p) => ({ ...p, [k]: v }));
     const pn = (k, v) => setPoNew((p) => ({ ...p, [k]: v }));
+    const pnVendorNum = (k, v) => setPoNew((p) => {
+      const next = { ...p, [k]: v };
+      if (!p.itemName.trim()) {
+        const match = findInvItemByPairs([{ vendor: next.vendor, num: next.num }], D.partsInventory);
+        if (match) {
+          next.itemName = match.name;
+          if (!next.desc.trim()) next.desc = match.name;
+        }
+      }
+      return next;
+    });
     const selectedInvItem = D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === poNew.itemName.trim().toLowerCase());
     const isNewItemName = poNew.itemName.trim() && !selectedInvItem;
     const addPoExtra = () => setPoNew((p) => {
@@ -26836,12 +26860,12 @@ ${body}
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 1, minWidth: "90px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Vendor" }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { padding: "6px 8px" }, list: "vendor-list-po", placeholder: "Vendor", value: poNew.vendor, onChange: (e) => pn("vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { padding: "6px 8px" }, list: "vendor-list-po", placeholder: "Vendor", value: poNew.vendor, onChange: (e) => pnVendorNum("vendor", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "vendor-list-po", children: [...D.vendors].sort((a, b) => a.name.localeCompare(b.name)).map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: v.name }, v.id)) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { flex: 1, minWidth: "90px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Vendor Part #" }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { padding: "6px 8px" }, placeholder: "Vendor Part #", value: poNew.num, onChange: (e) => pn("num", e.target.value) })
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { className: "form-input", style: { padding: "6px 8px" }, placeholder: "Vendor Part #", value: poNew.num, onChange: (e) => pnVendorNum("num", e.target.value) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "form-group", style: { minWidth: "55px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Qty" }),
@@ -27596,6 +27620,17 @@ ${body}
     });
     const updExtra = (i, k, v) => setF((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.map((n, ii) => ii === i ? { ...n, [k]: v } : n) }));
     const remExtra = (i) => setF((p) => ({ ...p, extraPartNumbers: p.extraPartNumbers.filter((_, ii) => ii !== i) }));
+    const sVendorNum = (k, v) => setF((p) => {
+      const next = { ...p, [k]: v };
+      if (!p.itemName.trim()) {
+        const match = findInvItemByPairs([{ vendor: next.vendor, num: next.num }], inv);
+        if (match) {
+          next.itemName = match.name;
+          if (!next.desc.trim()) next.desc = match.name;
+        }
+      }
+      return next;
+    });
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Mo, { title: initial ? "Edit Part" : "Add Part to Order", onClose, onSave: () => {
       if (!f.desc.trim()) return alert("Description required.");
       onSave(f);
@@ -27631,10 +27666,10 @@ ${body}
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Description *", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { value: f.desc, onChange: (e) => s("desc", e.target.value), placeholder: "e.g. Oil Filter, Air Filter\u2026" }) }),
       /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fr, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Fg, { label: "Vendor", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { list: "vend-list-po", value: f.vendor, onChange: (e) => s("vendor", e.target.value) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { list: "vend-list-po", value: f.vendor, onChange: (e) => sVendorNum("vendor", e.target.value) }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "vend-list-po", children: [...vendors].sort((a, b) => a.name.localeCompare(b.name)).map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: v.name }, v.id)) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Vendor Part #", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { value: f.num, onChange: (e) => s("num", e.target.value) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Vendor Part #", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { value: f.num, onChange: (e) => sVendorNum("num", e.target.value) }) }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Quantity", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", min: "1", value: f.qty, onChange: (e) => s("qty", e.target.value) }) }),
         /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Unit Cost ($)", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", step: "0.01", value: f.unitCost, onChange: (e) => s("unitCost", e.target.value) }) })
       ] }),
