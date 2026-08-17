@@ -456,27 +456,33 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     setModal(null);setEdit(null);
   };
   const deleteTodo=(vid,tid)=>save({vehicles:D.vehicles.map(v=>v.id===vid?{...v,todos:(v.todos||[]).filter(t=>t.id!==tid)}:v)});
-  // Ordering a part never creates a Parts Inventory item just by itself —
-  // that would clutter the catalog with one-off orders. The ONLY thing that
-  // auto-links two orders is a shared vendor + vendor-part# (Napa NAPA-123
-  // = O'Reilly OREILLY-321). A typed "Your Part #" name never matches an
-  // existing item on its own — two different real parts can share the same
-  // generic name (e.g. "Air Filter" on a pickup vs. a truck) without ever
-  // getting tied together. A name only creates/links something when the
-  // person explicitly checks the box, or when two+ part numbers were
-  // entered together (clear, deliberate linking intent).
+  // Ordering a part never creates or attaches to a Parts Inventory item
+  // just by itself. Recognizing that a typed vendor/part# was already used
+  // before (e.g. Amazon 2502-575) only ever fills in "Your Part #" as a
+  // suggestion — it never silently re-attaches this order to that item's
+  // whole group. Attaching to anything that ALREADY EXISTS — whether found
+  // by number or by name — always requires the person to explicitly check
+  // the box. The one thing that still links without a checkbox is entering
+  // two+ brand-new part numbers together on this same order (e.g. typing
+  // both Napa NAPA-123 and O'Reilly OREILLY-321 for the first time) —
+  // that's a fresh, deliberate declaration, not a silent reuse.
+  const resolvePartLink=(name,desc,pairs,createIfNew,partsInventory)=>{
+    const byNumber=findInvItemByPairs(pairs,partsInventory);
+    const byName=name?partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
+    const preExisting=byNumber||byName;
+    if(preExisting){
+      return createIfNew?resolveInvLink(preExisting,name||desc,pairs,partsInventory):{invPartId:null,partsInventory};
+    }
+    if(pairs.length>=2||(name&&createIfNew)){
+      return resolveInvLink(null,name||desc||pairs[0]?.num,pairs,partsInventory);
+    }
+    return {invPartId:null,partsInventory};
+  };
   const savePart=f=>{
     const {itemName,extraPartNumbers,createIfNew,...rest}=f;
     const name=(itemName||"").trim();
     const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:rest.unitCost},...(extraPartNumbers||[])].filter(p=>(p.num||"").trim());
-    const byNumber=findInvItemByPairs(pairs,D.partsInventory);
-    const byName=(!byNumber&&name&&createIfNew)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
-    const matched=byNumber||byName;
-    const shouldLink=!!byNumber||pairs.length>=2||(!!name&&createIfNew);
-    let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
-    if(shouldLink){
-      link=resolveInvLink(matched,name||rest.desc||pairs[0]?.num,pairs,D.partsInventory);
-    }
+    const link=resolvePartLink(name,rest.desc,pairs,createIfNew,D.partsInventory);
     const entry={...rest,invPartId:link.invPartId};
     let np;if(editTarget){np=D.partsToOrder.map(p=>p.id===editTarget.id?{...editTarget,...entry}:p);}else{np=[...D.partsToOrder,{id:genId(),ordered:false,received:false,...entry}];}
     const payload={partsToOrder:np};if(link.partsInventory!==D.partsInventory)payload.partsInventory=link.partsInventory;
@@ -487,14 +493,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
     const {itemName,extraPartNumbers,createIfNew,...rest}=poNew;
     const name=(itemName||"").trim();
     const pairs=[{vendor:rest.vendor,num:rest.num,unitCost:""},...(extraPartNumbers||[])].filter(p=>(p.num||"").trim());
-    const byNumber=findInvItemByPairs(pairs,D.partsInventory);
-    const byName=(!byNumber&&name&&createIfNew)?D.partsInventory.find(i=>(i.name||"").trim().toLowerCase()===name.toLowerCase()):null;
-    const matched=byNumber||byName;
-    const shouldLink=!!byNumber||pairs.length>=2||(!!name&&createIfNew);
-    let link={invPartId:matched?matched.id:null,partsInventory:D.partsInventory};
-    if(shouldLink){
-      link=resolveInvLink(matched,name||rest.desc||pairs[0]?.num,pairs,D.partsInventory);
-    }
+    const link=resolvePartLink(name,rest.desc,pairs,createIfNew,D.partsInventory);
     const np=[{id:genId(),ordered:false,received:false,addedAt:Date.now(),...rest,invPartId:link.invPartId},...D.partsToOrder];
     const payload={partsToOrder:np};if(link.partsInventory!==D.partsInventory)payload.partsInventory=link.partsInventory;
     save(payload);setPoNew({itemName:"",desc:"",num:"",vendor:"",qty:"1",vehicleId:"",extraPartNumbers:[],createIfNew:false});
