@@ -25640,18 +25640,23 @@ ${body}
       setEdit(null);
     };
     const deleteTodo = (vid, tid) => save({ vehicles: D.vehicles.map((v) => v.id === vid ? { ...v, todos: (v.todos || []).filter((t) => t.id !== tid) } : v) });
+    const resolvePartLink = (name, desc, pairs, createIfNew, partsInventory) => {
+      const byNumber = findInvItemByPairs(pairs, partsInventory);
+      const byName = name ? partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
+      const preExisting = byNumber || byName;
+      if (preExisting) {
+        return createIfNew ? resolveInvLink(preExisting, name || desc, pairs, partsInventory) : { invPartId: null, partsInventory };
+      }
+      if (pairs.length >= 2 || name && createIfNew) {
+        return resolveInvLink(null, name || desc || pairs[0]?.num, pairs, partsInventory);
+      }
+      return { invPartId: null, partsInventory };
+    };
     const savePart = (f) => {
       const { itemName, extraPartNumbers, createIfNew, ...rest } = f;
       const name = (itemName || "").trim();
       const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: rest.unitCost }, ...extraPartNumbers || []].filter((p) => (p.num || "").trim());
-      const byNumber = findInvItemByPairs(pairs, D.partsInventory);
-      const byName = !byNumber && name && createIfNew ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
-      const matched = byNumber || byName;
-      const shouldLink = !!byNumber || pairs.length >= 2 || !!name && createIfNew;
-      let link = { invPartId: matched ? matched.id : null, partsInventory: D.partsInventory };
-      if (shouldLink) {
-        link = resolveInvLink(matched, name || rest.desc || pairs[0]?.num, pairs, D.partsInventory);
-      }
+      const link = resolvePartLink(name, rest.desc, pairs, createIfNew, D.partsInventory);
       const entry = { ...rest, invPartId: link.invPartId };
       let np;
       if (editTarget) {
@@ -25670,14 +25675,7 @@ ${body}
       const { itemName, extraPartNumbers, createIfNew, ...rest } = poNew;
       const name = (itemName || "").trim();
       const pairs = [{ vendor: rest.vendor, num: rest.num, unitCost: "" }, ...extraPartNumbers || []].filter((p) => (p.num || "").trim());
-      const byNumber = findInvItemByPairs(pairs, D.partsInventory);
-      const byName = !byNumber && name && createIfNew ? D.partsInventory.find((i) => (i.name || "").trim().toLowerCase() === name.toLowerCase()) : null;
-      const matched = byNumber || byName;
-      const shouldLink = !!byNumber || pairs.length >= 2 || !!name && createIfNew;
-      let link = { invPartId: matched ? matched.id : null, partsInventory: D.partsInventory };
-      if (shouldLink) {
-        link = resolveInvLink(matched, name || rest.desc || pairs[0]?.num, pairs, D.partsInventory);
-      }
+      const link = resolvePartLink(name, rest.desc, pairs, createIfNew, D.partsInventory);
       const np = [{ id: genId(), ordered: false, received: false, addedAt: Date.now(), ...rest, invPartId: link.invPartId }, ...D.partsToOrder];
       const payload = { partsToOrder: np };
       if (link.partsInventory !== D.partsInventory) payload.partsInventory = link.partsInventory;
