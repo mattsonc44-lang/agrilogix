@@ -16639,6 +16639,14 @@ ${[...fields].sort((a, b) => (a.farm || "").localeCompare(b.farm || "", void 0, 
     _tenantIdCache = tenantId || null;
     initAgriPlan(tenantId, token2, farmId);
     const perms = _isAgriLogixTenant ? getPerms(userProfile) : getPerms({ role: "owner" });
+    const AP_UI_KEY = `ap_ui_${tenantId}_${farmId || "default"}`;
+    const loadApUiState = () => {
+      try {
+        return JSON.parse(localStorage.getItem(AP_UI_KEY)) || {};
+      } catch (_) {
+        return {};
+      }
+    };
     const [years, setYears] = (0, import_react3.useState)(() => tenantId ? ["2026"] : loadYears());
     const [activeYear, setActiveYear] = (0, import_react3.useState)(() => tenantId ? "2026" : (() => {
       const ys = loadYears();
@@ -16843,6 +16851,29 @@ ${[...fields].sort((a, b) => (a.farm || "").localeCompare(b.farm || "", void 0, 
       const fresh = fields.find((f) => f.id === selectedField.id);
       if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedField)) setSelectedField(fresh);
     }, [fields]);
+    const apUiRestoreDone = (0, import_react3.useRef)(false);
+    (0, import_react3.useEffect)(() => {
+      if (apUiRestoreDone.current || fields.length === 0) return;
+      apUiRestoreDone.current = true;
+      const stored = loadApUiState();
+      if (stored.fieldCommon) {
+        const f = fields.find((x) => x.common === stored.fieldCommon);
+        if (f) {
+          setSelectedField(f);
+          setMainView("detail");
+          return;
+        }
+      }
+      if (stored.mainView && ["history", "expenses", "harvest", "rotationPlan"].includes(stored.mainView)) {
+        setMainView(stored.mainView);
+      }
+    }, [fields]);
+    (0, import_react3.useEffect)(() => {
+      try {
+        localStorage.setItem(AP_UI_KEY, JSON.stringify({ fieldCommon: selectedField?.common || null, mainView }));
+      } catch (_) {
+      }
+    }, [AP_UI_KEY, selectedField, mainView]);
     (0, import_react3.useEffect)(() => {
       if (fields !== null && fields !== void 0) {
         if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -24442,7 +24473,18 @@ ${body}
   function FieldLogModule({ tenantId, token: token2, userProfile, persist: persistToAgriFieldix, farmId, initialAction }) {
     const perms = tenantId ? getPerms(userProfile) : getPerms({ role: "owner" });
     const BASE = !farmId || farmId === "default" ? `tenants/${tenantId}/fieldlog` : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
-    const [view, setView] = (0, import_react8.useState)("home");
+    const FL_UI_KEY = `fl_ui_${tenantId}_${farmId || "default"}`;
+    const loadFlUiState = () => {
+      try {
+        return JSON.parse(localStorage.getItem(FL_UI_KEY)) || {};
+      } catch (_) {
+        return {};
+      }
+    };
+    const [view, setView] = (0, import_react8.useState)(() => {
+      const v = loadFlUiState().view;
+      return v && v !== "fieldDetail" && v !== "reports" ? v : "home";
+    });
     const [fields, setFields] = (0, import_react8.useState)([]);
     const [tenantCrops, setTenantCrops] = (0, import_react8.useState)([]);
     _flCrops = tenantCrops.length > 0 ? tenantCrops : null;
@@ -24549,6 +24591,27 @@ ${body}
         quickActionDone.current = true;
       }
     }, [loading, fields, initialAction]);
+    const uiRestoreDone = (0, import_react8.useRef)(false);
+    (0, import_react8.useEffect)(() => {
+      if (loading || uiRestoreDone.current) return;
+      uiRestoreDone.current = true;
+      if (initialAction?.fieldId) return;
+      const stored = loadFlUiState();
+      if (stored.activeFieldId) {
+        const f = fields.find((ff) => ff.id === stored.activeFieldId);
+        if (f) {
+          setAF(f);
+          if (stored.view === "fieldDetail" || stored.view === "reports") setView(stored.view);
+          if (stored.view === "reports" && stored.reportFieldId) setRFId(stored.reportFieldId);
+        }
+      }
+    }, [loading, fields, initialAction]);
+    (0, import_react8.useEffect)(() => {
+      try {
+        localStorage.setItem(FL_UI_KEY, JSON.stringify({ view, activeFieldId: activeField?.id || null, reportFieldId }));
+      } catch (_) {
+      }
+    }, [FL_UI_KEY, view, activeField, reportFieldId]);
     (0, import_react8.useEffect)(() => {
       if (loading || !tenantId) return;
       return dbListen(BASE, token2, ({ data }) => {
@@ -28648,6 +28711,14 @@ ${body}
     const AP_BASE = !farmId || farmId === "default" ? `tenants/${tenantId}/agriPlan` : `tenants/${tenantId}/farms/${farmId}/agriPlan`;
     const perms = getPerms(userProfile);
     const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
+    const AS_UI_KEY = `as_ui_${tenantId}_${farmId || "default"}`;
+    const loadUiState = () => {
+      try {
+        return JSON.parse(localStorage.getItem(AS_UI_KEY)) || {};
+      } catch (_) {
+        return {};
+      }
+    };
     const [fields, setFields] = (0, import_react10.useState)(DEFAULT_FIELDS);
     const [bins, setBins] = (0, import_react10.useState)(DEFAULT_BINS);
     const [grains, setGrains] = (0, import_react10.useState)([FALLBACK_GRAIN]);
@@ -28659,11 +28730,11 @@ ${body}
     const [tare, setTare] = (0, import_react10.useState)(0);
     const [unit, setUnit] = (0, import_react10.useState)("LBS");
     const [grainIdx, setGrainIdx] = (0, import_react10.useState)(0);
-    const [activeFieldId, setAFId] = (0, import_react10.useState)(null);
-    const [activeBinId, setABId] = (0, import_react10.useState)(null);
+    const [activeFieldId, setAFId] = (0, import_react10.useState)(() => loadUiState().activeFieldId ?? null);
+    const [activeBinId, setABId] = (0, import_react10.useState)(() => loadUiState().activeBinId ?? null);
     const [truckColor, setTruckColor] = (0, import_react10.useState)(DEFAULT_TRUCKS[0].id);
     const [activeUnit, setActiveUnit] = (0, import_react10.useState)("");
-    const [tab, setTab] = (0, import_react10.useState)(initialTab || "SCALE");
+    const [tab, setTab] = (0, import_react10.useState)(() => initialTab || loadUiState().tab || "SCALE");
     const [flImportModal, setFLImportModal] = (0, import_react10.useState)(false);
     const [flFields, setFLFields] = (0, import_react10.useState)([]);
     const [flSelected, setFLSelected] = (0, import_react10.useState)(/* @__PURE__ */ new Set());
@@ -28716,6 +28787,12 @@ ${body}
     const nextId = (0, import_react10.useRef)(Date.now());
     const allFieldsRef = (0, import_react10.useRef)([]);
     const allBinsRef = (0, import_react10.useRef)([]);
+    (0, import_react10.useEffect)(() => {
+      try {
+        localStorage.setItem(AS_UI_KEY, JSON.stringify({ tab, activeFieldId, activeBinId }));
+      } catch (_) {
+      }
+    }, [AS_UI_KEY, tab, activeFieldId, activeBinId]);
     (0, import_react10.useEffect)(() => {
       if (!tenantId) return;
       dbRead(BASE, token2).then((d) => {
