@@ -5210,6 +5210,13 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
   // is the same owner/manager/operator tiering AgriScale already enforces;
   // AgriPlan just never read the role it was handed until now.
   const perms = _isAgriLogixTenant ? getPerms(userProfile) : getPerms({ role: "owner" });
+  // Remembers which field/view was open so a mobile lock/unlock (which can
+  // fully reload the page) comes back to where the person actually was
+  // instead of resetting to the All Fields table. Keyed by `common` (the
+  // stable cross-year field id) rather than `id`, matching the convention
+  // used elsewhere in this file since `id` can be regenerated on year copy.
+  const AP_UI_KEY = `ap_ui_${tenantId}_${farmId||"default"}`;
+  const loadApUiState = () => { try { return JSON.parse(localStorage.getItem(AP_UI_KEY)) || {}; } catch(_) { return {}; } };
   const[years,setYears]=useState(()=>tenantId?["2026"]:loadYears());
   const[activeYear,setActiveYear]=useState(()=>tenantId?"2026":(()=>{const ys=loadYears();return ys[ys.length-1];})());
   const[fields,setFields]=useState(()=>tenantId?(loadTenantFieldsCache(tenantId,"2026")||[]):loadFields(loadYears().slice(-1)[0]));
@@ -5414,6 +5421,27 @@ export default function AgriPlanModule({ tenantId, token, userProfile, persist, 
     const fresh = fields.find(f=>f.id===selectedField.id);
     if(fresh && JSON.stringify(fresh)!==JSON.stringify(selectedField)) setSelectedField(fresh);
   },[fields]);
+
+  // Restore the last-viewed field/view once fields finish loading after a
+  // reload (e.g. a phone lock screen evicting the tab).
+  const apUiRestoreDone = useRef(false);
+  useEffect(()=>{
+    if(apUiRestoreDone.current || fields.length===0) return;
+    apUiRestoreDone.current = true;
+    const stored = loadApUiState();
+    if(stored.fieldCommon){
+      const f = fields.find(x=>x.common===stored.fieldCommon);
+      if(f){ setSelectedField(f); setMainView("detail"); return; }
+    }
+    if(stored.mainView && ["history","expenses","harvest","rotationPlan"].includes(stored.mainView)){
+      setMainView(stored.mainView);
+    }
+  },[fields]);
+
+  // Persist the above whenever it changes.
+  useEffect(()=>{
+    try { localStorage.setItem(AP_UI_KEY, JSON.stringify({fieldCommon:selectedField?.common||null, mainView})); } catch(_){}
+  },[AP_UI_KEY, selectedField, mainView]);
 
   useEffect(()=>{
     if(fields!==null&&fields!==undefined){
