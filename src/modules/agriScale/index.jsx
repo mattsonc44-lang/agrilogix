@@ -542,6 +542,13 @@ const AP_BASE = (!farmId || farmId === "default")
 const perms = getPerms(userProfile);
 const operatorName = (userProfile?.name || "OPERATOR").toUpperCase();
 
+// Remembers which tab, field, and bin were on screen so a mobile lock/
+// unlock (which can fully reload the page) comes back to where the person
+// actually was instead of resetting to the SCALE tab and no field/bin
+// picked. Scoped per tenant+farm so switching farms doesn't bleed state.
+const AS_UI_KEY = `as_ui_${tenantId}_${farmId||"default"}`;
+const loadUiState = () => { try { return JSON.parse(localStorage.getItem(AS_UI_KEY)) || {}; } catch(_) { return {}; } };
+
 // Data
 const [fields, setFields] = useState(DEFAULT_FIELDS);
 const [bins, setBins] = useState(DEFAULT_BINS);
@@ -560,13 +567,13 @@ const [rawInput, setRawInput] = useState("0");
 const [tare, setTare] = useState(0);
 const [unit, setUnit] = useState("LBS");
 const [grainIdx, setGrainIdx] = useState(0);
-const [activeFieldId, setAFId] = useState(null);
-const [activeBinId, setABId] = useState(null);
+const [activeFieldId, setAFId] = useState(()=>loadUiState().activeFieldId ?? null);
+const [activeBinId, setABId] = useState(()=>loadUiState().activeBinId ?? null);
 const [truckColor, setTruckColor] = useState(DEFAULT_TRUCKS[0].id);
 const [activeUnit, setActiveUnit] = useState("");
 
 // UI
-const [tab, setTab] = useState(initialTab || "SCALE");
+const [tab, setTab] = useState(()=>initialTab || loadUiState().tab || "SCALE");
 const [flImportModal, setFLImportModal] = useState(false);
 const [flFields, setFLFields] = useState([]);
 const [flSelected, setFLSelected] = useState(new Set());
@@ -626,6 +633,12 @@ const nextId = useRef(Date.now());
 // you import for one farm, switch farms, then import/save on the other.
 const allFieldsRef = useRef([]);
 const allBinsRef = useRef([]);
+
+// Persist last-viewed tab/field/bin (see AS_UI_KEY above) so returning
+// from a locked/backgrounded phone lands back where you were.
+useEffect(()=>{
+  try { localStorage.setItem(AS_UI_KEY, JSON.stringify({tab, activeFieldId, activeBinId})); } catch(_){}
+},[AS_UI_KEY, tab, activeFieldId, activeBinId]);
 
 // ── Load ──────────────────────────────────────────────────────
 useEffect(()=>{
