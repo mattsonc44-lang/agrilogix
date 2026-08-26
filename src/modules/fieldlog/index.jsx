@@ -4583,7 +4583,19 @@ const BASE = (!farmId || farmId === "default")
 ? `tenants/${tenantId}/fieldlog`
 : `tenants/${tenantId}/farms/${farmId}/fieldlog`;
 
-const[view,setView] =useState("home");
+// Remembers which screen/field was open so a mobile lock/unlock (which can
+// fully reload the page) comes back to where the person actually was
+// instead of resetting to the field list. Scoped per tenant+farm.
+const FL_UI_KEY = `fl_ui_${tenantId}_${farmId||"default"}`;
+const loadFlUiState = () => { try { return JSON.parse(localStorage.getItem(FL_UI_KEY)) || {}; } catch(_) { return {}; } };
+
+const[view,setView] =useState(()=>{
+  const v=loadFlUiState().view;
+  // Only restore views that don't need a specific field/report id already
+  // in hand at mount — those get restored once fields finish loading (see
+  // the restore effect below); everything else is safe to jump to directly.
+  return (v&&v!=="fieldDetail"&&v!=="reports")?v:"home";
+});
 const[fields,setFields] =useState([]);
 const[tenantCrops,setTenantCrops]=useState([]); // loaded from AgriPlan crop list
 _flCrops = tenantCrops.length > 0 ? tenantCrops : null;
@@ -4672,6 +4684,27 @@ if(f){ setAF(f); setView("fieldDetail"); setShowAdd(true); }
 quickActionDone.current=true;
 }
 },[loading,fields,initialAction]);
+
+// ── Restore last-viewed field after a reload (e.g. phone lock screen
+// evicting the tab) — same idea as the Quick Log deep-link above, just
+// restoring from localStorage instead of a Home-dashboard action. Skips if
+// a real deep-link is already handling this load.
+const uiRestoreDone=useRef(false);
+useEffect(()=>{
+if(loading||uiRestoreDone.current) return;
+uiRestoreDone.current=true;
+if(initialAction?.fieldId) return;
+const stored=loadFlUiState();
+if(stored.activeFieldId){
+const f=fields.find(ff=>ff.id===stored.activeFieldId);
+if(f){ setAF(f); if(stored.view==="fieldDetail"||stored.view==="reports") setView(stored.view); if(stored.view==="reports"&&stored.reportFieldId) setRFId(stored.reportFieldId); }
+}
+},[loading,fields,initialAction]);
+
+// Persist the above whenever it changes.
+useEffect(()=>{
+try { localStorage.setItem(FL_UI_KEY, JSON.stringify({view, activeFieldId:activeField?.id||null, reportFieldId})); } catch(_){}
+},[FL_UI_KEY, view, activeField, reportFieldId]);
 
 // ── Real-time listener ────────────────────────────────────
 useEffect(()=>{
