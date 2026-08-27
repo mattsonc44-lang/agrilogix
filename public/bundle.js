@@ -29222,12 +29222,15 @@ ${body}
       if (loading) return;
       mirrorContractsToAgriPlan(contracts);
     }, [contracts, loading, mirrorContractsToAgriPlan]);
-    const splitLoad = ({ load, splitA, splitB, binAId, binBId, labelBase }) => {
+    const splitLoad = ({ load, splitA, splitB, binAId, binBId, fieldAId, fieldBId, insuranceUnitA, insuranceUnitB, labelBase }) => {
       const owner = findLoadOwner(load.id);
       if (!owner) return;
+      const targetAId = fieldAId || owner.id;
+      const targetBId = fieldBId || owner.id;
       const base = labelBase || owner.loads.findIndex((l) => l.id === load.id) + 1;
-      const loadA = { ...load, net: splitA, binId: binAId, splitLabel: `${base}a` };
-      const loadB = { ...load, id: nextId.current++, net: splitB, binId: binBId, splitLabel: `${base}b` };
+      const loadA = { ...load, net: splitA, binId: binAId, splitLabel: `${base}a`, insuranceUnit: insuranceUnitA || "none" };
+      const loadB = { ...load, id: nextId.current++, net: splitB, binId: binBId, splitLabel: `${base}b`, insuranceUnit: insuranceUnitB || "none" };
+      const bothStayOnOwner = targetAId === owner.id && targetBId === owner.id;
       const nb = safeBins.map((b) => {
         let s = b.storedLbs;
         if (b.id === load.binId) s = Math.max(0, s - load.net);
@@ -29236,11 +29239,18 @@ ${body}
         return { ...b, storedLbs: s };
       });
       const nf = safeFields.map((f) => {
-        if (f.id !== owner.id) return f;
-        const newLoads = f.loads.map((l) => l.id === load.id ? loadA : l);
-        const idx = newLoads.findIndex((l) => l.id === loadA.id);
-        newLoads.splice(idx + 1, 0, loadB);
-        return { ...f, loads: newLoads };
+        if (bothStayOnOwner) {
+          if (f.id !== owner.id) return f;
+          const newLoads = f.loads.map((l) => l.id === load.id ? loadA : l);
+          const idx = newLoads.findIndex((l) => l.id === loadA.id);
+          newLoads.splice(idx + 1, 0, loadB);
+          return { ...f, loads: newLoads };
+        }
+        if (f.id !== owner.id && f.id !== targetAId && f.id !== targetBId) return f;
+        let loads = f.id === owner.id ? f.loads.filter((l) => l.id !== load.id) : f.loads || [];
+        if (f.id === targetAId) loads = [...loads, loadA];
+        if (f.id === targetBId) loads = [...loads, loadB];
+        return { ...f, loads };
       });
       setFields(nf);
       setBins(nb);
@@ -30368,6 +30378,8 @@ ${body}
         LoadMo,
         {
           load: editLoad.load,
+          fieldId: editLoad.fieldId,
+          fields: safeFields,
           bins: safeBins,
           grains: safeGrains,
           insuranceUnits: (safeFields.find((f) => f.id === editLoad.fieldId)?.insuranceUnits || []).map((u) => typeof u === "string" ? u : u?.name || "").filter(Boolean),
@@ -30596,13 +30608,20 @@ ${body}
       ] })
     ] }) });
   }
-  function LoadMo({ load, bins, grains, insuranceUnits = [], onSave, onDelete, onSplit, onClose }) {
+  function LoadMo({ load, fieldId, fields = [], bins, grains, insuranceUnits = [], onSave, onDelete, onSplit, onClose }) {
     const [f, setF] = (0, import_react10.useState)({ grainName: load.grainName, grainBushelLbs: load.grainBushelLbs, net: load.net, binId: load.binId, operator: load.operator || "", insuranceUnit: load.insuranceUnit && load.insuranceUnit !== "none" ? load.insuranceUnit : "" });
     const [splitMode, setSplitMode] = (0, import_react10.useState)(false);
     const [splitAmt, setSplitAmt] = (0, import_react10.useState)("");
     const [splitBinId, setSplitBinId] = (0, import_react10.useState)((bins.find((b) => b.id !== load.binId) || bins[0])?.id);
+    const origInsUnit = load.insuranceUnit && load.insuranceUnit !== "none" ? load.insuranceUnit : "";
+    const [splitFieldAId, setSplitFieldAId] = (0, import_react10.useState)(fieldId);
+    const [splitFieldBId, setSplitFieldBId] = (0, import_react10.useState)(fieldId);
+    const [splitInsA, setSplitInsA] = (0, import_react10.useState)(origInsUnit);
+    const [splitInsB, setSplitInsB] = (0, import_react10.useState)(origInsUnit);
     const s = (k, v) => setF((p) => ({ ...p, [k]: v }));
     const safeGrains = (Array.isArray(grains) ? grains : []).filter(Boolean);
+    const safeFieldsList = (Array.isArray(fields) ? fields : []).filter(Boolean);
+    const unitsForField = (fid) => (safeFieldsList.find((x) => x.id === fid)?.insuranceUnits || []).map((u) => typeof u === "string" ? u : u?.name || "").filter(Boolean);
     const parsedNet = Math.max(0, parseInt(f.net) || 0);
     const bushelLbs = parseInt(f.grainBushelLbs) || 60;
     if (splitMode) {
@@ -30612,8 +30631,11 @@ ${body}
       const splitALbs = Math.round(splitABu * bushelLbs);
       const splitBLbs = parsedNet - splitALbs;
       const label = load.splitLabel || "";
-      const canApply = splitABu > 0 && splitBBu > 1e-3 && f.binId !== splitBinId;
+      const identicalDestination = f.binId === splitBinId && splitFieldAId === splitFieldBId && splitInsA === splitInsB;
+      const canApply = splitABu > 0 && splitBBu > 1e-3 && !identicalDestination;
       const binName = (id) => (bins.find((b) => b.id === id) || {}).name || "?";
+      const unitsA = unitsForField(splitFieldAId);
+      const unitsB = unitsForField(splitFieldBId);
       return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: moStyle, onClick: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: cardStyle, onClick: (e) => e.stopPropagation(), children: [
         /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: hdrStyle, children: [
           "SPLIT LOAD",
@@ -30657,14 +30679,44 @@ ${body}
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "BIN A (KEEPS THIS LOAD'S BIN)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "BIN A" }),
         /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "10px" }, children: bins.map((b) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { onClick: () => s("binId", b.id), style: { ...btnBase_static, padding: "5px 10px", fontSize: "10px", background: f.binId === b.id ? "#e8e2d8" : "transparent", border: f.binId === b.id ? "1px solid #4a5568" : "1px solid #ccc4b8", color: f.binId === b.id ? "#4a5568" : "#6a7280" }, children: b.name }, b.id)) }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "BIN B \u2014 REMAINDER" }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "12px" }, children: bins.map((b) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { onClick: () => setSplitBinId(b.id), style: { ...btnBase_static, padding: "5px 10px", fontSize: "10px", background: splitBinId === b.id ? "#e8e2d8" : "transparent", border: splitBinId === b.id ? "1px solid #c47d0a" : "1px solid #ccc4b8", color: splitBinId === b.id ? "#c47d0a" : "#6a7280" }, children: b.name }, b.id)) }),
-        f.binId === splitBinId && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { fontSize: "9px", color: "#b04030", textAlign: "center", marginBottom: "10px" }, children: "BIN A AND BIN B MUST BE DIFFERENT" }),
-        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: { display: "flex", gap: "8px" }, children: [
+        safeFieldsList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD A" }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("select", { style: seStyle, value: splitFieldAId, onChange: (e) => {
+            const v = Number(e.target.value);
+            setSplitFieldAId(v);
+            setSplitInsA("");
+          }, children: safeFieldsList.map((fl) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: fl.id, children: fl.name }, fl.id)) })
+        ] }),
+        unitsA.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD A \u2014 INSURANCE UNIT" }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("select", { style: seStyle, value: splitInsA, onChange: (e) => setSplitInsA(e.target.value), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: "", children: "None" }),
+            unitsA.map((u) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: u, children: u }, u))
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { ...lblStyle, marginTop: "12px" }, children: "BIN B \u2014 REMAINDER" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "10px" }, children: bins.map((b) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { onClick: () => setSplitBinId(b.id), style: { ...btnBase_static, padding: "5px 10px", fontSize: "10px", background: splitBinId === b.id ? "#e8e2d8" : "transparent", border: splitBinId === b.id ? "1px solid #c47d0a" : "1px solid #ccc4b8", color: splitBinId === b.id ? "#c47d0a" : "#6a7280" }, children: b.name }, b.id)) }),
+        safeFieldsList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD B" }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("select", { style: seStyle, value: splitFieldBId, onChange: (e) => {
+            const v = Number(e.target.value);
+            setSplitFieldBId(v);
+            setSplitInsB("");
+          }, children: safeFieldsList.map((fl) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: fl.id, children: fl.name }, fl.id)) })
+        ] }),
+        unitsB.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD B \u2014 INSURANCE UNIT" }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("select", { style: seStyle, value: splitInsB, onChange: (e) => setSplitInsB(e.target.value), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: "", children: "None" }),
+            unitsB.map((u) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: u, children: u }, u))
+          ] })
+        ] }),
+        identicalDestination && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { fontSize: "9px", color: "#b04030", textAlign: "center", margin: "10px 0" }, children: "A AND B MUST DIFFER BY BIN, FIELD, OR INSURANCE UNIT" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: { display: "flex", gap: "8px", marginTop: "12px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(MoBtn, { onClick: () => setSplitMode(false), children: "\u2190 BACK" }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(MoBtn, { variant: "primary", disabled: !canApply, onClick: () => onSplit({ load, splitA: splitALbs, splitB: splitBLbs, binAId: f.binId, binBId: splitBinId, labelBase: load.splitLabel || void 0 }), children: "APPLY SPLIT" })
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(MoBtn, { variant: "primary", disabled: !canApply, onClick: () => onSplit({ load, splitA: splitALbs, splitB: splitBLbs, binAId: f.binId, binBId: splitBinId, fieldAId: splitFieldAId, fieldBId: splitFieldBId, insuranceUnitA: splitInsA, insuranceUnitB: splitInsB, labelBase: load.splitLabel || void 0 }), children: "APPLY SPLIT" })
         ] })
       ] }) });
     }
