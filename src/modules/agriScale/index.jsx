@@ -1044,12 +1044,15 @@ if (loading) return;
 mirrorContractsToAgriPlan(contracts);
 }, [contracts, loading, mirrorContractsToAgriPlan]);
 
-const splitLoad = ({ load, splitA, splitB, binAId, binBId, labelBase }) => {
+const splitLoad = ({ load, splitA, splitB, binAId, binBId, fieldAId, fieldBId, insuranceUnitA, insuranceUnitB, labelBase }) => {
 const owner = findLoadOwner(load.id);
 if(!owner) return;
+const targetAId = fieldAId || owner.id;
+const targetBId = fieldBId || owner.id;
 const base = labelBase || owner.loads.findIndex(l=>l.id===load.id) + 1;
-const loadA = { ...load, net:splitA, binId:binAId, splitLabel:`${base}a` };
-const loadB = { ...load, id:nextId.current++, net:splitB, binId:binBId, splitLabel:`${base}b` };
+const loadA = { ...load, net:splitA, binId:binAId, splitLabel:`${base}a`, insuranceUnit:insuranceUnitA||"none" };
+const loadB = { ...load, id:nextId.current++, net:splitB, binId:binBId, splitLabel:`${base}b`, insuranceUnit:insuranceUnitB||"none" };
+const bothStayOnOwner = targetAId===owner.id && targetBId===owner.id;
 const nb = safeBins.map(b=>{
 let s = b.storedLbs;
 if(b.id===load.binId) s = Math.max(0, s - load.net);
@@ -1057,12 +1060,24 @@ if(b.id===binAId) s = s + splitA;
 if(b.id===binBId) s = s + splitB;
 return {...b, storedLbs:s};
 });
+// Default case (no field reassignment): keep the original in-place ordering —
+// loadA replaces the original entry, loadB is inserted right after it.
+// If either half was moved to a different field, we can't preserve a single
+// shared position — pull the original out of its owner field and append
+// each half to the end of its destination field's load list instead.
 const nf = safeFields.map(f=>{
+if(bothStayOnOwner){
 if(f.id!==owner.id) return f;
 const newLoads = f.loads.map(l=>l.id===load.id?loadA:l);
 const idx = newLoads.findIndex(l=>l.id===loadA.id);
 newLoads.splice(idx+1, 0, loadB);
 return {...f, loads:newLoads};
+}
+if(f.id!==owner.id && f.id!==targetAId && f.id!==targetBId) return f;
+let loads = f.id===owner.id ? f.loads.filter(l=>l.id!==load.id) : (f.loads||[]);
+if(f.id===targetAId) loads = [...loads, loadA];
+if(f.id===targetBId) loads = [...loads, loadB];
+return {...f, loads};
 });
 setFields(nf); setBins(nb); save(nf,nb,grains,trucks);
 setEL(null);
@@ -2081,7 +2096,7 @@ IMPORT {apSelected.size>0?apSelected.size:""} FIELD{apSelected.size!==1?"S":""}
 )}
 {(addGrain||editGrain)&&<GrainMo grain={editGrain} onSave={f=>{let ng;if(editGrain){ng=safeGrains.map((g,i)=>i===editGrain.idx?{...g,name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60}:g);}else{const color=GRAIN_COLORS[grains.length%GRAIN_COLORS.length];ng=[...grains,{name:f.name.trim().toUpperCase(),bushel_lbs:parseInt(f.bushel_lbs)||60,color}];}setGrains(ng);save(fields,bins,ng,trucks);setAG(false);setEG(null);}} onClose={()=>{setAG(false);setEG(null);}}/>}
 {(addTruck||editTruck)&&<TruckMo truck={editTruck} onSave={f=>{let nt;if(editTruck){nt=safeTrucks.map((t,i)=>i===editTruck.idx?{...t,name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}:t);}else{nt=[...trucks,{id:genId(),name:f.name.trim().toUpperCase(),hex:f.hex,border:f.hex,text:f.text}];}setTrucks(nt);save(fields,bins,grains,nt);setAT(false);setET(null);}} onClose={()=>{setAT(false);setET(null);}}/>}
-{editLoad&&<LoadMo load={editLoad.load} bins={safeBins} grains={safeGrains}
+{editLoad&&<LoadMo load={editLoad.load} fieldId={editLoad.fieldId} fields={safeFields} bins={safeBins} grains={safeGrains}
 insuranceUnits={(safeFields.find(f=>f.id===editLoad.fieldId)?.insuranceUnits||[]).map(u=>typeof u==="string"?u:(u?.name||"")).filter(Boolean)}
 onSave={updateLoad} onDelete={deleteLoad} onSplit={splitLoad} onClose={()=>setEL(null)}/>}
 {showReport&&<PrintReport fields={safeFields} bins={safeBins} grains={safeGrains} onClose={()=>setShowReport(false)}/>}
@@ -2205,13 +2220,20 @@ return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=
 // between two bins. Mirrors the split flow from the old standalone
 // grain-cart app (component_final.jsx), adapted to this module's data
 // shape (load.net in lbs, load.grainBushelLbs, load.binId).
-function LoadMo({load,bins,grains,insuranceUnits=[],onSave,onDelete,onSplit,onClose}){
+function LoadMo({load,fieldId,fields=[],bins,grains,insuranceUnits=[],onSave,onDelete,onSplit,onClose}){
 const[f,setF]=useState({grainName:load.grainName,grainBushelLbs:load.grainBushelLbs,net:load.net,binId:load.binId,operator:load.operator||"",insuranceUnit:load.insuranceUnit&&load.insuranceUnit!=="none"?load.insuranceUnit:""});
 const[splitMode,setSplitMode]=useState(false);
 const[splitAmt,setSplitAmt]=useState("");
 const[splitBinId,setSplitBinId]=useState((bins.find(b=>b.id!==load.binId)||bins[0])?.id);
+const origInsUnit = load.insuranceUnit&&load.insuranceUnit!=="none"?load.insuranceUnit:"";
+const[splitFieldAId,setSplitFieldAId]=useState(fieldId);
+const[splitFieldBId,setSplitFieldBId]=useState(fieldId);
+const[splitInsA,setSplitInsA]=useState(origInsUnit);
+const[splitInsB,setSplitInsB]=useState(origInsUnit);
 const s=(k,v)=>setF(p=>({...p,[k]:v}));
 const safeGrains=(Array.isArray(grains)?grains:[]).filter(Boolean);
+const safeFieldsList=(Array.isArray(fields)?fields:[]).filter(Boolean);
+const unitsForField = fid => (safeFieldsList.find(x=>x.id===fid)?.insuranceUnits||[]).map(u=>typeof u==="string"?u:(u?.name||"")).filter(Boolean);
 
 const parsedNet = Math.max(0, parseInt(f.net)||0);
 const bushelLbs = parseInt(f.grainBushelLbs)||60;
@@ -2223,8 +2245,11 @@ const splitBBu = totalBu - splitABu;
 const splitALbs = Math.round(splitABu*bushelLbs);
 const splitBLbs = parsedNet - splitALbs;
 const label = load.splitLabel || "";
-const canApply = splitABu>0 && splitBBu>1e-3 && f.binId!==splitBinId;
+const identicalDestination = f.binId===splitBinId && splitFieldAId===splitFieldBId && splitInsA===splitInsB;
+const canApply = splitABu>0 && splitBBu>1e-3 && !identicalDestination;
 const binName = id => (bins.find(b=>b.id===id)||{}).name || "?";
+const unitsA = unitsForField(splitFieldAId);
+const unitsB = unitsForField(splitFieldBId);
 
 return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=>e.stopPropagation()}>
 <div style={hdrStyle}>SPLIT LOAD{label?` #${label}`:""}</div>
@@ -2249,23 +2274,50 @@ return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=
 </div>
 )}
 
-<div style={lblStyle}>BIN A (KEEPS THIS LOAD'S BIN)</div>
+<div style={lblStyle}>BIN A</div>
 <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"10px"}}>
 {bins.map(b=>(
 <button key={b.id} onClick={()=>s("binId",b.id)} style={{...btnBase_static,padding:"5px 10px",fontSize:"10px",background:f.binId===b.id?"#e8e2d8":"transparent",border:f.binId===b.id?"1px solid #4a5568":"1px solid #ccc4b8",color:f.binId===b.id?"#4a5568":"#6a7280"}}>{b.name}</button>
 ))}
 </div>
-<div style={lblStyle}>BIN B — REMAINDER</div>
-<div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"12px"}}>
+{safeFieldsList.length>0&&(<>
+<div style={lblStyle}>FIELD A</div>
+<select style={seStyle} value={splitFieldAId} onChange={e=>{const v=Number(e.target.value);setSplitFieldAId(v);setSplitInsA("");}}>
+{safeFieldsList.map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}
+</select>
+</>)}
+{unitsA.length>0&&(<>
+<div style={lblStyle}>FIELD A — INSURANCE UNIT</div>
+<select style={seStyle} value={splitInsA} onChange={e=>setSplitInsA(e.target.value)}>
+<option value="">None</option>
+{unitsA.map(u=><option key={u} value={u}>{u}</option>)}
+</select>
+</>)}
+
+<div style={{...lblStyle,marginTop:"12px"}}>BIN B — REMAINDER</div>
+<div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"10px"}}>
 {bins.map(b=>(
 <button key={b.id} onClick={()=>setSplitBinId(b.id)} style={{...btnBase_static,padding:"5px 10px",fontSize:"10px",background:splitBinId===b.id?"#e8e2d8":"transparent",border:splitBinId===b.id?"1px solid #c47d0a":"1px solid #ccc4b8",color:splitBinId===b.id?"#c47d0a":"#6a7280"}}>{b.name}</button>
 ))}
 </div>
-{f.binId===splitBinId&&<div style={{fontSize:"9px",color:"#b04030",textAlign:"center",marginBottom:"10px"}}>BIN A AND BIN B MUST BE DIFFERENT</div>}
+{safeFieldsList.length>0&&(<>
+<div style={lblStyle}>FIELD B</div>
+<select style={seStyle} value={splitFieldBId} onChange={e=>{const v=Number(e.target.value);setSplitFieldBId(v);setSplitInsB("");}}>
+{safeFieldsList.map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}
+</select>
+</>)}
+{unitsB.length>0&&(<>
+<div style={lblStyle}>FIELD B — INSURANCE UNIT</div>
+<select style={seStyle} value={splitInsB} onChange={e=>setSplitInsB(e.target.value)}>
+<option value="">None</option>
+{unitsB.map(u=><option key={u} value={u}>{u}</option>)}
+</select>
+</>)}
+{identicalDestination&&<div style={{fontSize:"9px",color:"#b04030",textAlign:"center",margin:"10px 0"}}>A AND B MUST DIFFER BY BIN, FIELD, OR INSURANCE UNIT</div>}
 
-<div style={{display:"flex",gap:"8px"}}>
+<div style={{display:"flex",gap:"8px",marginTop:"12px"}}>
 <MoBtn onClick={()=>setSplitMode(false)}>← BACK</MoBtn>
-<MoBtn variant="primary" disabled={!canApply} onClick={()=>onSplit({load,splitA:splitALbs,splitB:splitBLbs,binAId:f.binId,binBId:splitBinId,labelBase:load.splitLabel||undefined})}>APPLY SPLIT</MoBtn>
+<MoBtn variant="primary" disabled={!canApply} onClick={()=>onSplit({load,splitA:splitALbs,splitB:splitBLbs,binAId:f.binId,binBId:splitBinId,fieldAId:splitFieldAId,fieldBId:splitFieldBId,insuranceUnitA:splitInsA,insuranceUnitB:splitInsB,labelBase:load.splitLabel||undefined})}>APPLY SPLIT</MoBtn>
 </div>
 </div></div>);
 }
