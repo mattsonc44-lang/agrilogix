@@ -28927,6 +28927,10 @@ ${body}
       });
       const allLoads = merged.flatMap((f) => f.loads || []);
       const mergedBins = obj2arr(remote.bins || {}).filter(Boolean).map((rb) => ({ ...rb, storedLbs: allLoads.filter((l) => l.binId === rb.id).reduce((s, l) => s + l.net, 0) }));
+      const localBins = obj2arr(localData.bins || {}).filter(Boolean);
+      localBins.forEach((lb) => {
+        if (!mergedBins.find((mb) => mb.id === lb.id)) mergedBins.push({ ...lb, storedLbs: allLoads.filter((l) => l.binId === lb.id).reduce((s, l) => s + l.net, 0) });
+      });
       return { ...localData, fields: Object.fromEntries(merged.map((f) => [f.id, f])), bins: Object.fromEntries(mergedBins.map((b) => [b.id, b])) };
     };
     (0, import_react10.useEffect)(() => {
