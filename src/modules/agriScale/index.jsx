@@ -734,6 +734,11 @@ return {...rf, loads:[...(rf.loads||[]),...extra].sort((a,b)=>(a.ts||0)-(b.ts||0
 localFields.forEach(lf=>{ if(!merged.find(mf=>mf.id===lf.id)) merged.push(lf); });
 const allLoads = merged.flatMap(f=>f.loads||[]);
 const mergedBins = obj2arr(remote.bins||{}).filter(Boolean).map(rb=>({...rb, storedLbs:allLoads.filter(l=>l.binId===rb.id).reduce((s,l)=>s+l.net,0)}));
+// A bin created while offline (no service) won't exist on the remote copy yet —
+// without this, it would silently disappear from the merged result on reconnect,
+// even though its loads (kept via the fields merge above) still point at it.
+const localBins = obj2arr(localData.bins||{}).filter(Boolean);
+localBins.forEach(lb=>{ if(!mergedBins.find(mb=>mb.id===lb.id)) mergedBins.push({...lb, storedLbs:allLoads.filter(l=>l.binId===lb.id).reduce((s,l)=>s+l.net,0)}); });
 return {...localData, fields:Object.fromEntries(merged.map(f=>[f.id,f])), bins:Object.fromEntries(mergedBins.map(b=>[b.id,b]))};
 };
 
