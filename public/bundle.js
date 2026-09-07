@@ -25389,9 +25389,23 @@ ${body}
   .sl .modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
   .sl .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .sl .form-full{grid-column:1/-1;}
-  .sl .part-entry{display:grid;grid-template-columns:1fr 1fr 55px auto;gap:6px;align-items:center;margin-bottom:5px;}
   .sl .reminder-entry{display:grid;grid-template-columns:minmax(120px,1.8fr) minmax(90px,110px) minmax(90px,110px) 26px;gap:8px;align-items:center;margin-bottom:5px;}
-  @media(max-width:640px){.sl .sidebar{width:190px;}.sl .sr{grid-template-columns:1fr auto;}.sl .sr-day,.sl .sr-mon,.sl .sr-yr{display:none;}.sl .form-row{grid-template-columns:1fr;}.sl .reminder-entry{grid-template-columns:1fr;}}
+  .sl .wo-part-row{border:1px solid var(--border);border-radius:4px;padding:8px;margin-bottom:6px;background:#fbfbfa;}
+  .sl .wo-part-row-top{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+  .sl .wo-part-row-bottom{display:grid;grid-template-columns:1fr 1fr 55px 70px 64px;gap:6px;align-items:center;}
+  .sl .wo-part-line-total{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--amber-dim);text-align:right;}
+  .sl .wo-part-total{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;font-size:12px;color:var(--text-dim);margin-top:2px;}
+  .sl .wo-part-total b{font-family:'Rajdhani',sans-serif;font-size:16px;color:var(--text-bright);}
+  .sl .sr-parts{margin-top:5px;border-top:1px dashed var(--border2);padding-top:5px;}
+  .sl .sr-part-row{padding:3px 0;border-bottom:1px solid var(--border);}
+  .sl .sr-part-row:last-of-type{border-bottom:none;}
+  .sl .sr-part-main{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .sl .sr-part-desc{font-size:12px;font-weight:600;color:var(--text-bright);}
+  .sl .sr-part-amt{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text);white-space:nowrap;}
+  .sl .sr-part-sub{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--amber-dim);}
+  .sl .sr-parts-total{display:flex;justify-content:flex-end;gap:6px;font-size:11px;color:var(--text-dim);margin-top:4px;padding-top:4px;border-top:1px solid var(--border);}
+  .sl .sr-parts-total b{font-family:'Rajdhani',sans-serif;font-size:13px;color:var(--text-bright);}
+  @media(max-width:640px){.sl .sidebar{width:190px;}.sl .sr{grid-template-columns:1fr auto;}.sl .sr-day,.sl .sr-mon,.sl .sr-yr{display:none;}.sl .form-row{grid-template-columns:1fr;}.sl .reminder-entry{grid-template-columns:1fr;}.sl .wo-part-row-bottom{grid-template-columns:1fr 1fr;}}
   @media(max-width:480px){.sl .sidebar{display:none;}.sl .main-content{padding:14px;}}
 `;
   var ICONS = { Truck: "\u{1F69B}", Tractor: "\u{1F69C}", Combine: "\u{1F33E}", "Grain Cart": "\u2699\uFE0F", Semi: "\u{1F69B}", Trailer: "\u{1F4E6}", Sprayer: "\u{1F4A7}", Pickup: "\u{1F6FB}", "ATV/UTV": "\u{1F3CE}\uFE0F", Generator: "\u26A1", Other: "\u{1F527}" };
@@ -26094,7 +26108,7 @@ ${body}
         const byId = new Map(fixedRecords.map((r) => [r.id, r]));
         save({ records: D.records.map((r) => byId.get(r.id) || r) });
       }, onClose: () => setModal(null) }),
-      modal === "record" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RecordMo, { initial: editTarget, vehicleId: selVehId, partsToOrder: D.partsToOrder, onSave: saveRecord, onClose: () => {
+      modal === "record" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RecordMo, { initial: editTarget, vehicleId: selVehId, partsToOrder: D.partsToOrder, vendors: D.vendors, onSave: saveRecord, onClose: () => {
         setModal(null);
         setEdit(null);
       } }),
@@ -26529,10 +26543,32 @@ ${body}
                   Number(r.hours).toLocaleString()
                 ] })
               ] }),
-              parts.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { marginTop: "4px" }, children: parts.map((p, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "sr-part", children: [
-                [p.desc, p.num].filter(Boolean).join(" #"),
-                p.qty > 1 ? ` \xD7${p.qty}` : ""
-              ] }, i)) })
+              parts.length > 0 && (() => {
+                const partsTotal = parts.reduce((sum, p) => sum + (parseFloat(p.qty) || 1) * (parseFloat(p.unitCost) || 0), 0);
+                return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "sr-parts", children: [
+                  parts.map((p, i) => {
+                    const lineTotal = (parseFloat(p.qty) || 1) * (parseFloat(p.unitCost) || 0);
+                    const sub = [[p.vendor, p.num].filter(Boolean).join(" "), `Qty ${p.qty || 1}${p.unitCost ? ` \xD7 $${Number(p.unitCost).toFixed(2)}` : ""}`].filter(Boolean).join(" \xB7 ");
+                    return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "sr-part-row", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "sr-part-main", children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "sr-part-desc", children: p.desc || "Part" }),
+                        p.unitCost && canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "sr-part-amt", children: [
+                          "$",
+                          lineTotal.toFixed(2)
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "sr-part-sub", children: sub })
+                    ] }, p.id || i);
+                  }),
+                  partsTotal > 0 && canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "sr-parts-total", children: [
+                    "Parts total ",
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("b", { children: [
+                      "$",
+                      partsTotal.toFixed(2)
+                    ] })
+                  ] })
+                ] });
+              })()
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "sr-right", children: [
               canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "sr-cost", children: r.cost ? `$${Number(r.cost).toLocaleString()}` : "\u2014" }),
@@ -27301,7 +27337,7 @@ ${body}
     const q = gsQuery.toLowerCase().trim();
     const results = [];
     if (q.length >= 2) {
-      D.records.filter((r) => (r.notes + r.type + (r.parts || []).map((p) => p.desc + p.num).join("")).toLowerCase().includes(q)).slice(0, 20).forEach((r) => {
+      D.records.filter((r) => (r.notes + r.type + (r.parts || []).map((p) => p.desc + p.num + (p.vendor || "")).join("")).toLowerCase().includes(q)).slice(0, 20).forEach((r) => {
         const v = D.vehicles.find((v2) => v2.id === r.vehicleId);
         results.push({ type: "record", label: `${v?.name || "?"} \u2014 ${r.type} (${r.date})`, sub: r.notes?.slice(0, 80), vid: r.vehicleId, custId: v?.customerId, recId: r.id });
       });
@@ -27591,13 +27627,14 @@ ${body}
       /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fg, { label: "Notes", full: true, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("textarea", { className: "form-textarea", value: f.notes, onChange: (e) => s("notes", e.target.value) }) })
     ] });
   }
-  function RecordMo({ initial, vehicleId, partsToOrder, onSave, onClose }) {
+  function RecordMo({ initial, vehicleId, partsToOrder, vendors, onSave, onClose }) {
     const prefill = initial?.prefill || {};
     const [f, setF] = (0, import_react9.useState)({ date: initial?.date || today(), type: initial?.type || prefill.type || "Oil Change", notes: initial?.notes || prefill.notes || "", cost: initial?.cost || "", hours: initial?.hours || "", tech: initial?.tech || "", parts: initial?.parts || [] });
     const s = (k, v) => setF((p) => ({ ...p, [k]: v }));
-    const addP = () => setF((p) => ({ ...p, parts: [...p.parts, { id: genId(), desc: "", num: "", qty: "1" }] }));
+    const addP = () => setF((p) => ({ ...p, parts: [...p.parts, { id: genId(), desc: "", vendor: "", num: "", qty: "1", unitCost: "" }] }));
     const updP = (i, k, v) => setF((p) => ({ ...p, parts: p.parts.map((pp, ii) => ii === i ? { ...pp, [k]: v } : pp) }));
     const remP = (i) => setF((p) => ({ ...p, parts: p.parts.filter((_, ii) => ii !== i) }));
+    const partsTotal = f.parts.reduce((sum, p) => sum + (parseFloat(p.qty) || 1) * (parseFloat(p.unitCost) || 0), 0);
     return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(Mo, { title: initial ? "Edit Record" : "Log Service", onClose, onSave: () => {
       if (!f.date || !f.type) return alert("Date and type required.");
       onSave(f);
@@ -27618,12 +27655,30 @@ ${body}
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("label", { className: "form-lbl", children: "Parts Used" }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-xs", onClick: addP, children: "+ Add Part" })
         ] }),
-        f.parts.map((p, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "part-entry", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Description", value: p.desc, onChange: (e) => updP(i, "desc", e.target.value) }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Part #", value: p.num, onChange: (e) => updP(i, "num", e.target.value) }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", placeholder: "Qty", value: p.qty, onChange: (e) => updP(i, "qty", e.target.value) }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remP(i), children: "\u2715" })
-        ] }, p.id || i))
+        f.parts.map((p, i) => {
+          const lineTotal = (parseFloat(p.qty) || 1) * (parseFloat(p.unitCost) || 0);
+          return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "wo-part-row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "wo-part-row-top", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Description", value: p.desc, onChange: (e) => updP(i, "desc", e.target.value), style: { flex: 1 } }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-danger btn-xs", onClick: () => remP(i), children: "\u2715" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "wo-part-row-bottom", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { list: "vend-list-record", placeholder: "Vendor", value: p.vendor, onChange: (e) => updP(i, "vendor", e.target.value) }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { placeholder: "Vendor Part #", value: p.num, onChange: (e) => updP(i, "num", e.target.value) }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", min: "1", placeholder: "Qty", value: p.qty, onChange: (e) => updP(i, "qty", e.target.value) }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Fi, { type: "number", step: "0.01", placeholder: "Unit $", value: p.unitCost, onChange: (e) => updP(i, "unitCost", e.target.value) }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "wo-part-line-total", children: p.unitCost ? `$${lineTotal.toFixed(2)}` : "" })
+            ] })
+          ] }, p.id || i);
+        }),
+        vendors && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("datalist", { id: "vend-list-record", children: [...vendors].sort((a, b) => a.name.localeCompare(b.name)).map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("option", { value: v.name }, v.id)) }),
+        partsTotal > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "wo-part-total", children: [
+          "Parts total ",
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("b", { children: [
+            "$",
+            partsTotal.toFixed(2)
+          ] })
+        ] })
       ] })
     ] });
   }
