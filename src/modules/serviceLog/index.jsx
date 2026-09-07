@@ -201,9 +201,23 @@ const SL_CSS = `
   .sl .modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
   .sl .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .sl .form-full{grid-column:1/-1;}
-  .sl .part-entry{display:grid;grid-template-columns:1fr 1fr 55px auto;gap:6px;align-items:center;margin-bottom:5px;}
   .sl .reminder-entry{display:grid;grid-template-columns:minmax(120px,1.8fr) minmax(90px,110px) minmax(90px,110px) 26px;gap:8px;align-items:center;margin-bottom:5px;}
-  @media(max-width:640px){.sl .sidebar{width:190px;}.sl .sr{grid-template-columns:1fr auto;}.sl .sr-day,.sl .sr-mon,.sl .sr-yr{display:none;}.sl .form-row{grid-template-columns:1fr;}.sl .reminder-entry{grid-template-columns:1fr;}}
+  .sl .wo-part-row{border:1px solid var(--border);border-radius:4px;padding:8px;margin-bottom:6px;background:#fbfbfa;}
+  .sl .wo-part-row-top{display:flex;gap:6px;align-items:center;margin-bottom:6px;}
+  .sl .wo-part-row-bottom{display:grid;grid-template-columns:1fr 1fr 55px 70px 64px;gap:6px;align-items:center;}
+  .sl .wo-part-line-total{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--amber-dim);text-align:right;}
+  .sl .wo-part-total{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;font-size:12px;color:var(--text-dim);margin-top:2px;}
+  .sl .wo-part-total b{font-family:'Rajdhani',sans-serif;font-size:16px;color:var(--text-bright);}
+  .sl .sr-parts{margin-top:5px;border-top:1px dashed var(--border2);padding-top:5px;}
+  .sl .sr-part-row{padding:3px 0;border-bottom:1px solid var(--border);}
+  .sl .sr-part-row:last-of-type{border-bottom:none;}
+  .sl .sr-part-main{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .sl .sr-part-desc{font-size:12px;font-weight:600;color:var(--text-bright);}
+  .sl .sr-part-amt{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--text);white-space:nowrap;}
+  .sl .sr-part-sub{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--amber-dim);}
+  .sl .sr-parts-total{display:flex;justify-content:flex-end;gap:6px;font-size:11px;color:var(--text-dim);margin-top:4px;padding-top:4px;border-top:1px solid var(--border);}
+  .sl .sr-parts-total b{font-family:'Rajdhani',sans-serif;font-size:13px;color:var(--text-bright);}
+  @media(max-width:640px){.sl .sidebar{width:190px;}.sl .sr{grid-template-columns:1fr auto;}.sl .sr-day,.sl .sr-mon,.sl .sr-yr{display:none;}.sl .form-row{grid-template-columns:1fr;}.sl .reminder-entry{grid-template-columns:1fr;}.sl .wo-part-row-bottom{grid-template-columns:1fr 1fr;}}
   @media(max-width:480px){.sl .sidebar{display:none;}.sl .main-content{padding:14px;}}
 `;
 
@@ -749,7 +763,7 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
       {/* Modals */}
       {modal==="vehicle"  &&<VehicleMo   initial={editTarget} customers={D.customers} onSave={saveVehicle}  onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="importMaintenance" && <ImportMaintenanceModal vehicles={D.vehicles} records={D.records} onImport={(newRecords)=>{save({records:[...D.records,...newRecords]});}} onRepair={(fixedRecords)=>{const byId=new Map(fixedRecords.map(r=>[r.id,r]));save({records:D.records.map(r=>byId.get(r.id)||r)});}} onClose={()=>setModal(null)}/>}
-      {modal==="record"   &&<RecordMo    initial={editTarget} vehicleId={selVehId} partsToOrder={D.partsToOrder} onSave={saveRecord}   onClose={()=>{setModal(null);setEdit(null);}}/>}
+      {modal==="record"   &&<RecordMo    initial={editTarget} vehicleId={selVehId} partsToOrder={D.partsToOrder} vendors={D.vendors} onSave={saveRecord}   onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="customer" &&<CustomerMo  initial={editTarget} onSave={saveCustomer} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="todo"     &&<TodoMo      vehicleId={editTarget?.vehicleId||selVehId} initial={editTarget} onSave={saveTodo} onClose={()=>{setModal(null);setEdit(null);}}/>}
       {modal==="part"     &&<PartMo      initial={editTarget} vehicles={D.vehicles} vendors={D.vendors} partsInventory={D.partsInventory} onSave={savePart} onClose={()=>{setModal(null);setEdit(null);}}/>}
@@ -987,7 +1001,20 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
               </div>
               {r.notes&&<div className="sr-notes">{r.notes}</div>}
               <div className="sr-tags">{r.tech&&<span className="sr-tag">👤 {r.tech}</span>}{r.hours&&<span className="sr-tag">⏱ {Number(r.hours).toLocaleString()}</span>}</div>
-              {parts.length>0&&<div style={{marginTop:"4px"}}>{parts.map((p,i)=><span key={i} className="sr-part">{[p.desc,p.num].filter(Boolean).join(" #")}{p.qty>1?` ×${p.qty}`:""}</span>)}</div>}
+              {parts.length>0&&(()=>{
+                const partsTotal=parts.reduce((sum,p)=>sum+(parseFloat(p.qty)||1)*(parseFloat(p.unitCost)||0),0);
+                return(<div className="sr-parts">
+                  {parts.map((p,i)=>{
+                    const lineTotal=(parseFloat(p.qty)||1)*(parseFloat(p.unitCost)||0);
+                    const sub=[[p.vendor,p.num].filter(Boolean).join(" "),`Qty ${p.qty||1}${p.unitCost?` × $${Number(p.unitCost).toFixed(2)}`:""}`].filter(Boolean).join(" · ");
+                    return(<div key={p.id||i} className="sr-part-row">
+                      <div className="sr-part-main"><span className="sr-part-desc">{p.desc||"Part"}</span>{p.unitCost&&canCost&&<span className="sr-part-amt">${lineTotal.toFixed(2)}</span>}</div>
+                      <div className="sr-part-sub">{sub}</div>
+                    </div>);
+                  })}
+                  {partsTotal>0&&canCost&&<div className="sr-parts-total">Parts total <b>${partsTotal.toFixed(2)}</b></div>}
+                </div>);
+              })()}
             </div>
             <div className="sr-right">
               {canCost&&<div className="sr-cost">{r.cost?`$${Number(r.cost).toLocaleString()}`:"—"}</div>}
@@ -1387,7 +1414,7 @@ function SearchView({D,gsQuery,setGsQ,setSelVeh,setSelCust,setTab,setHighlightRe
   const q=gsQuery.toLowerCase().trim();
   const results=[];
   if(q.length>=2){
-    D.records.filter(r=>(r.notes+r.type+(r.parts||[]).map(p=>p.desc+p.num).join("")).toLowerCase().includes(q)).slice(0,20).forEach(r=>{const v=D.vehicles.find(v=>v.id===r.vehicleId);results.push({type:"record",label:`${v?.name||"?"} — ${r.type} (${r.date})`,sub:r.notes?.slice(0,80),vid:r.vehicleId,custId:v?.customerId,recId:r.id});});
+    D.records.filter(r=>(r.notes+r.type+(r.parts||[]).map(p=>p.desc+p.num+(p.vendor||"")).join("")).toLowerCase().includes(q)).slice(0,20).forEach(r=>{const v=D.vehicles.find(v=>v.id===r.vehicleId);results.push({type:"record",label:`${v?.name||"?"} — ${r.type} (${r.date})`,sub:r.notes?.slice(0,80),vid:r.vehicleId,custId:v?.customerId,recId:r.id});});
     D.vehicles.filter(v=>(v.name+v.make+v.model+v.vin+(v.notes||"")).toLowerCase().includes(q)).slice(0,10).forEach(v=>results.push({type:"vehicle",label:v.name,sub:`${v.type}${v.year?" · "+v.year:""}`,vid:v.id,custId:v.customerId}));
     D.partsInventory.filter(p=>(p.name+(p.partNumbers||[]).map(n=>n.num+(n.vendor||"")).join("")).toLowerCase().includes(q)).slice(0,10).forEach(p=>results.push({type:"part",label:p.name,sub:`Qty: ${p.qty||"?"}${p.location?" · "+p.location:""}`}));
   }
@@ -1600,19 +1627,39 @@ function VehicleMo({initial,customers,onSave,onClose}){
   </Mo>);
 }
 
-function RecordMo({initial,vehicleId,partsToOrder,onSave,onClose}){
+function RecordMo({initial,vehicleId,partsToOrder,vendors,onSave,onClose}){
   const prefill=initial?.prefill||{};
   const[f,setF]=useState({date:initial?.date||today(),type:initial?.type||prefill.type||"Oil Change",notes:initial?.notes||prefill.notes||"",cost:initial?.cost||"",hours:initial?.hours||"",tech:initial?.tech||"",parts:initial?.parts||[]});
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  const addP=()=>setF(p=>({...p,parts:[...p.parts,{id:genId(),desc:"",num:"",qty:"1"}]}));
+  const addP=()=>setF(p=>({...p,parts:[...p.parts,{id:genId(),desc:"",vendor:"",num:"",qty:"1",unitCost:""}]}));
   const updP=(i,k,v)=>setF(p=>({...p,parts:p.parts.map((pp,ii)=>ii===i?{...pp,[k]:v}:pp)}));
   const remP=i=>setF(p=>({...p,parts:p.parts.filter((_,ii)=>ii!==i)}));
+  const partsTotal=f.parts.reduce((sum,p)=>sum+(parseFloat(p.qty)||1)*(parseFloat(p.unitCost)||0),0);
   return(<Mo title={initial?"Edit Record":"Log Service"} onClose={onClose} onSave={()=>{if(!f.date||!f.type)return alert("Date and type required.");onSave(f);}} saveLabel={initial?"Save Changes":"Log Service"} large>
     <Fr><Fg label="Date *"><Fi type="date" value={f.date} onChange={e=>s("date",e.target.value)}/></Fg><Fg label="Service Type *"><Fi list="svc-types" value={f.type} onChange={e=>s("type",e.target.value)}/><datalist id="svc-types">{["Oil Change","Filter Replacement","Tire Service","Brake Service","Hydraulic Service","Belt/Chain Replacement","Coolant Service","Fuel System","Battery/Electrical","Inspection","Repair","Other"].map(t=><option key={t} value={t}/>)}</datalist></Fg><Fg label="Cost ($)"><Fi type="number" step="0.01" value={f.cost} onChange={e=>s("cost",e.target.value)}/></Fg><Fg label="Hrs/Miles at Service"><Fi type="number" value={f.hours} onChange={e=>s("hours",e.target.value)}/></Fg></Fr>
     <Fg label="Performed By" full><Fi value={f.tech} onChange={e=>s("tech",e.target.value)} placeholder="Self, Dealer, Shop…"/></Fg>
     <Fg label="Notes" full><textarea className="form-textarea" value={f.notes} onChange={e=>s("notes",e.target.value)} placeholder="Work done, observations…"/></Fg>
-    <div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Parts Used</label><button className="btn btn-ghost btn-xs" onClick={addP}>+ Add Part</button></div>
-    {f.parts.map((p,i)=>(<div key={p.id||i} className="part-entry"><Fi placeholder="Description" value={p.desc} onChange={e=>updP(i,"desc",e.target.value)}/><Fi placeholder="Part #" value={p.num} onChange={e=>updP(i,"num",e.target.value)}/><Fi type="number" placeholder="Qty" value={p.qty} onChange={e=>updP(i,"qty",e.target.value)}/><button className="btn btn-danger btn-xs" onClick={()=>remP(i)}>✕</button></div>))}</div>
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}><label className="form-lbl">Parts Used</label><button className="btn btn-ghost btn-xs" onClick={addP}>+ Add Part</button></div>
+      {f.parts.map((p,i)=>{
+        const lineTotal=(parseFloat(p.qty)||1)*(parseFloat(p.unitCost)||0);
+        return(<div key={p.id||i} className="wo-part-row">
+          <div className="wo-part-row-top">
+            <Fi placeholder="Description" value={p.desc} onChange={e=>updP(i,"desc",e.target.value)} style={{flex:1}}/>
+            <button className="btn btn-danger btn-xs" onClick={()=>remP(i)}>✕</button>
+          </div>
+          <div className="wo-part-row-bottom">
+            <Fi list="vend-list-record" placeholder="Vendor" value={p.vendor} onChange={e=>updP(i,"vendor",e.target.value)}/>
+            <Fi placeholder="Vendor Part #" value={p.num} onChange={e=>updP(i,"num",e.target.value)}/>
+            <Fi type="number" min="1" placeholder="Qty" value={p.qty} onChange={e=>updP(i,"qty",e.target.value)}/>
+            <Fi type="number" step="0.01" placeholder="Unit $" value={p.unitCost} onChange={e=>updP(i,"unitCost",e.target.value)}/>
+            <span className="wo-part-line-total">{p.unitCost?`$${lineTotal.toFixed(2)}`:""}</span>
+          </div>
+        </div>);
+      })}
+      {vendors&&<datalist id="vend-list-record">{[...vendors].sort((a,b)=>a.name.localeCompare(b.name)).map(v=><option key={v.id} value={v.name}/>)}</datalist>}
+      {partsTotal>0&&<div className="wo-part-total">Parts total <b>${partsTotal.toFixed(2)}</b></div>}
+    </div>
   </Mo>);
 }
 
