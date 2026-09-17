@@ -25193,6 +25193,7 @@ ${body}
 
   // src/modules/serviceLog/index.jsx
   var import_jsx_runtime9 = __toESM(require_jsx_runtime());
+  var NO_CUSTOMER = "__none__";
   var SL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&display=swap');
   .sl *,.sl *::before,.sl *::after{box-sizing:border-box;}
@@ -26044,39 +26045,75 @@ ${body}
               /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: { fontSize: 11, color: "var(--text-dim)" }, children: D.customers.length })
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "sidebar-search", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { placeholder: "Search equipment\u2026", value: sbSearch, onChange: (e) => setSbSearch(e.target.value) }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "sidebar-list", children: [...D.customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
-              const cvs = [...fVehicles.filter((v) => v.customerId === c.id)].sort((a, b) => a.name.localeCompare(b.name));
-              const isOpen = selCustId === c.id || cvs.some((v) => v.id === selVehId);
-              return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-                /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `si ${selCustId === c.id && !selVehId ? "active" : ""}`, onClick: () => {
-                  setSelCust(c.id);
-                  setSelVeh(null);
-                }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-icon", children: "\u{1F3E2}" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-info", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "si-name", children: c.name }),
-                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-sub", children: [
-                      cvs.length,
-                      " equipment"
-                    ] })
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "sidebar-list", children: [
+              [...D.customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
+                const cvs = [...fVehicles.filter((v) => v.customerId === c.id)].sort((a, b) => a.name.localeCompare(b.name));
+                const isOpen = selCustId === c.id || cvs.some((v) => v.id === selVehId);
+                return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `si ${selCustId === c.id && !selVehId ? "active" : ""}`, onClick: () => {
+                    setSelCust(c.id);
+                    setSelVeh(null);
+                  }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-icon", children: "\u{1F3E2}" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-info", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "si-name", children: c.name }),
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-sub", children: [
+                        cvs.length,
+                        " equipment"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-count", children: cvs.length })
                   ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-count", children: cvs.length })
-                ] }),
-                isOpen && cvs.map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `si ${selVehId === v.id ? "active" : ""}`, style: { paddingLeft: "26px" }, onClick: () => {
-                  setSelVeh(v.id);
-                  setSelCust(c.id);
-                }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-icon", style: { fontSize: "12px" }, children: ICONS[v.type] || "\u{1F527}" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-info", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "si-name", style: { fontSize: "12px" }, children: v.name }),
-                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-sub", children: [
-                      D.records.filter((r) => r.vehicleId === v.id).length,
-                      " records"
+                  isOpen && cvs.map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `si ${selVehId === v.id ? "active" : ""}`, style: { paddingLeft: "26px" }, onClick: () => {
+                    setSelVeh(v.id);
+                    setSelCust(c.id);
+                  }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-icon", style: { fontSize: "12px" }, children: ICONS[v.type] || "\u{1F527}" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-info", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "si-name", style: { fontSize: "12px" }, children: v.name }),
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-sub", children: [
+                        D.records.filter((r) => r.vehicleId === v.id).length,
+                        " records"
+                      ] })
                     ] })
-                  ] })
-                ] }, v.id))
-              ] }, c.id);
-            }) }),
+                  ] }, v.id))
+                ] }, c.id);
+              }),
+              (() => {
+                const uvs = [...fVehicles.filter((v) => !v.customerId)].sort((a, b) => a.name.localeCompare(b.name));
+                if (uvs.length === 0) return null;
+                const isOpen = selCustId === NO_CUSTOMER || uvs.some((v) => v.id === selVehId);
+                return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `si ${selCustId === NO_CUSTOMER && !selVehId ? "active" : ""}`, onClick: () => {
+                    setSelCust(NO_CUSTOMER);
+                    setSelVeh(null);
+                  }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-icon", children: "\u{1F527}" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-info", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "si-name", children: "No Customer" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-sub", children: [
+                        uvs.length,
+                        " equipment"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-count", children: uvs.length })
+                  ] }),
+                  isOpen && uvs.map((v) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: `si ${selVehId === v.id ? "active" : ""}`, style: { paddingLeft: "26px" }, onClick: () => {
+                    setSelVeh(v.id);
+                    setSelCust(NO_CUSTOMER);
+                  }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "si-icon", style: { fontSize: "12px" }, children: ICONS[v.type] || "\u{1F527}" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-info", children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "si-name", style: { fontSize: "12px" }, children: v.name }),
+                      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "si-sub", children: [
+                        D.records.filter((r) => r.vehicleId === v.id).length,
+                        " records"
+                      ] })
+                    ] })
+                  ] }, v.id))
+                ] });
+              })()
+            ] }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "sidebar-add", onClick: () => {
               setEdit(null);
               setModal("customer");
@@ -26207,49 +26244,80 @@ ${body}
           /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "summary-stat-lbl", children: "Total Spent" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "fleet-grid", children: [...D.customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
-        const cvs = D.vehicles.filter((v) => v.customerId === c.id);
-        const cr = D.records.filter((r) => cvs.some((v) => v.id === r.vehicleId));
-        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vehicle-card", onClick: () => {
-          setSelCust(c.id);
-          setSelVeh(null);
-        }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-type", children: "\u{1F3E2} Customer" }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-name", children: c.name }),
-          c.notes && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-sub", children: c.notes }),
-          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vc-meta", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Equipment" }),
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-val", children: cvs.length })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Records" }),
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-val", children: cr.length })
-            ] }),
-            canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Total Cost" }),
-              /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vc-stat-val", children: [
-                "$",
-                sumCost(cr).toLocaleString()
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "fleet-grid", children: [
+        [...D.customers].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
+          const cvs = D.vehicles.filter((v) => v.customerId === c.id);
+          const cr = D.records.filter((r) => cvs.some((v) => v.id === r.vehicleId));
+          return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vehicle-card", onClick: () => {
+            setSelCust(c.id);
+            setSelVeh(null);
+          }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-type", children: "\u{1F3E2} Customer" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-name", children: c.name }),
+            c.notes && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-sub", children: c.notes }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vc-meta", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Equipment" }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-val", children: cvs.length })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Records" }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-val", children: cr.length })
+              ] }),
+              canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Total Cost" }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vc-stat-val", children: [
+                  "$",
+                  sumCost(cr).toLocaleString()
+                ] })
               ] })
             ] })
-          ] })
-        ] }, c.id);
-      }) })
+          ] }, c.id);
+        }),
+        (() => {
+          const uvs = D.vehicles.filter((v) => !v.customerId);
+          if (uvs.length === 0) return null;
+          const ur = D.records.filter((r) => uvs.some((v) => v.id === r.vehicleId));
+          return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vehicle-card", onClick: () => {
+            setSelCust(NO_CUSTOMER);
+            setSelVeh(null);
+          }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-type", children: "\u{1F527} Unassigned" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-name", children: "No Customer" }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vc-meta", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Equipment" }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-val", children: uvs.length })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Records" }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-val", children: ur.length })
+              ] }),
+              canCost && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "vc-stat-lbl", children: "Total Cost" }),
+                /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "vc-stat-val", children: [
+                  "$",
+                  sumCost(ur).toLocaleString()
+                ] })
+              ] })
+            ] })
+          ] });
+        })()
+      ] })
     ] });
-    if (selCust && !selVeh) {
-      const cvs = [...D.vehicles.filter((v) => v.customerId === selCust.id)].sort((a, b) => a.name.localeCompare(b.name));
+    if ((selCust || selCustId === NO_CUSTOMER) && !selVeh) {
+      const cvs = selCust ? [...D.vehicles.filter((v) => v.customerId === selCust.id)].sort((a, b) => a.name.localeCompare(b.name)) : [...D.vehicles.filter((v) => !v.customerId)].sort((a, b) => a.name.localeCompare(b.name));
       return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
         /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "overview-title", children: selCust.name }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "overview-title", children: selCust ? selCust.name : "No Customer" }),
             /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "overview-sub", children: [
               cvs.length,
               " equipment"
             ] })
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { display: "flex", gap: "6px" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-sm", onClick: () => {
+            selCust && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn btn-ghost btn-sm", onClick: () => {
               setEdit(selCust);
               setModal("customer");
             }, children: "Edit Customer" }),
@@ -26259,7 +26327,7 @@ ${body}
             }, children: "+ Add Equipment" })
           ] })
         ] }),
-        (selCust.phone || selCust.email || selCust.businessName) && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "6px", padding: "10px 14px", marginBottom: "16px", display: "flex", gap: "16px", flexWrap: "wrap" }, children: [
+        selCust && (selCust.phone || selCust.email || selCust.businessName) && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: { background: "var(--panel)", border: "1px solid var(--border)", borderRadius: "6px", padding: "10px 14px", marginBottom: "16px", display: "flex", gap: "16px", flexWrap: "wrap" }, children: [
           selCust.businessName && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { style: { fontSize: "12px" }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("strong", { children: "Business:" }),
             " ",
