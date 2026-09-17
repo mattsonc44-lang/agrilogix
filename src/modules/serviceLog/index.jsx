@@ -4,6 +4,12 @@ import { obj2arr, genId } from "../../core/helpers.js";
 import { getPerms, REDACTED } from "../../core/permissions.js";
 import { evaluateReminder } from "../../core/maintenance.js";
 
+// Sentinel selCustId used for equipment with no customerId set — without this,
+// equipment added with "— No customer —" (the default) had no bucket in the
+// sidebar or Fleet Overview grid and was effectively unreachable after saving,
+// even though it was saved correctly (see NO_CUSTOMER usages below).
+const NO_CUSTOMER = "__none__";
+
 // ── CSS matching standalone exactly ───────────────────────────────
 const SL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&display=swap');
@@ -733,6 +739,27 @@ export default function ServiceLogModule({ tenantId, token, persist, userProfile
                     ))}
                   </div>);
                 })}
+                {(()=>{
+                  // Equipment saved with "— No customer —" (the default) has
+                  // no customerId, so it needs its own bucket here — otherwise
+                  // it's saved fine but never shows up anywhere to open.
+                  const uvs=[...fVehicles.filter(v=>!v.customerId)].sort((a,b)=>a.name.localeCompare(b.name));
+                  if(uvs.length===0) return null;
+                  const isOpen=selCustId===NO_CUSTOMER||uvs.some(v=>v.id===selVehId);
+                  return(<div>
+                    <div className={`si ${selCustId===NO_CUSTOMER&&!selVehId?"active":""}`} onClick={()=>{setSelCust(NO_CUSTOMER);setSelVeh(null);}}>
+                      <span className="si-icon">🔧</span>
+                      <div className="si-info"><div className="si-name">No Customer</div><div className="si-sub">{uvs.length} equipment</div></div>
+                      <span className="si-count">{uvs.length}</span>
+                    </div>
+                    {isOpen&&uvs.map(v=>(
+                      <div key={v.id} className={`si ${selVehId===v.id?"active":""}`} style={{paddingLeft:"26px"}} onClick={()=>{setSelVeh(v.id);setSelCust(NO_CUSTOMER);}}>
+                        <span className="si-icon" style={{fontSize:"12px"}}>{ICONS[v.type]||"🔧"}</span>
+                        <div className="si-info"><div className="si-name" style={{fontSize:"12px"}}>{v.name}</div><div className="si-sub">{D.records.filter(r=>r.vehicleId===v.id).length} records</div></div>
+                      </div>
+                    ))}
+                  </div>);
+                })()}
               </div>
               <button className="sidebar-add" onClick={()=>{setEdit(null);setModal("customer");}}>＋ Add Customer</button>
             </div>
@@ -834,21 +861,30 @@ function FleetView({D,selVeh,selCust,selCustId,setSelVeh,setSelCust,vRecords,sel
           {c.notes&&<div className="vc-sub">{c.notes}</div>}
           <div className="vc-meta"><div><div className="vc-stat-lbl">Equipment</div><div className="vc-stat-val">{cvs.length}</div></div><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{cr.length}</div></div>{canCost&&<div><div className="vc-stat-lbl">Total Cost</div><div className="vc-stat-val">${sumCost(cr).toLocaleString()}</div></div>}</div>
         </div>);})}
+        {(()=>{
+          const uvs=D.vehicles.filter(v=>!v.customerId);
+          if(uvs.length===0) return null;
+          const ur=D.records.filter(r=>uvs.some(v=>v.id===r.vehicleId));
+          return(<div className="vehicle-card" onClick={()=>{setSelCust(NO_CUSTOMER);setSelVeh(null);}}>
+            <div className="vc-type">🔧 Unassigned</div><div className="vc-name">No Customer</div>
+            <div className="vc-meta"><div><div className="vc-stat-lbl">Equipment</div><div className="vc-stat-val">{uvs.length}</div></div><div><div className="vc-stat-lbl">Records</div><div className="vc-stat-val">{ur.length}</div></div>{canCost&&<div><div className="vc-stat-lbl">Total Cost</div><div className="vc-stat-val">${sumCost(ur).toLocaleString()}</div></div>}</div>
+          </div>);
+        })()}
       </div>
     </div>
   );
 
-  if(selCust&&!selVeh){
-    const cvs=[...D.vehicles.filter(v=>v.customerId===selCust.id)].sort((a,b)=>a.name.localeCompare(b.name));
+  if((selCust||selCustId===NO_CUSTOMER)&&!selVeh){
+    const cvs=selCust?[...D.vehicles.filter(v=>v.customerId===selCust.id)].sort((a,b)=>a.name.localeCompare(b.name)):[...D.vehicles.filter(v=>!v.customerId)].sort((a,b)=>a.name.localeCompare(b.name));
     return(<div>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
-        <div><div className="overview-title">{selCust.name}</div><div className="overview-sub">{cvs.length} equipment</div></div>
+        <div><div className="overview-title">{selCust?selCust.name:"No Customer"}</div><div className="overview-sub">{cvs.length} equipment</div></div>
         <div style={{display:"flex",gap:"6px"}}>
-          <button className="btn btn-ghost btn-sm" onClick={()=>{setEdit(selCust);setModal("customer");}}>Edit Customer</button>
+          {selCust&&<button className="btn btn-ghost btn-sm" onClick={()=>{setEdit(selCust);setModal("customer");}}>Edit Customer</button>}
           <button className="btn btn-primary btn-sm" onClick={()=>{setEdit(null);setModal("vehicle");}}>+ Add Equipment</button>
         </div>
       </div>
-      {(selCust.phone||selCust.email||selCust.businessName)&&(
+      {selCust&&(selCust.phone||selCust.email||selCust.businessName)&&(
         <div style={{background:"var(--panel)",border:"1px solid var(--border)",borderRadius:"6px",padding:"10px 14px",marginBottom:"16px",display:"flex",gap:"16px",flexWrap:"wrap"}}>
           {selCust.businessName&&<span style={{fontSize:"12px"}}><strong>Business:</strong> {selCust.businessName}</span>}
           {selCust.phone&&<span style={{fontSize:"12px"}}><a href={`tel:${selCust.phone}`} style={{color:"var(--amber-dim)",textDecoration:"none"}}>📞 {selCust.phone}</a></span>}
