@@ -2287,8 +2287,8 @@ return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=
 </div>
 {safeFieldsList.length>0&&(<>
 <div style={lblStyle}>FIELD A</div>
-<select style={seStyle} value={splitFieldAId} onChange={e=>{const v=Number(e.target.value);setSplitFieldAId(v);setSplitInsA("");}}>
-{safeFieldsList.map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}
+<select style={seStyle} value={splitFieldAId!=null?String(splitFieldAId):""} onChange={e=>{const picked=safeFieldsList.find(fl=>String(fl.id)===e.target.value);if(picked){setSplitFieldAId(picked.id);setSplitInsA("");}}}>
+{safeFieldsList.map(fl=><option key={fl.id} value={String(fl.id)}>{fl.name}</option>)}
 </select>
 </>)}
 {unitsA.length>0&&(<>
@@ -2307,8 +2307,8 @@ return(<div style={moStyle} onClick={onClose}><div style={cardStyle} onClick={e=
 </div>
 {safeFieldsList.length>0&&(<>
 <div style={lblStyle}>FIELD B</div>
-<select style={seStyle} value={splitFieldBId} onChange={e=>{const v=Number(e.target.value);setSplitFieldBId(v);setSplitInsB("");}}>
-{safeFieldsList.map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}
+<select style={seStyle} value={splitFieldBId!=null?String(splitFieldBId):""} onChange={e=>{const picked=safeFieldsList.find(fl=>String(fl.id)===e.target.value);if(picked){setSplitFieldBId(picked.id);setSplitInsB("");}}}>
+{safeFieldsList.map(fl=><option key={fl.id} value={String(fl.id)}>{fl.name}</option>)}
 </select>
 </>)}
 {unitsB.length>0&&(<>
