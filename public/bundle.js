@@ -30810,11 +30810,13 @@ ${body}
         /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "10px" }, children: bins.map((b) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { onClick: () => s("binId", b.id), style: { ...btnBase_static, padding: "5px 10px", fontSize: "10px", background: f.binId === b.id ? "#e8e2d8" : "transparent", border: f.binId === b.id ? "1px solid #4a5568" : "1px solid #ccc4b8", color: f.binId === b.id ? "#4a5568" : "#6a7280" }, children: b.name }, b.id)) }),
         safeFieldsList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD A" }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("select", { style: seStyle, value: splitFieldAId, onChange: (e) => {
-            const v = Number(e.target.value);
-            setSplitFieldAId(v);
-            setSplitInsA("");
-          }, children: safeFieldsList.map((fl) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: fl.id, children: fl.name }, fl.id)) })
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("select", { style: seStyle, value: splitFieldAId != null ? String(splitFieldAId) : "", onChange: (e) => {
+            const picked = safeFieldsList.find((fl) => String(fl.id) === e.target.value);
+            if (picked) {
+              setSplitFieldAId(picked.id);
+              setSplitInsA("");
+            }
+          }, children: safeFieldsList.map((fl) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: String(fl.id), children: fl.name }, fl.id)) })
         ] }),
         unitsA.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD A \u2014 INSURANCE UNIT" }),
@@ -30827,11 +30829,13 @@ ${body}
         /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "10px" }, children: bins.map((b) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { onClick: () => setSplitBinId(b.id), style: { ...btnBase_static, padding: "5px 10px", fontSize: "10px", background: splitBinId === b.id ? "#e8e2d8" : "transparent", border: splitBinId === b.id ? "1px solid #c47d0a" : "1px solid #ccc4b8", color: splitBinId === b.id ? "#c47d0a" : "#6a7280" }, children: b.name }, b.id)) }),
         safeFieldsList.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD B" }),
-          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("select", { style: seStyle, value: splitFieldBId, onChange: (e) => {
-            const v = Number(e.target.value);
-            setSplitFieldBId(v);
-            setSplitInsB("");
-          }, children: safeFieldsList.map((fl) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: fl.id, children: fl.name }, fl.id)) })
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("select", { style: seStyle, value: splitFieldBId != null ? String(splitFieldBId) : "", onChange: (e) => {
+            const picked = safeFieldsList.find((fl) => String(fl.id) === e.target.value);
+            if (picked) {
+              setSplitFieldBId(picked.id);
+              setSplitInsB("");
+            }
+          }, children: safeFieldsList.map((fl) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("option", { value: String(fl.id), children: fl.name }, fl.id)) })
         ] }),
         unitsB.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: lblStyle, children: "FIELD B \u2014 INSURANCE UNIT" }),
