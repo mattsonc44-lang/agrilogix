@@ -29955,7 +29955,7 @@ ${body}
                   }, style: { cursor: "pointer", padding: "4px 9px", fontSize: "10px", fontWeight: 500, fontFamily: "'Barlow',sans-serif", background: AS.dangerBg, color: AS.danger, border: "none", borderRadius: "20px" }, children: "\u2715" })
                 ] })
               ] }),
-              (f.loads || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { marginTop: "9px", borderTop: `1px solid ${AS.border}`, paddingTop: "7px", maxHeight: "120px", overflowY: "auto" }, children: [...f.loads || []].reverse().map((l) => {
+              (f.loads || []).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { marginTop: "9px", borderTop: `1px solid ${AS.border}`, paddingTop: "7px", maxHeight: "260px", overflowY: "auto" }, children: [...f.loads || []].reverse().map((l) => {
                 const bu = (l.net / (l.grainBushelLbs || 60)).toFixed(1);
                 const tHex = l.truckColor || "#f0f0f0";
                 const bn = bins.find((b) => b.id === l.binId);
@@ -29972,7 +29972,8 @@ ${body}
                     l.date,
                     " ",
                     l.timeOnly
-                  ] })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { onClick: () => setEL({ load: l, fieldId: f.id }), style: { cursor: "pointer", padding: "2px 8px", fontSize: "10px", fontWeight: 500, fontFamily: "'Barlow',sans-serif", background: AS.cardAlt, color: AS.textSoft, border: "none", borderRadius: "20px", flexShrink: 0 }, children: "Edit" })
                 ] }, l.id);
               }) })
             ] }, f.id);
