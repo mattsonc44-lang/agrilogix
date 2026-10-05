@@ -1666,7 +1666,7 @@ return(<div key={f.id} style={{background:AS.card,border:`1px solid ${AS.border}
 </div>
 {/* Mini load log */}
 {(f.loads||[]).length>0&&(
-<div style={{marginTop:"9px",borderTop:`1px solid ${AS.border}`,paddingTop:"7px",maxHeight:"120px",overflowY:"auto"}}>
+<div style={{marginTop:"9px",borderTop:`1px solid ${AS.border}`,paddingTop:"7px",maxHeight:"260px",overflowY:"auto"}}>
 {[...(f.loads||[])].reverse().map(l=>{
 const bu=(l.net/(l.grainBushelLbs||60)).toFixed(1);
 const tHex=l.truckColor||"#f0f0f0";
@@ -1677,6 +1677,7 @@ return(<div key={l.id} style={{display:"flex",gap:"7px",alignItems:"center",font
 <span>{l.grainName}</span>
 <span>{bn?.name||"?"}</span>
 <span style={{marginLeft:"auto",color:AS.textFaint}}>{l.date} {l.timeOnly}</span>
+<button onClick={()=>setEL({load:l,fieldId:f.id})} style={{cursor:"pointer",padding:"2px 8px",fontSize:"10px",fontWeight:500,fontFamily:"'Barlow',sans-serif",background:AS.cardAlt,color:AS.textSoft,border:"none",borderRadius:"20px",flexShrink:0}}>Edit</button>
 </div>);
 })}
 </div>
